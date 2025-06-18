@@ -1,5 +1,7 @@
 FROM oven/bun:1-alpine
 
+RUN apk add curl
+
 USER bun
 WORKDIR /app
 

@@ -4,6 +4,7 @@ import { config } from "./config";
 import type { Monitor, StatusData, StatusPage } from "./types";
 import { getMonitorHistory, initClickHouse, statusCache, storePulse, updateMonitorStatus } from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
+import { logger } from "@rabbit-company/web-middleware/logger";
 
 await initClickHouse();
 
@@ -13,6 +14,8 @@ for (const monitor of config.monitors) {
 }
 
 const app = new Web();
+
+app.use(logger({ logger: Logger, preset: "minimal" }));
 
 app.get("/health", (c) => {
 	return c.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -131,6 +134,6 @@ app.get("/v1/monitors/:id/history", async (ctx) => {
 	});
 });
 
-app.listen({ port: config.server?.port || 3000 });
+app.listen({ hostname: "0.0.0.0", port: config.server?.port || 3000 });
 
 Logger.info(`Server running on port ${config.server?.port || 3000}`);

@@ -56,10 +56,6 @@ services:
 networks:
   internal-network:
     driver: bridge
-    internal: true # This makes the network internal-only (no internet access)
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
 
 volumes:
   clickhouse_data:

@@ -1,0 +1,98 @@
+# Uptime Monitor Configuration
+
+[clickhouse]
+url = "http://uptime_user:uptime_password@clickhouse:8123/uptime_monitor"
+
+[server]
+port = 3000
+
+# Monitor definitions
+[[monitors]]
+id = "api-prod"
+name = "Production API"
+token = "tk_prod_api_abc123"
+interval = 60  # seconds
+groupId = "production"
+
+[[monitors]]
+id = "api-staging"
+name = "Staging API"
+token = "tk_staging_api_def456"
+interval = 60
+groupId = "staging"
+
+[[monitors]]
+id = "web-prod"
+name = "Production Website"
+token = "tk_prod_web_ghi789"
+interval = 30
+groupId = "production"
+
+[[monitors]]
+id = "db-prod"
+name = "Production Database"
+token = "tk_prod_db_jkl012"
+interval = 60
+groupId = "production"
+
+[[monitors]]
+id = "cdn-global"
+name = "Global CDN"
+token = "tk_cdn_mno345"
+interval = 120
+groupId = "infrastructure"
+
+[[monitors]]
+id = "payment-gateway"
+name = "Payment Gateway"
+token = "tk_payment_pqr678"
+interval = 30
+groupId = "third-party"
+
+# Group definitions
+[[groups]]
+id = "production"
+name = "Production Services"
+parentId = "all-services"
+degradedThreshold = 50  # percentage - if less than 50% of children are up, group is down
+
+[[groups]]
+id = "staging"
+name = "Staging Services"
+parentId = "all-services"
+degradedThreshold = 0  # staging can be fully down without affecting overall status
+
+[[groups]]
+id = "infrastructure"
+name = "Infrastructure"
+parentId = "all-services"
+degradedThreshold = 80  # infrastructure should mostly be up
+
+[[groups]]
+id = "third-party"
+name = "Third Party Services"
+degradedThreshold = 70
+
+[[groups]]
+id = "all-services"
+name = "All Services"
+degradedThreshold = 75  # overall health threshold
+
+# Status page definitions
+[[status_pages]]
+id = "public"
+name = "Public Status Page"
+slug = "status"
+items = ["all-services", "third-party"]  # show main group and third-party services
+
+[[status_pages]]
+id = "internal"
+name = "Internal Status Page"
+slug = "internal"
+items = ["production", "staging", "infrastructure", "third-party"]  # show all groups
+
+[[status_pages]]
+id = "production-only"
+name = "Production Status"
+slug = "production"
+items = ["production"]  # show only production group

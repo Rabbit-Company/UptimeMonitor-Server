@@ -1,0 +1,66 @@
+services:
+  # Bun application
+  uptimemonitor:
+    build:
+      context: .
+    container_name: uptime-monitor
+    restart: unless-stopped
+    ports:
+      - "3000:3000" # Only expose the app port to host
+    environment:
+      - NODE_ENV=production
+      - CONFIG=/app/config/config.toml
+    volumes:
+      - ./config.toml:/app/config/config.toml:ro # Mount config as read-only
+    networks:
+      - internal-network
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ClickHouse database
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest-alpine
+    container_name: uptime-monitor-clickhouse
+    restart: unless-stopped
+    # No ports exposed to host - only accessible within internal network
+    expose:
+      - "8123" # HTTP interface - only available to internal network
+      - "9000" # Native protocol - only available to internal network
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      - CLICKHOUSE_DB=uptime_monitor
+      - CLICKHOUSE_USER=uptime_user
+      - CLICKHOUSE_PASSWORD=uptime_password
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    networks:
+      - internal-network
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "uptime_user", "--password", "uptime_password", "--host", "localhost", "--query", "SELECT 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  internal-network:
+    driver: bridge
+    internal: true # This makes the network internal-only (no internet access)
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  clickhouse_data:
+    driver: local

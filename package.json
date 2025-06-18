@@ -1,0 +1,20 @@
+{
+	"name": "uptimemonitor-server",
+	"module": "src/index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"start": "bun src/index.ts"
+	},
+	"devDependencies": {
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@clickhouse/client": "^1.11.2",
+		"@rabbit-company/web": "^0.13.0",
+		"@rabbit-company/web-middleware": "^0.13.0"
+	}
+}

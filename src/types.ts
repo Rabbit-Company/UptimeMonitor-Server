@@ -43,7 +43,9 @@ export interface Pulse {
 
 export interface IntervalConfig {
 	interval: string;
+	intervalMs: number;
 	range: string;
+	rangeMs: number;
 }
 
 export interface StatusData {

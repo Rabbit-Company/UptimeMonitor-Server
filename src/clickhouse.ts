@@ -9,6 +9,33 @@ export const eventEmitter = new EventEmitter();
 
 export const clickhouse = createClient(config.clickhouse);
 
+const INTERVALS: Record<string, IntervalConfig> = {
+	"24h": {
+		interval: "5 minute",
+		intervalMs: 5 * 60 * 1000, // 5 minutes
+		range: "24 HOUR",
+		rangeMs: 24 * 60 * 60 * 1000, // 24 hours
+	},
+	"7d": {
+		interval: "1 hour",
+		intervalMs: 60 * 60 * 1000, // 1 hour
+		range: "7 DAY",
+		rangeMs: 7 * 24 * 60 * 60 * 1000, // 7 days
+	},
+	"30d": {
+		interval: "6 hour",
+		intervalMs: 6 * 60 * 60 * 1000, // 6 hours
+		range: "30 DAY",
+		rangeMs: 30 * 24 * 60 * 60 * 1000, // 30 days
+	},
+	"90d": {
+		interval: "1 day",
+		intervalMs: 24 * 60 * 60 * 1000, // 1 day
+		range: "90 DAY",
+		rangeMs: 90 * 24 * 60 * 60 * 1000, // 90 days
+	},
+};
+
 export async function initClickHouse(): Promise<void> {
 	try {
 		await clickhouse.exec({
@@ -55,7 +82,7 @@ export async function storePulse(monitorId: string, status: "up" | "down", laten
 					monitor_id: monitorId,
 					status,
 					latency,
-					timestamp,
+					timestamp: timestamp.toISOString().replace("T", " ").replace("Z", ""),
 				},
 			],
 			format: "JSONEachRow",
@@ -73,35 +100,50 @@ export async function storePulse(monitorId: string, status: "up" | "down", laten
 
 export async function updateMonitorStatus(monitorId: string): Promise<void> {
 	try {
+		const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
+		if (!monitor) return;
+
 		const queries = {
 			latest: `
-      SELECT status, latency, timestamp as last_check
-      FROM pulses
-      WHERE monitor_id = '${monitorId}'
-      ORDER BY timestamp DESC
-      LIMIT 1
-    `,
+				SELECT status, latency, timestamp as last_check
+				FROM pulses
+				WHERE monitor_id = '${monitorId}'
+				ORDER BY timestamp DESC
+				LIMIT 1
+			`,
 			uptime24h: `
-      SELECT
-        countIf(status = 'up') / count() * 100 as uptime
-      FROM pulses
-      WHERE monitor_id = '${monitorId}'
-        AND timestamp > now() - INTERVAL 24 HOUR
-    `,
+				WITH
+					${(24 * 60 * 60) / monitor.interval} as expected_pulses_24h,
+					(
+						SELECT countIf(status = 'up')
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 24 HOUR
+					) as actual_up_pulses
+				SELECT (actual_up_pulses * 100.0) / expected_pulses_24h as uptime
+			`,
 			uptime7d: `
-      SELECT
-        countIf(status = 'up') / count() * 100 as uptime
-      FROM pulses
-      WHERE monitor_id = '${monitorId}'
-        AND timestamp > now() - INTERVAL 7 DAY
-    `,
+				WITH
+					${(7 * 24 * 60 * 60) / monitor.interval} as expected_pulses_7d,
+					(
+						SELECT countIf(status = 'up')
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 7 DAY
+					) as actual_up_pulses
+				SELECT (actual_up_pulses * 100.0) / expected_pulses_7d as uptime
+			`,
 			uptime30d: `
-      SELECT
-        countIf(status = 'up') / count() * 100 as uptime
-      FROM pulses
-      WHERE monitor_id = '${monitorId}'
-        AND timestamp > now() - INTERVAL 30 DAY
-    `,
+				WITH
+					${(30 * 24 * 60 * 60) / monitor.interval} as expected_pulses_30d,
+					(
+						SELECT countIf(status = 'up')
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 30 DAY
+					) as actual_up_pulses
+				SELECT (actual_up_pulses * 100.0) / expected_pulses_30d as uptime
+			`,
 		};
 
 		const [latest, uptime24h, uptime7d, uptime30d] = await Promise.all([
@@ -118,9 +160,6 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 
 		if (!latestData.length) return;
 
-		const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
-		if (!monitor) return;
-
 		const statusData: StatusData = {
 			id: monitorId,
 			type: "monitor",
@@ -128,9 +167,9 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			status: latestData[0]!.status,
 			latency: latestData[0]!.latency,
 			lastCheck: new Date(latestData[0]!.last_check),
-			uptime24h: uptime24hData[0]?.uptime || 0,
-			uptime7d: uptime7dData[0]?.uptime || 0,
-			uptime30d: uptime30dData[0]?.uptime || 0,
+			uptime24h: Math.min(uptime24hData[0]?.uptime || 0, 100),
+			uptime7d: Math.min(uptime7dData[0]?.uptime || 0, 100),
+			uptime30d: Math.min(uptime30dData[0]?.uptime || 0, 100),
 		};
 
 		statusCache.set(monitorId, statusData);
@@ -212,26 +251,73 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 }
 
 export async function getMonitorHistory(monitorId: string, period: string): Promise<HistoryRecord[]> {
-	const intervals: Record<string, IntervalConfig> = {
-		"24h": { interval: "5 minute", range: "24 HOUR" },
-		"7d": { interval: "1 hour", range: "7 DAY" },
-		"30d": { interval: "6 hour", range: "30 DAY" },
-	};
+	const { interval, intervalMs, range, rangeMs }: IntervalConfig = INTERVALS[period] || INTERVALS["24h"]!;
 
-	const { interval, range }: IntervalConfig = intervals[period] || { interval: "5 minute", range: "24 HOUR" };
+	const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
+	if (!monitor) return [];
+
+	const expectedPulsesPerInterval = Math.floor(intervalMs / (monitor.interval * 1000));
 
 	const query = `
+		WITH
+			-- Calculate interval duration in seconds for expected pulse count
+			${intervalMs / 1000} AS interval_seconds,
+			${monitor.interval} AS check_interval_seconds,
+			${expectedPulsesPerInterval} AS expected_pulses,
+
+			-- Get all pulses in the period
+			raw_pulses AS (
+				SELECT
+					toStartOfInterval(timestamp, INTERVAL ${interval}) AS interval_time,
+					status,
+					latency
+				FROM pulses
+				WHERE monitor_id = '${monitorId}'
+					AND timestamp > now() - INTERVAL ${range}
+			),
+
+			-- Aggregate by interval
+			interval_data AS (
+				SELECT
+					interval_time,
+					avg(latency) AS avg_latency,
+					min(latency) AS min_latency,
+					max(latency) AS max_latency,
+					countIf(status = 'up') AS up_count,
+					count() AS actual_count
+				FROM raw_pulses
+				GROUP BY interval_time
+			),
+
+			-- Generate complete time series
+			time_series AS (
+				SELECT
+					arrayJoin(
+							arrayMap(
+								x -> toDateTime(toStartOfInterval(now(), INTERVAL ${interval}) - x * interval_seconds),
+								range(0, toUInt32(${rangeMs / intervalMs}))
+							)
+					) AS time
+			)
+
+		-- Join time series with data
 		SELECT
-			toStartOfInterval(timestamp, INTERVAL ${interval}) as time,
-			avg(latency) as avg_latency,
-			min(latency) as min_latency,
-			max(latency) as max_latency,
-			countIf(status = 'up') / count() * 100 as uptime
-		FROM pulses
-		WHERE monitor_id = '${monitorId}'
-			AND timestamp > now() - INTERVAL ${range}
-		GROUP BY time
-		ORDER BY time
+			ts.time,
+			coalesce(d.avg_latency, 0) AS avg_latency,
+			coalesce(d.min_latency, 0) AS min_latency,
+			coalesce(d.max_latency, 0) AS max_latency,
+			-- Calculate uptime with missing pulse detection
+			if(d.actual_count IS NULL, 0,
+				if(d.actual_count < expected_pulses,
+					(d.up_count * 100.0) / expected_pulses,
+					(d.up_count * 100.0) / d.actual_count
+				)
+			) AS uptime
+		FROM time_series ts
+		LEFT JOIN interval_data d ON d.interval_time = ts.time
+		WHERE ts.time > now() - INTERVAL ${range}
+			AND ts.time <= now()
+		ORDER BY ts.time
 	`;
 
 	const result = await clickhouse.query({ query, format: "JSONEachRow" });

@@ -4,7 +4,8 @@ import { config } from "./config";
 import type { Monitor, StatusData, StatusPage } from "./types";
 import { getMonitorHistory, initClickHouse, statusCache, storePulse, updateMonitorStatus } from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
-import { logger } from "@rabbit-company/web-middleware/logger";
+import { Levels, logger } from "@rabbit-company/web-middleware/logger";
+import { missingPulseDetector } from "./missing-pulse-detector";
 
 await initClickHouse();
 
@@ -13,12 +14,19 @@ for (const monitor of config.monitors) {
 	await updateMonitorStatus(monitor.id);
 }
 
+missingPulseDetector.start();
+
 const app = new Web();
 
-app.use(logger({ logger: Logger, preset: "minimal" }));
+app.use(logger({ logger: Logger, preset: "minimal", logResponses: false }));
 
-app.get("/health", (c) => {
-	return c.json({ status: "ok", timestamp: new Date().toISOString() });
+app.get("/health", (ctx) => {
+	return ctx.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/v1/health/missing-pulse-detector", (ctx) => {
+	const status = missingPulseDetector.getStatus();
+	return ctx.json(status);
 });
 
 app.get("/v1/push/:token", async (ctx) => {
@@ -137,3 +145,16 @@ app.get("/v1/monitors/:id/history", async (ctx) => {
 app.listen({ hostname: "0.0.0.0", port: config.server?.port || 3000 });
 
 Logger.info(`Server running on port ${config.server?.port || 3000}`);
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+	Logger.info("Received SIGTERM, shutting down gracefully");
+	missingPulseDetector.stop();
+	process.exit(0);
+});
+
+process.on("SIGINT", () => {
+	Logger.info("Received SIGINT, shutting down gracefully");
+	missingPulseDetector.stop();
+	process.exit(0);
+});

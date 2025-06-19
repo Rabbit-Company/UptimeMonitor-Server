@@ -1,0 +1,299 @@
+import { statusCache, storePulse, eventEmitter } from "./clickhouse";
+import { config } from "./config";
+import { Logger } from "./logger";
+import type { MissingPulseDetectorOptions, Monitor } from "./types";
+
+export class MissingPulseDetector {
+	private checkInterval: number;
+	private intervalId?: NodeJS.Timeout;
+	private missedPulses: Map<string, number> = new Map();
+	private lastNotification: Map<string, number> = new Map();
+	private consecutiveDownCounts: Map<string, number> = new Map();
+	private lastNotificationDownCount: Map<string, number> = new Map();
+
+	constructor(options: MissingPulseDetectorOptions = {}) {
+		this.checkInterval = options.checkInterval || 30000; // Check every 30 seconds globally
+	}
+
+	/**
+	 * Start the missing pulse detection
+	 */
+	start(): void {
+		if (this.intervalId) {
+			Logger.warn("Missing pulse detector already running");
+			return;
+		}
+
+		Logger.info("Starting missing pulse detector", {
+			checkInterval: this.checkInterval,
+			monitorCount: config.monitors.length,
+		});
+
+		// Run immediately on start
+		this.detectMissingPulses();
+
+		// Then run at regular intervals
+		this.intervalId = setInterval(() => {
+			this.detectMissingPulses();
+		}, this.checkInterval);
+	}
+
+	/**
+	 * Stop the missing pulse detection
+	 */
+	stop(): void {
+		if (this.intervalId) {
+			clearInterval(this.intervalId);
+			this.intervalId = undefined;
+			Logger.info("Stopped missing pulse detector");
+		}
+	}
+
+	/**
+	 * Check all monitors for missing pulses
+	 */
+	private async detectMissingPulses(): Promise<void> {
+		const now = Date.now();
+		const detectionPromises: Promise<void>[] = [];
+
+		for (const monitor of config.monitors) {
+			detectionPromises.push(this.checkMonitor(monitor, now));
+		}
+
+		await Promise.allSettled(detectionPromises);
+	}
+
+	/**
+	 * Check a single monitor for missing pulses
+	 */
+	private async checkMonitor(monitor: Monitor, now: number): Promise<void> {
+		try {
+			const status = statusCache.get(monitor.id);
+			const lastCheck = status?.lastCheck?.getTime();
+
+			if (!lastCheck) {
+				// No data yet, skip
+				Logger.debug("No status data for monitor", { monitorId: monitor.id });
+				return;
+			}
+
+			const expectedInterval = monitor.interval * 1000; // Convert to ms
+			const maxAllowedInterval = expectedInterval * monitor.toleranceFactor; // Use monitor-specific tolerance
+			const timeSinceLastCheck = now - lastCheck;
+
+			if (timeSinceLastCheck > maxAllowedInterval) {
+				await this.handleMissingPulse(monitor, timeSinceLastCheck, expectedInterval);
+			} else {
+				// Reset missed pulse count if we got a recent pulse
+				this.missedPulses.delete(monitor.id);
+			}
+		} catch (error) {
+			Logger.error("Error checking monitor for missing pulses", {
+				monitorId: monitor.id,
+				error: error instanceof Error ? error.message : "Unknown error",
+			});
+		}
+	}
+
+	/**
+	 * Handle a detected missing pulse
+	 */
+	private async handleMissingPulse(monitor: Monitor, timeSinceLastCheck: number, expectedInterval: number): Promise<void> {
+		const missedCount = (this.missedPulses.get(monitor.id) || 0) + 1;
+		this.missedPulses.set(monitor.id, missedCount);
+
+		const missedIntervals = Math.floor(timeSinceLastCheck / expectedInterval);
+
+		Logger.warn("Missing pulse detected", {
+			monitorId: monitor.id,
+			monitorName: monitor.name,
+			timeSinceLastCheck: Math.round(timeSinceLastCheck / 1000) + "s",
+			expectedInterval: expectedInterval / 1000 + "s",
+			toleranceFactor: monitor.toleranceFactor,
+			missedIntervals,
+			consecutiveMisses: missedCount,
+			maxRetries: monitor.maxRetries,
+		});
+
+		// Only mark as down after maxRetries consecutive misses
+		if (missedCount >= monitor.maxRetries) {
+			const currentStatus = statusCache.get(monitor.id);
+
+			// Only store a new "down" pulse if the monitor was previously up
+			if (currentStatus?.status !== "down") {
+				await storePulse(monitor.id, "down", 0);
+
+				// Increment consecutive down count
+				const currentDownCount = (this.consecutiveDownCounts.get(monitor.id) || 0) + 1;
+				this.consecutiveDownCounts.set(monitor.id, currentDownCount);
+
+				Logger.error("Monitor marked as down due to missing pulses", {
+					monitorId: monitor.id,
+					monitorName: monitor.name,
+					consecutiveMisses: missedCount,
+					lastCheckTime: currentStatus?.lastCheck,
+					consecutiveDownCount: currentDownCount,
+				});
+
+				// Check if we should send notification
+				if (this.shouldSendNotification(monitor)) {
+					this.notifyMonitorDown(monitor, timeSinceLastCheck);
+				}
+			} else {
+				// Monitor is already down, increment consecutive down count
+				const currentDownCount = (this.consecutiveDownCounts.get(monitor.id) || 0) + 1;
+				this.consecutiveDownCounts.set(monitor.id, currentDownCount);
+
+				// Check if we should resend notification
+				if (this.shouldSendNotification(monitor)) {
+					this.notifyMonitorStillDown(monitor, currentDownCount);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Determine if a notification should be sent based on resendNotification setting
+	 */
+	private shouldSendNotification(monitor: Monitor): boolean {
+		const currentDownCount = this.consecutiveDownCounts.get(monitor.id) || 0;
+		const lastNotificationCount = this.lastNotificationDownCount.get(monitor.id) || 0;
+
+		// First notification (monitor just went down)
+		if (currentDownCount === 1) {
+			return true;
+		}
+
+		// Resend notifications disabled
+		if (monitor.resendNotification === 0) {
+			return false;
+		}
+
+		// Check if enough consecutive down checks have passed since last notification
+		const downsSinceLastNotification = currentDownCount - lastNotificationCount;
+		return downsSinceLastNotification >= monitor.resendNotification;
+	}
+
+	/**
+	 * Send notification about monitor being down
+	 */
+	private notifyMonitorDown(monitor: Monitor, downtime: number): void {
+		const now = Date.now();
+		this.lastNotification.set(monitor.id, now);
+
+		const currentDownCount = this.consecutiveDownCounts.get(monitor.id) || 1;
+		this.lastNotificationDownCount.set(monitor.id, currentDownCount);
+
+		Logger.error("MONITOR DOWN", {
+			monitorId: monitor.id,
+			monitorName: monitor.name,
+			downtime: Math.round(downtime / 1000) + "s",
+			message: `Monitor "${monitor.name}" is DOWN - has not sent a pulse for ${Math.round(downtime / 60000)} minutes`,
+		});
+
+		// Emit event for notification system integration
+		eventEmitter.emit("monitor-notification", {
+			type: "down",
+			monitorId: monitor.id,
+			monitorName: monitor.name,
+			downtime,
+			timestamp: new Date(),
+		});
+	}
+
+	/**
+	 * Send notification about monitor still being down
+	 */
+	private notifyMonitorStillDown(monitor: Monitor, consecutiveDownCount: number): void {
+		const now = Date.now();
+		this.lastNotification.set(monitor.id, now);
+		this.lastNotificationDownCount.set(monitor.id, consecutiveDownCount);
+
+		Logger.error("MONITOR STILL DOWN", {
+			monitorId: monitor.id,
+			monitorName: monitor.name,
+			consecutiveDownCount,
+			message: `Monitor "${monitor.name}" is still DOWN - ${consecutiveDownCount} consecutive down checks`,
+		});
+
+		// Emit event for notification system integration
+		eventEmitter.emit("monitor-notification", {
+			type: "still-down",
+			monitorId: monitor.id,
+			monitorName: monitor.name,
+			consecutiveDownCount,
+			timestamp: new Date(),
+		});
+	}
+
+	/**
+	 * Get current status of missing pulse detection
+	 */
+	getStatus(): {
+		running: boolean;
+		checkInterval: number;
+		monitorsWithMissingPulses: Array<{
+			monitorId: string;
+			monitorName: string;
+			missedCount: number;
+			maxRetries: number;
+			toleranceFactor: number;
+			consecutiveDownCount: number;
+			resendNotification: number;
+		}>;
+	} {
+		const monitorsWithMissingPulses = [];
+
+		for (const [monitorId, missedCount] of this.missedPulses.entries()) {
+			const monitor = config.monitors.find((m) => m.id === monitorId);
+			if (monitor) {
+				const consecutiveDownCount = this.consecutiveDownCounts.get(monitorId) || 0;
+
+				monitorsWithMissingPulses.push({
+					monitorId,
+					monitorName: monitor.name,
+					missedCount,
+					maxRetries: monitor.maxRetries,
+					toleranceFactor: monitor.toleranceFactor,
+					consecutiveDownCount,
+					resendNotification: monitor.resendNotification,
+				});
+			}
+		}
+
+		return {
+			running: !!this.intervalId,
+			checkInterval: this.checkInterval,
+			monitorsWithMissingPulses,
+		};
+	}
+
+	/**
+	 * Reset missed pulse count for a specific monitor
+	 */
+	resetMonitor(monitorId: string): void {
+		this.missedPulses.delete(monitorId);
+		this.lastNotification.delete(monitorId);
+
+		// Reset consecutive down count when monitor comes back up
+		if (this.consecutiveDownCounts.get(monitorId)) {
+			Logger.info("Monitor recovered", {
+				monitorId,
+				previousConsecutiveDownCount: this.consecutiveDownCounts.get(monitorId),
+			});
+
+			// Emit recovery event
+			eventEmitter.emit("monitor-recovered", {
+				monitorId,
+				previousConsecutiveDownCount: this.consecutiveDownCounts.get(monitorId),
+				timestamp: new Date(),
+			});
+		}
+
+		this.consecutiveDownCounts.delete(monitorId);
+		this.lastNotificationDownCount.delete(monitorId);
+	}
+}
+
+// Export singleton instance
+export const missingPulseDetector = new MissingPulseDetector();

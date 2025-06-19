@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import type { Config, Monitor, Group, StatusPage, ServerConfig } from "./types";
+import type { Config, Monitor, Group, StatusPage, ServerConfig, LoggerConfig } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { Logger } from "./logger";
 
@@ -29,6 +29,30 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 // Validation functions
+
+function validateLoggerConfig(config: unknown): LoggerConfig {
+	const errors: string[] = [];
+	const cfg = (config || {}) as Record<string, unknown>;
+
+	const result: LoggerConfig = {
+		level: 4,
+	};
+
+	if (cfg.level !== undefined) {
+		if (!isNumber(cfg.level) || cfg.level < 0 || cfg.level > 7) {
+			errors.push("logger.level must be a valid number (0-7)");
+		} else {
+			result.level = cfg.level;
+		}
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	return result;
+}
+
 function validateMonitor(monitor: unknown, index: number): Monitor {
 	const errors: string[] = [];
 
@@ -56,6 +80,21 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		errors.push(`monitors[${index}].interval must be a positive number`);
 	}
 
+	// Validate maxRetries
+	if (!isNumber(monitor.maxRetries) || monitor.maxRetries < 0) {
+		errors.push(`monitors[${index}].maxRetries must be a positive number`);
+	}
+
+	// Validate toleranceFactor
+	if (!isNumber(monitor.toleranceFactor) || monitor.toleranceFactor <= 0) {
+		errors.push(`monitors[${index}].toleranceFactor must be a positive number`);
+	}
+
+	// Validate resendNotification
+	if (!isNumber(monitor.resendNotification) || monitor.resendNotification < 0) {
+		errors.push(`monitors[${index}].resendNotification must be a positive number`);
+	}
+
 	// Validate optional groupId
 	if (monitor.groupId !== undefined && (!isString(monitor.groupId) || monitor.groupId.trim().length === 0)) {
 		errors.push(`monitors[${index}].groupId must be a non-empty string if provided`);
@@ -70,6 +109,9 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		name: monitor.name as string,
 		token: monitor.token as string,
 		interval: monitor.interval as number,
+		maxRetries: monitor.maxRetries as number,
+		toleranceFactor: monitor.toleranceFactor as number,
+		resendNotification: monitor.resendNotification as number,
 		groupId: monitor.groupId as string | undefined,
 	};
 }
@@ -376,6 +418,16 @@ function loadConfig(): Config {
 			} else throw error;
 		}
 
+		let logger: LoggerConfig;
+		try {
+			logger = validateLoggerConfig(parsed.logger);
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				allErrors.push(...error.errors);
+				logger = { level: 4 };
+			} else throw error;
+		}
+
 		// Validate monitors
 		const monitors: Monitor[] = [];
 		if (!isArray(parsed.monitors)) {
@@ -443,6 +495,7 @@ function loadConfig(): Config {
 		const config: Config = {
 			clickhouse,
 			server,
+			logger,
 			monitors,
 			groups,
 			statusPages,
@@ -452,6 +505,8 @@ function loadConfig(): Config {
 		validateUniqueIds(config);
 		validateReferences(config);
 		detectCircularReferences(config);
+
+		Logger.setLevel(logger.level || 4);
 
 		Logger.info(`Configuration loaded successfully from ${configPath}`, {
 			monitors: config.monitors.length,

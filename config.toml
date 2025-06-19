@@ -6,12 +6,18 @@ url = "http://uptime_user:uptime_password@clickhouse:8123/uptime_monitor"
 [server]
 port = 3000
 
+[logger]
+level = 7
+
 # Monitor definitions
 [[monitors]]
 id = "api-prod"
 name = "Production API"
 token = "tk_prod_api_abc123"
-interval = 60  # seconds
+interval = 60 # Expects pulse every 60s
+maxRetries = 0 # Zero tolerance - mark down immediately
+toleranceFactor = 1.5 # Multiplier for expected interval (e.g., 1.5 = 50% tolerance)
+resendNotification = 3 # Resend notification every 3 down checks
 groupId = "production"
 
 [[monitors]]
@@ -19,6 +25,9 @@ id = "api-staging"
 name = "Staging API"
 token = "tk_staging_api_def456"
 interval = 60
+maxRetries = 0
+toleranceFactor = 1.5
+resendNotification = 3
 groupId = "staging"
 
 [[monitors]]
@@ -26,6 +35,9 @@ id = "web-prod"
 name = "Production Website"
 token = "tk_prod_web_ghi789"
 interval = 30
+maxRetries = 0
+toleranceFactor = 1.5
+resendNotification = 3
 groupId = "production"
 
 [[monitors]]
@@ -33,6 +45,9 @@ id = "db-prod"
 name = "Production Database"
 token = "tk_prod_db_jkl012"
 interval = 60
+maxRetries = 0
+toleranceFactor = 1.5
+resendNotification = 3
 groupId = "production"
 
 [[monitors]]
@@ -40,6 +55,9 @@ id = "cdn-global"
 name = "Global CDN"
 token = "tk_cdn_mno345"
 interval = 120
+maxRetries = 0
+toleranceFactor = 1.5
+resendNotification = 3
 groupId = "infrastructure"
 
 [[monitors]]
@@ -47,6 +65,9 @@ id = "payment-gateway"
 name = "Payment Gateway"
 token = "tk_payment_pqr678"
 interval = 30
+maxRetries = 0
+toleranceFactor = 1.5
+resendNotification = 3
 groupId = "third-party"
 
 # Group definitions

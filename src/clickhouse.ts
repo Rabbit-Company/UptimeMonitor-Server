@@ -3,13 +3,23 @@ import { config } from "./config";
 import { Logger } from "./logger";
 import { EventEmitter } from "events";
 import type { Group, HistoryRecord, IntervalConfig, Monitor, PulseRecord, StatusData, UptimeRecord } from "./types";
+import { missingPulseDetector } from "./missing-pulse-detector";
 
 export const statusCache = new Map<string, StatusData>();
 export const eventEmitter = new EventEmitter();
 
+export const updateQueue = new Set<string>();
+export const BATCH_INTERVAL = 5000; // 5 seconds
+
 export const clickhouse = createClient(config.clickhouse);
 
 const INTERVALS: Record<string, IntervalConfig> = {
+	"1h": {
+		interval: "1 minute",
+		intervalMs: 60 * 1000, // 1 minute
+		range: "1 HOUR",
+		rangeMs: 60 * 60 * 1000, // 1 hour
+	},
 	"24h": {
 		interval: "5 minute",
 		intervalMs: 5 * 60 * 1000, // 5 minutes
@@ -23,8 +33,8 @@ const INTERVALS: Record<string, IntervalConfig> = {
 		rangeMs: 7 * 24 * 60 * 60 * 1000, // 7 days
 	},
 	"30d": {
-		interval: "6 hour",
-		intervalMs: 6 * 60 * 60 * 1000, // 6 hours
+		interval: "1 day",
+		intervalMs: 24 * 60 * 60 * 1000, // 1 day
 		range: "30 DAY",
 		rangeMs: 30 * 24 * 60 * 60 * 1000, // 30 days
 	},
@@ -33,6 +43,12 @@ const INTERVALS: Record<string, IntervalConfig> = {
 		intervalMs: 24 * 60 * 60 * 1000, // 1 day
 		range: "90 DAY",
 		rangeMs: 90 * 24 * 60 * 60 * 1000, // 90 days
+	},
+	"365d": {
+		interval: "1 day",
+		intervalMs: 24 * 60 * 60 * 1000, // 1 day
+		range: "1 YEAR",
+		rangeMs: 365 * 24 * 60 * 60 * 1000, // 1 year
 	},
 };
 
@@ -48,6 +64,7 @@ export async function initClickHouse(): Promise<void> {
       ) ENGINE = MergeTree()
       ORDER BY (monitor_id, timestamp)
       PARTITION BY toYYYYMM(timestamp)
+			TTL toDateTime(timestamp) + INTERVAL 1 YEAR DELETE
     `,
 		});
 
@@ -64,12 +81,20 @@ export async function initClickHouse(): Promise<void> {
         updated_at DateTime64(3)
       ) ENGINE = ReplacingMergeTree(updated_at)
       ORDER BY monitor_id
+			TTL toDateTime(updated_at) + INTERVAL 1 YEAR DELETE
     `,
 		});
 	} catch (err: any) {
 		Logger.error("ClickHouse connection failed", { "error.message": err?.message });
 	}
 }
+
+setInterval(async () => {
+	const monitors = [...updateQueue];
+	updateQueue.clear();
+
+	await Promise.all(monitors.map(updateMonitorStatus));
+}, BATCH_INTERVAL);
 
 export async function storePulse(monitorId: string, status: "up" | "down", latency: number): Promise<void> {
 	const timestamp = new Date();
@@ -91,8 +116,12 @@ export async function storePulse(monitorId: string, status: "up" | "down", laten
 		Logger.error("Storing pulse into ClickHouse failed", { monitorId: monitorId, "error.message": err?.message });
 	}
 
-	// Update monitor status cache
-	await updateMonitorStatus(monitorId);
+	updateQueue.add(monitorId);
+
+	// Reset missed pulse counter when we receive a pulse
+	if (status === "up") {
+		missingPulseDetector.resetMonitor(monitorId);
+	}
 
 	// Emit event for real-time updates
 	eventEmitter.emit("pulse", { monitorId, status, latency, timestamp });
@@ -110,6 +139,17 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				WHERE monitor_id = '${monitorId}'
 				ORDER BY timestamp DESC
 				LIMIT 1
+			`,
+			uptime1h: `
+				WITH
+					${(1 * 60 * 60) / monitor.interval} as expected_pulses_1h,
+					(
+						SELECT countIf(status = 'up')
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 1 HOUR
+					) as actual_up_pulses
+				SELECT (actual_up_pulses * 100.0) / expected_pulses_1h as uptime
 			`,
 			uptime24h: `
 				WITH
@@ -144,19 +184,47 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 					) as actual_up_pulses
 				SELECT (actual_up_pulses * 100.0) / expected_pulses_30d as uptime
 			`,
+			uptime90d: `
+				WITH
+					${(90 * 24 * 60 * 60) / monitor.interval} as expected_pulses_90d,
+					(
+						SELECT countIf(status = 'up')
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 90 DAY
+					) as actual_up_pulses
+				SELECT (actual_up_pulses * 100.0) / expected_pulses_90d as uptime
+			`,
+			uptime365d: `
+				WITH
+					${(365 * 24 * 60 * 60) / monitor.interval} as expected_pulses_365d,
+					(
+						SELECT countIf(status = 'up')
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 365 DAY
+					) as actual_up_pulses
+				SELECT (actual_up_pulses * 100.0) / expected_pulses_365d as uptime
+			`,
 		};
 
-		const [latest, uptime24h, uptime7d, uptime30d] = await Promise.all([
+		const [latest, uptime1h, uptime24h, uptime7d, uptime30d, uptime90d, uptime365d] = await Promise.all([
 			clickhouse.query({ query: queries.latest, format: "JSONEachRow" }),
+			clickhouse.query({ query: queries.uptime1h, format: "JSONEachRow" }),
 			clickhouse.query({ query: queries.uptime24h, format: "JSONEachRow" }),
 			clickhouse.query({ query: queries.uptime7d, format: "JSONEachRow" }),
 			clickhouse.query({ query: queries.uptime30d, format: "JSONEachRow" }),
+			clickhouse.query({ query: queries.uptime90d, format: "JSONEachRow" }),
+			clickhouse.query({ query: queries.uptime365d, format: "JSONEachRow" }),
 		]);
 
 		const latestData = await latest.json<PulseRecord>();
+		const uptime1hData = await uptime1h.json<UptimeRecord>();
 		const uptime24hData = await uptime24h.json<UptimeRecord>();
 		const uptime7dData = await uptime7d.json<UptimeRecord>();
 		const uptime30dData = await uptime30d.json<UptimeRecord>();
+		const uptime90dData = await uptime90d.json<UptimeRecord>();
+		const uptime365dData = await uptime365d.json<UptimeRecord>();
 
 		if (!latestData.length) return;
 
@@ -167,9 +235,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			status: latestData[0]!.status,
 			latency: latestData[0]!.latency,
 			lastCheck: new Date(latestData[0]!.last_check),
+			uptime1h: Math.min(uptime1hData[0]?.uptime || 0, 100),
 			uptime24h: Math.min(uptime24hData[0]?.uptime || 0, 100),
 			uptime7d: Math.min(uptime7dData[0]?.uptime || 0, 100),
 			uptime30d: Math.min(uptime30dData[0]?.uptime || 0, 100),
+			uptime90d: Math.min(uptime90dData[0]?.uptime || 0, 100),
+			uptime365d: Math.min(uptime365dData[0]?.uptime || 0, 100),
 		};
 
 		statusCache.set(monitorId, statusData);

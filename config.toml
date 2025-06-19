@@ -19,6 +19,7 @@ maxRetries = 0 # Zero tolerance - mark down immediately
 toleranceFactor = 1.5 # Multiplier for expected interval (e.g., 1.5 = 50% tolerance)
 resendNotification = 3 # Resend notification every 3 down checks
 groupId = "production"
+notificationChannels = [] # Silent
 
 [[monitors]]
 id = "api-staging"
@@ -29,6 +30,7 @@ maxRetries = 0
 toleranceFactor = 1.5
 resendNotification = 3
 groupId = "staging"
+notificationChannels = []
 
 [[monitors]]
 id = "web-prod"
@@ -39,6 +41,7 @@ maxRetries = 0
 toleranceFactor = 1.5
 resendNotification = 3
 groupId = "production"
+notificationChannels = []
 
 [[monitors]]
 id = "db-prod"
@@ -49,6 +52,7 @@ maxRetries = 0
 toleranceFactor = 1.5
 resendNotification = 3
 groupId = "production"
+notificationChannels = []
 
 [[monitors]]
 id = "cdn-global"
@@ -59,6 +63,7 @@ maxRetries = 0
 toleranceFactor = 1.5
 resendNotification = 3
 groupId = "infrastructure"
+notificationChannels = []
 
 [[monitors]]
 id = "payment-gateway"
@@ -69,6 +74,7 @@ maxRetries = 0
 toleranceFactor = 1.5
 resendNotification = 3
 groupId = "third-party"
+notificationChannels = []
 
 # Group definitions
 [[groups]]
@@ -77,6 +83,7 @@ name = "Production Services"
 parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 50  # percentage - if less than 50% of children are up, group is down
+notificationChannels = []
 
 [[groups]]
 id = "staging"
@@ -84,6 +91,7 @@ name = "Staging Services"
 parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 0  # staging can be fully down without affecting overall status
+notificationChannels = []
 
 [[groups]]
 id = "infrastructure"
@@ -91,18 +99,21 @@ name = "Infrastructure"
 parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 80  # infrastructure should mostly be up
+notificationChannels = []
 
 [[groups]]
 id = "third-party"
 name = "Third Party Services"
 strategy = "percentage"
 degradedThreshold = 70
+notificationChannels = []
 
 [[groups]]
 id = "all-services"
 name = "All Services"
 strategy = "percentage"
 degradedThreshold = 75  # overall health threshold
+notificationChannels = []
 
 # Status page definitions
 [[status_pages]]

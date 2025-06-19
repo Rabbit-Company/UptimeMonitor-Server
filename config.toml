@@ -19,7 +19,7 @@ maxRetries = 0 # Zero tolerance - mark down immediately
 toleranceFactor = 1.5 # Multiplier for expected interval (e.g., 1.5 = 50% tolerance)
 resendNotification = 3 # Resend notification every 3 down checks
 groupId = "production"
-notificationChannels = [] # Silent
+notificationChannels = ["critical"]
 
 [[monitors]]
 id = "api-staging"
@@ -133,3 +133,19 @@ id = "production-only"
 name = "Production Status"
 slug = "production"
 items = ["production"]  # show only production group
+
+# Notification Channel definitions
+
+# Critical Discord Notification Channel Configuration
+[notifications.channels.critical]
+id = "critical"
+name = "Critical Production Alerts"
+description = "High-priority alerts for production outages - sent to #alerts channel"
+enabled = true
+
+# Discord webhook configuration for critical alerts
+[notifications.channels.critical.discord]
+enabled = true
+webhookUrl = ""
+username = "🚨 Critical Alert Bot"
+avatarUrl = "https://rabbit-company.com/images/logo.png"

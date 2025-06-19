@@ -4,7 +4,7 @@ import { config } from "./config";
 import type { Monitor, StatusData, StatusPage } from "./types";
 import { getMonitorHistory, initClickHouse, statusCache, storePulse, updateMonitorStatus } from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
-import { Levels, logger } from "@rabbit-company/web-middleware/logger";
+import { logger } from "@rabbit-company/web-middleware/logger";
 import { missingPulseDetector } from "./missing-pulse-detector";
 
 await initClickHouse();
@@ -124,7 +124,7 @@ app.get("/v1/monitors/:id/history", async (ctx) => {
 		return ctx.json({ error: "Monitor not found" }, 404);
 	}
 
-	if (!["24h", "7d", "30d"].includes(period)) {
+	if (!["1h", "24h", "7d", "30d", "90d", "365d"].includes(period)) {
 		return ctx.json({ error: "Invalid period" }, 401);
 	}
 	let data;

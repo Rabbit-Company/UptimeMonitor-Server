@@ -133,6 +133,10 @@ function validateGroup(group: unknown, index: number): Group {
 		errors.push(`groups[${index}].name must be a non-empty string`);
 	}
 
+	if (!isString(group.strategy) || !["any-up", "percentage", "all-up"].includes(group.strategy)) {
+		errors.push(`groups[${index}].strategy must be either 'any-up', 'percentage' or 'all-up'`);
+	}
+
 	// Validate optional parentId
 	if (group.parentId !== undefined && (!isString(group.parentId) || group.parentId.trim().length === 0)) {
 		errors.push(`groups[${index}].parentId must be a non-empty string if provided`);
@@ -152,8 +156,9 @@ function validateGroup(group: unknown, index: number): Group {
 	return {
 		id: group.id as string,
 		name: group.name as string,
-		parentId: group.parentId as string | undefined,
+		strategy: group.strategy as "any-up" | "percentage" | "all-up",
 		degradedThreshold: group.degradedThreshold as number,
+		parentId: group.parentId as string | undefined,
 	};
 }
 

@@ -293,16 +293,46 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		}
 	}
 
-	const upPercentage = totalChildren > 0 ? (totalUp / totalChildren) * 100 : 0;
+	const strategy = group.strategy || "percentage";
 	const avgLatency = latencyCount > 0 ? totalLatency / latencyCount : 0;
 
 	let status: "up" | "down" | "degraded";
-	if (upPercentage === 100) {
-		status = "up";
-	} else if (upPercentage >= group.degradedThreshold) {
-		status = "degraded";
-	} else {
-		status = "down";
+
+	switch (strategy) {
+		case "any-up":
+			// If ANY child is up, group is up
+			if (totalUp > 0) {
+				status = "up";
+			} else if (totalChildren === 0) {
+				status = "up"; // Empty group
+			} else {
+				status = "down";
+			}
+			break;
+
+		case "all-up":
+			// ALL children must be up for group to be up
+			if (totalChildren === 0) {
+				status = "up"; // Empty group
+			} else if (totalUp === totalChildren) {
+				status = "up";
+			} else {
+				status = "down";
+			}
+			break;
+
+		case "percentage":
+		default:
+			// Percentage-based logic
+			const upPercentage = totalChildren > 0 ? (totalUp / totalChildren) * 100 : 0;
+			if (upPercentage === 100) {
+				status = "up";
+			} else if (upPercentage >= group.degradedThreshold) {
+				status = "degraded";
+			} else {
+				status = "down";
+			}
+			break;
 	}
 
 	const groupStatus: StatusData = {

@@ -38,10 +38,17 @@ export interface Group {
 	id: string;
 	/** Group display name */
 	name: string;
-	/** Optional parent group ID */
-	parentId?: string;
+	/**
+	 * Strategy for determining group status based on child statuses:
+	 * - "any-up": Group is UP if at least one child is up, DOWN if all children are down
+	 * - "percentage": Group is UP if 100% children are up, DEGRADED if >= degradedThreshold% are up, DOWN otherwise
+	 * - "all-up": Group is UP only if all children are up, DOWN if any child is down
+	 */
+	strategy: "any-up" | "percentage" | "all-up";
 	/** Percentage of children that must be up to consider this group healthy (0–100) */
 	degradedThreshold: number;
+	/** Optional parent group ID */
+	parentId?: string;
 }
 
 /**

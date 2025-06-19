@@ -59,7 +59,7 @@ export async function initClickHouse(): Promise<void> {
       CREATE TABLE IF NOT EXISTS pulses (
         monitor_id String,
         status Enum('up' = 1, 'down' = 2),
-        latency Float32,
+        latency Nullable(Float32),
         timestamp DateTime64(3)
       ) ENGINE = MergeTree()
       ORDER BY (monitor_id, timestamp)
@@ -96,7 +96,7 @@ setInterval(async () => {
 	await Promise.all(monitors.map(updateMonitorStatus));
 }, BATCH_INTERVAL);
 
-export async function storePulse(monitorId: string, status: "up" | "down", latency: number): Promise<void> {
+export async function storePulse(monitorId: string, status: "up" | "down", latency: number | null): Promise<void> {
 	const timestamp = new Date();
 
 	try {

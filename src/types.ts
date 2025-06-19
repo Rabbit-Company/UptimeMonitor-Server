@@ -93,7 +93,7 @@ export interface Pulse {
 	/** Status of the monitor at the time of pulse */
 	status: "up" | "down";
 	/** Response latency in milliseconds */
-	latency: number;
+	latency: number | null;
 	/** Timestamp of when the pulse was received */
 	timestamp: Date;
 }

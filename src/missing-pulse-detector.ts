@@ -121,7 +121,7 @@ export class MissingPulseDetector {
 
 			// Only store a new "down" pulse if the monitor was previously up
 			if (currentStatus?.status !== "down") {
-				await storePulse(monitor.id, "down", 0);
+				await storePulse(monitor.id, "down", null);
 
 				// Increment consecutive down count
 				const currentDownCount = (this.consecutiveDownCounts.get(monitor.id) || 0) + 1;

@@ -30,11 +30,11 @@ app.get("/v1/health/missing-pulse-detector", (ctx) => {
 });
 
 app.get("/v1/push/:token", async (ctx) => {
-	const token = ctx.params["token"];
+	const { token } = ctx.params;
 	const query = ctx.query();
 
 	const status = query.get("status");
-	const latency = parseFloat(query.get("latency") || "");
+	let latency: number | null = query.get("latency") ? parseFloat(query.get("latency") || "") : null;
 
 	const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.token === token);
 	if (!monitor) {
@@ -45,9 +45,13 @@ app.get("/v1/push/:token", async (ctx) => {
 		return ctx.json({ error: "Invalid status" }, 401);
 	}
 
-	if (!latency || isNaN(latency) || latency <= 0) {
-		return ctx.json({ error: "Invalid latency" }, 401);
+	if (latency !== null) {
+		if (!latency || isNaN(latency) || latency <= 0) {
+			return ctx.json({ error: "Invalid latency" }, 401);
+		}
 	}
+
+	if (typeof latency === "number") latency = Math.min(latency, 600000);
 
 	await storePulse(monitor.id, status as "up" | "down", latency);
 

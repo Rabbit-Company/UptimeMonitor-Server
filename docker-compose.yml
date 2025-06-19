@@ -1,7 +1,6 @@
 services:
   uptimemonitor:
-    build:
-      context: .
+    image: rabbitcompany/uptime-monitor:latest
     container_name: uptime-monitor
     restart: unless-stopped
     ports:

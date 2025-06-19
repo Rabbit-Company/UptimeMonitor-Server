@@ -1,7 +1,8 @@
 import { statusCache, storePulse, eventEmitter } from "./clickhouse";
 import { config } from "./config";
 import { Logger } from "./logger";
-import type { MissingPulseDetectorOptions, Monitor } from "./types";
+import { NotificationManager } from "./notifications";
+import type { MissingPulseDetectorOptions, Monitor, NotificationsConfig } from "./types";
 
 export class MissingPulseDetector {
 	private checkInterval: number;
@@ -10,9 +11,12 @@ export class MissingPulseDetector {
 	private lastNotification: Map<string, number> = new Map();
 	private consecutiveDownCounts: Map<string, number> = new Map();
 	private lastNotificationDownCount: Map<string, number> = new Map();
+	private notificationManager: NotificationManager;
 
 	constructor(options: MissingPulseDetectorOptions = {}) {
 		this.checkInterval = options.checkInterval || 30000; // Check every 30 seconds globally
+
+		this.notificationManager = new NotificationManager(config.notifications || { channels: {} });
 	}
 
 	/**
@@ -177,7 +181,7 @@ export class MissingPulseDetector {
 	/**
 	 * Send notification about monitor being down
 	 */
-	private notifyMonitorDown(monitor: Monitor, downtime: number): void {
+	private async notifyMonitorDown(monitor: Monitor, downtime: number): Promise<void> {
 		const now = Date.now();
 		this.lastNotification.set(monitor.id, now);
 
@@ -190,6 +194,17 @@ export class MissingPulseDetector {
 			downtime: Math.round(downtime / 1000) + "s",
 			message: `Monitor "${monitor.name}" is DOWN - has not sent a pulse for ${Math.round(downtime / 60000)} minutes`,
 		});
+
+		if (monitor.notificationChannels && monitor.notificationChannels.length > 0) {
+			await this.notificationManager.sendNotification(monitor.notificationChannels, {
+				type: "down",
+				monitorId: monitor.id,
+				monitorName: monitor.name,
+				downtime,
+				timestamp: new Date(),
+				sourceType: "monitor",
+			});
+		}
 
 		// Emit event for notification system integration
 		eventEmitter.emit("monitor-notification", {
@@ -204,7 +219,7 @@ export class MissingPulseDetector {
 	/**
 	 * Send notification about monitor still being down
 	 */
-	private notifyMonitorStillDown(monitor: Monitor, consecutiveDownCount: number): void {
+	private async notifyMonitorStillDown(monitor: Monitor, consecutiveDownCount: number): Promise<void> {
 		const now = Date.now();
 		this.lastNotification.set(monitor.id, now);
 		this.lastNotificationDownCount.set(monitor.id, consecutiveDownCount);
@@ -215,6 +230,17 @@ export class MissingPulseDetector {
 			consecutiveDownCount,
 			message: `Monitor "${monitor.name}" is still DOWN - ${consecutiveDownCount} consecutive down checks`,
 		});
+
+		if (monitor.notificationChannels && monitor.notificationChannels.length > 0) {
+			await this.notificationManager.sendNotification(monitor.notificationChannels, {
+				type: "still-down",
+				monitorId: monitor.id,
+				monitorName: monitor.name,
+				consecutiveDownCount,
+				timestamp: new Date(),
+				sourceType: "monitor",
+			});
+		}
 
 		// Emit event for notification system integration
 		eventEmitter.emit("monitor-notification", {
@@ -276,11 +302,24 @@ export class MissingPulseDetector {
 		this.lastNotification.delete(monitorId);
 
 		// Reset consecutive down count when monitor comes back up
-		if (this.consecutiveDownCounts.get(monitorId)) {
+		const previousDownCount = this.consecutiveDownCounts.get(monitorId);
+		if (previousDownCount) {
 			Logger.info("Monitor recovered", {
 				monitorId,
-				previousConsecutiveDownCount: this.consecutiveDownCounts.get(monitorId),
+				previousConsecutiveDownCount: previousDownCount,
 			});
+
+			const monitor = config.monitors.find((m) => m.id === monitorId);
+			if (monitor && monitor.notificationChannels && monitor.notificationChannels.length > 0) {
+				this.notificationManager.sendNotification(monitor.notificationChannels, {
+					type: "recovered",
+					monitorId,
+					monitorName: monitor.name,
+					previousConsecutiveDownCount: previousDownCount,
+					timestamp: new Date(),
+					sourceType: "monitor",
+				});
+			}
 
 			// Emit recovery event
 			eventEmitter.emit("monitor-recovered", {
@@ -292,6 +331,13 @@ export class MissingPulseDetector {
 
 		this.consecutiveDownCounts.delete(monitorId);
 		this.lastNotificationDownCount.delete(monitorId);
+	}
+
+	/**
+	 * Update notification configuration
+	 */
+	updateNotificationConfig(notificationConfig: NotificationsConfig): void {
+		this.notificationManager.updateConfig(notificationConfig);
 	}
 }
 

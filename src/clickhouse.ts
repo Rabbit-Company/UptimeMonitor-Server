@@ -4,6 +4,7 @@ import { Logger } from "./logger";
 import { EventEmitter } from "events";
 import type { Group, HistoryRecord, IntervalConfig, Monitor, PulseRecord, StatusData, UptimeRecord } from "./types";
 import { missingPulseDetector } from "./missing-pulse-detector";
+import { NotificationManager } from "./notifications";
 
 export const statusCache = new Map<string, StatusData>();
 export const eventEmitter = new EventEmitter();
@@ -295,6 +296,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 
 	const strategy = group.strategy || "percentage";
 	const avgLatency = latencyCount > 0 ? totalLatency / latencyCount : 0;
+	const upPercentage = totalChildren > 0 ? (totalUp / totalChildren) * 100 : 0;
 
 	let status: "up" | "down" | "degraded";
 
@@ -324,7 +326,6 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		case "percentage":
 		default:
 			// Percentage-based logic
-			const upPercentage = totalChildren > 0 ? (totalUp / totalChildren) * 100 : 0;
 			if (upPercentage === 100) {
 				status = "up";
 			} else if (upPercentage >= group.degradedThreshold) {
@@ -335,6 +336,8 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 			break;
 	}
 
+	const previousStatus = statusCache.get(groupId)?.status;
+
 	const groupStatus: StatusData = {
 		id: groupId,
 		type: "group",
@@ -344,6 +347,40 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	};
 
 	statusCache.set(groupId, groupStatus);
+
+	if (previousStatus && previousStatus !== status && group.notificationChannels && group.notificationChannels.length > 0) {
+		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
+
+		if (status === "down" || status === "degraded") {
+			await notificationManager.sendNotification(group.notificationChannels, {
+				type: "down",
+				monitorId: groupId,
+				monitorName: group.name,
+				timestamp: new Date(),
+				sourceType: "group",
+				groupInfo: {
+					strategy: group.strategy,
+					childrenUp: totalUp,
+					totalChildren,
+					upPercentage,
+				},
+			});
+		} else if (status === "up" && (previousStatus === "down" || previousStatus === "degraded")) {
+			await notificationManager.sendNotification(group.notificationChannels, {
+				type: "recovered",
+				monitorId: groupId,
+				monitorName: group.name,
+				timestamp: new Date(),
+				sourceType: "group",
+				groupInfo: {
+					strategy: group.strategy,
+					childrenUp: totalUp,
+					totalChildren,
+					upPercentage,
+				},
+			});
+		}
+	}
 
 	// Update parent group if exists
 	if (group.parentId) {

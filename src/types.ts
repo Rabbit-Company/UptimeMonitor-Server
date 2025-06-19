@@ -28,6 +28,8 @@ export interface Monitor {
 	resendNotification: number;
 	/** Optional group ID this monitor belongs to */
 	groupId?: string;
+	/** Notification channel IDs to use for this monitor */
+	notificationChannels?: string[];
 }
 
 /**
@@ -49,6 +51,8 @@ export interface Group {
 	degradedThreshold: number;
 	/** Optional parent group ID */
 	parentId?: string;
+	/** Notification channel IDs to use for this group */
+	notificationChannels?: string[];
 }
 
 /**
@@ -89,6 +93,7 @@ export interface Config {
 	groups: Group[];
 	/** List of status pages */
 	statusPages: StatusPage[];
+	notifications?: NotificationsConfig;
 }
 
 /**
@@ -209,4 +214,90 @@ export interface HistoryRecord {
 export interface MissingPulseDetectorOptions {
 	/** Interval to check for missing pulses (in milliseconds) */
 	checkInterval?: number;
+}
+
+export interface EmailConfig {
+	enabled: boolean;
+	smtp: {
+		host: string;
+		port: number;
+		secure: boolean; // true for 465, false for other ports
+		auth: {
+			user: string;
+			pass: string;
+		};
+	};
+	from: string;
+	to: string[];
+	templates: {
+		subject: {
+			down: string;
+			stillDown: string;
+			recovered: string;
+		};
+	};
+}
+
+export interface DiscordConfig {
+	enabled: boolean;
+	webhookUrl: string;
+	username?: string;
+	avatarUrl?: string;
+	mentions?: {
+		users?: string[]; // Discord user IDs
+		roles?: string[]; // Discord role IDs
+		everyone?: boolean;
+	};
+}
+
+export interface WebhookConfig {
+	enabled: boolean;
+	url: string;
+	method?: "POST" | "PUT" | "PATCH";
+	headers?: Record<string, string>;
+	template?: string; // JSON template for custom payloads
+}
+
+export interface NotificationsConfig {
+	/** Collection of notification channels indexed by their ID */
+	channels: Record<string, NotificationChannel>;
+}
+
+// Notification channel definition with unique ID
+export interface NotificationChannel {
+	/** Unique identifier for this notification channel */
+	id: string;
+	/** Human-readable name for this channel */
+	name: string;
+	/** Description of what this channel is used for */
+	description?: string;
+	/** Whether this channel is enabled globally */
+	enabled: boolean;
+	/** Email configuration for this channel */
+	email?: EmailConfig;
+	/** Discord configuration for this channel */
+	discord?: DiscordConfig;
+}
+
+export interface NotificationEvent {
+	type: "down" | "still-down" | "recovered";
+	monitorId: string;
+	monitorName: string;
+	timestamp: Date;
+	downtime?: number;
+	consecutiveDownCount?: number;
+	previousConsecutiveDownCount?: number;
+	/** The entity that triggered this notification (monitor or group) */
+	sourceType: "monitor" | "group";
+	/** Additional context for groups */
+	groupInfo?: {
+		strategy: "any-up" | "percentage" | "all-up";
+		childrenUp: number;
+		totalChildren: number;
+		upPercentage: number;
+	};
+}
+
+export interface NotificationProvider {
+	sendNotification(event: NotificationEvent): Promise<void>;
 }

@@ -5,6 +5,7 @@ import type { Monitor, StatusData, StatusPage } from "./types";
 import { getMonitorHistory, initClickHouse, statusCache, storePulse, updateMonitorStatus } from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
 import { logger } from "@rabbit-company/web-middleware/logger";
+import { cors } from "@rabbit-company/web-middleware/cors";
 import { missingPulseDetector } from "./missing-pulse-detector";
 
 await initClickHouse();
@@ -19,6 +20,8 @@ missingPulseDetector.start();
 const app = new Web();
 
 app.use(logger({ logger: Logger, preset: "minimal", logResponses: false }));
+
+app.use(cors());
 
 app.get("/health", (ctx) => {
 	return ctx.json({ status: "ok", timestamp: new Date().toISOString() });

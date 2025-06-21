@@ -559,18 +559,18 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 					-- Get all time slots in the period
 					time_slots AS (
 						SELECT
-							number AS slot_number,
+							toUInt64(number) AS slot_number,
 							period_start + (number * check_interval) AS slot_start,
 							period_start + ((number + 1) * check_interval) AS slot_end
 						FROM numbers(
-							toUInt32((period_end - period_start) / check_interval)
+							toUInt32(greatest(1, (period_end - period_start) / check_interval))
 						)
 					),
 
 					-- Get pulses and determine which slot they belong to
 					pulses_in_slots AS (
 						SELECT
-							toUInt32((timestamp - period_start) / check_interval) AS slot_number,
+							toUInt64(greatest(0, floor((timestamp - period_start) / check_interval))) AS slot_number,
 							monitor_id,
 							status,
 							timestamp
@@ -578,13 +578,14 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
 							AND timestamp >= period_start - INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
 							AND timestamp <= period_end + INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
+							AND timestamp >= period_start  -- Ensure no negative slot numbers
 					),
 
 					-- Account for tolerance by also including adjacent slots
 					expanded_pulses AS (
 						SELECT DISTINCT
 							slot_number AS original_slot,
-							slot_number + offset AS effective_slot,
+							toUInt64(greatest(0, toInt64(slot_number) + offset)) AS effective_slot,
 							monitor_id,
 							status
 						FROM pulses_in_slots
@@ -592,8 +593,8 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 							SELECT -1 AS offset UNION ALL SELECT 0 UNION ALL SELECT 1
 						) offsets
 						WHERE status = 'up'
-							AND slot_number + offset >= 0
-							AND slot_number + offset < (SELECT COUNT(*) FROM time_slots)
+							AND toInt64(slot_number) + offset >= 0
+							AND toUInt64(toInt64(slot_number) + offset) < (SELECT COUNT(*) FROM time_slots)
 					),
 
 					-- Count slots with at least one up monitor
@@ -603,7 +604,10 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 					)
 
 				SELECT
-					(up_slots * 100.0) / (SELECT COUNT(*) FROM time_slots) AS uptime
+					CASE
+						WHEN (SELECT COUNT(*) FROM time_slots) = 0 THEN 100
+						ELSE (up_slots * 100.0) / (SELECT COUNT(*) FROM time_slots)
+					END AS uptime
 				FROM slots_with_up
 			`;
 			break;
@@ -621,18 +625,18 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 					-- Get all time slots in the period
 					time_slots AS (
 						SELECT
-							number AS slot_number,
+							toUInt64(number) AS slot_number,
 							period_start + (number * check_interval) AS slot_start,
 							period_start + ((number + 1) * check_interval) AS slot_end
 						FROM numbers(
-							toUInt32((period_end - period_start) / check_interval)
+							toUInt32(greatest(1, (period_end - period_start) / check_interval))
 						)
 					),
 
 					-- Get pulses and determine which slot they belong to
 					pulses_in_slots AS (
 						SELECT
-							toUInt32((timestamp - period_start) / check_interval) AS slot_number,
+							toUInt64(greatest(0, floor((timestamp - period_start) / check_interval))) AS slot_number,
 							monitor_id,
 							status,
 							timestamp
@@ -640,13 +644,14 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
 							AND timestamp >= period_start - INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
 							AND timestamp <= period_end + INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
+							AND timestamp >= period_start  -- Ensure no negative slot numbers
 					),
 
 					-- Account for tolerance by also including adjacent slots
 					expanded_pulses AS (
 						SELECT DISTINCT
 							slot_number AS original_slot,
-							slot_number + offset AS effective_slot,
+							toUInt64(greatest(0, toInt64(slot_number) + offset)) AS effective_slot,
 							monitor_id,
 							status
 						FROM pulses_in_slots
@@ -654,8 +659,8 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 							SELECT -1 AS offset UNION ALL SELECT 0 UNION ALL SELECT 1
 						) offsets
 						WHERE status = 'up'
-							AND slot_number + offset >= 0
-							AND slot_number + offset < (SELECT COUNT(*) FROM time_slots)
+							AND toInt64(slot_number) + offset >= 0
+							AND toUInt64(toInt64(slot_number) + offset) < (SELECT COUNT(*) FROM time_slots)
 					),
 
 					-- Count monitors up per slot
@@ -677,8 +682,10 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 					)
 
 				SELECT
-					(countIf(monitors_up = total_monitors) * 100.0) /
-					COUNT(*) AS uptime
+					CASE
+						WHEN COUNT(*) = 0 THEN 100
+						ELSE (countIf(monitors_up = total_monitors) * 100.0) / COUNT(*)
+					END AS uptime
 				FROM all_slots_status
 			`;
 			break;

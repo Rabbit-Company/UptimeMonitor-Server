@@ -140,8 +140,19 @@ function validateGroup(group: unknown, index: number): Group {
 		errors.push(`groups[${index}].name must be a non-empty string`);
 	}
 
+	// Validate strategy
 	if (!isString(group.strategy) || !["any-up", "percentage", "all-up"].includes(group.strategy)) {
 		errors.push(`groups[${index}].strategy must be either 'any-up', 'percentage' or 'all-up'`);
+	}
+
+	// Validate interval
+	if (!isNumber(group.interval) || group.interval <= 0) {
+		errors.push(`group[${index}].interval must be a positive number`);
+	}
+
+	// Validate toleranceFactor
+	if (!isNumber(group.toleranceFactor) || group.toleranceFactor <= 0) {
+		errors.push(`group[${index}].toleranceFactor must be a positive number`);
 	}
 
 	// Validate optional parentId
@@ -167,6 +178,8 @@ function validateGroup(group: unknown, index: number): Group {
 		name: group.name as string,
 		strategy: group.strategy as "any-up" | "percentage" | "all-up",
 		degradedThreshold: group.degradedThreshold as number,
+		interval: group.interval as number,
+		toleranceFactor: group.toleranceFactor as number,
 		parentId: group.parentId as string | undefined,
 		notificationChannels,
 	};

@@ -133,6 +133,11 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
 		if (!monitor) return;
 
+		// Account for tolerance in expected pulses calculation
+		// If toleranceFactor is 1.5, we allow pulses to be up to 50% late
+		// So we only expect 1/1.5 = 66.7% of the theoretical pulse count
+		const toleranceFactor = monitor.toleranceFactor;
+
 		const queries = {
 			latest: `
 				SELECT status, latency, timestamp as last_check
@@ -143,69 +148,159 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			`,
 			uptime1h: `
 				WITH
-					${(1 * 60 * 60) / monitor.interval} as expected_pulses_1h,
+					${3600 / monitor.interval} as expected_pulses_raw,
+					${toleranceFactor} as tolerance,
+					expected_pulses_raw / tolerance as expected_pulses_min,
 					(
 						SELECT countIf(status = 'up')
 						FROM pulses
 						WHERE monitor_id = '${monitorId}'
 							AND timestamp > now() - INTERVAL 1 HOUR
-					) as actual_up_pulses
-				SELECT (actual_up_pulses * 100.0) / expected_pulses_1h as uptime
+					) as actual_up_pulses,
+					(
+						SELECT count(*)
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 1 HOUR
+					) as total_pulses
+				SELECT
+					CASE
+						WHEN total_pulses = 0 THEN 0
+						WHEN total_pulses < expected_pulses_min THEN
+							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
+						ELSE
+							(actual_up_pulses * 100.0) / total_pulses
+					END as uptime
 			`,
 			uptime24h: `
 				WITH
-					${(24 * 60 * 60) / monitor.interval} as expected_pulses_24h,
+					${86400 / monitor.interval} as expected_pulses_raw,
+					${toleranceFactor} as tolerance,
+					expected_pulses_raw / tolerance as expected_pulses_min,
 					(
 						SELECT countIf(status = 'up')
 						FROM pulses
 						WHERE monitor_id = '${monitorId}'
 							AND timestamp > now() - INTERVAL 24 HOUR
-					) as actual_up_pulses
-				SELECT (actual_up_pulses * 100.0) / expected_pulses_24h as uptime
+					) as actual_up_pulses,
+					(
+						SELECT count(*)
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 24 HOUR
+					) as total_pulses
+				SELECT
+					CASE
+						WHEN total_pulses = 0 THEN 0
+						WHEN total_pulses < expected_pulses_min THEN
+							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
+						ELSE
+							(actual_up_pulses * 100.0) / total_pulses
+					END as uptime
 			`,
 			uptime7d: `
 				WITH
-					${(7 * 24 * 60 * 60) / monitor.interval} as expected_pulses_7d,
+					${604800 / monitor.interval} as expected_pulses_raw,
+					${toleranceFactor} as tolerance,
+					expected_pulses_raw / tolerance as expected_pulses_min,
 					(
 						SELECT countIf(status = 'up')
 						FROM pulses
 						WHERE monitor_id = '${monitorId}'
 							AND timestamp > now() - INTERVAL 7 DAY
-					) as actual_up_pulses
-				SELECT (actual_up_pulses * 100.0) / expected_pulses_7d as uptime
+					) as actual_up_pulses,
+					(
+						SELECT count(*)
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 7 DAY
+					) as total_pulses
+				SELECT
+					CASE
+						WHEN total_pulses = 0 THEN 0
+						WHEN total_pulses < expected_pulses_min THEN
+							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
+						ELSE
+							(actual_up_pulses * 100.0) / total_pulses
+					END as uptime
 			`,
 			uptime30d: `
 				WITH
-					${(30 * 24 * 60 * 60) / monitor.interval} as expected_pulses_30d,
+					${2592000 / monitor.interval} as expected_pulses_raw,
+					${toleranceFactor} as tolerance,
+					expected_pulses_raw / tolerance as expected_pulses_min,
 					(
 						SELECT countIf(status = 'up')
 						FROM pulses
 						WHERE monitor_id = '${monitorId}'
 							AND timestamp > now() - INTERVAL 30 DAY
-					) as actual_up_pulses
-				SELECT (actual_up_pulses * 100.0) / expected_pulses_30d as uptime
+					) as actual_up_pulses,
+					(
+						SELECT count(*)
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 30 DAY
+					) as total_pulses
+				SELECT
+					CASE
+						WHEN total_pulses = 0 THEN 0
+						WHEN total_pulses < expected_pulses_min THEN
+							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
+						ELSE
+							(actual_up_pulses * 100.0) / total_pulses
+					END as uptime
 			`,
 			uptime90d: `
 				WITH
-					${(90 * 24 * 60 * 60) / monitor.interval} as expected_pulses_90d,
+					${7776000 / monitor.interval} as expected_pulses_raw,
+					${toleranceFactor} as tolerance,
+					expected_pulses_raw / tolerance as expected_pulses_min,
 					(
 						SELECT countIf(status = 'up')
 						FROM pulses
 						WHERE monitor_id = '${monitorId}'
 							AND timestamp > now() - INTERVAL 90 DAY
-					) as actual_up_pulses
-				SELECT (actual_up_pulses * 100.0) / expected_pulses_90d as uptime
+					) as actual_up_pulses,
+					(
+						SELECT count(*)
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 90 DAY
+					) as total_pulses
+				SELECT
+					CASE
+						WHEN total_pulses = 0 THEN 0
+						WHEN total_pulses < expected_pulses_min THEN
+							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
+						ELSE
+							(actual_up_pulses * 100.0) / total_pulses
+					END as uptime
 			`,
 			uptime365d: `
 				WITH
-					${(365 * 24 * 60 * 60) / monitor.interval} as expected_pulses_365d,
+					${31536000 / monitor.interval} as expected_pulses_raw,
+					${toleranceFactor} as tolerance,
+					expected_pulses_raw / tolerance as expected_pulses_min,
 					(
 						SELECT countIf(status = 'up')
 						FROM pulses
 						WHERE monitor_id = '${monitorId}'
 							AND timestamp > now() - INTERVAL 365 DAY
-					) as actual_up_pulses
-				SELECT (actual_up_pulses * 100.0) / expected_pulses_365d as uptime
+					) as actual_up_pulses,
+					(
+						SELECT count(*)
+						FROM pulses
+						WHERE monitor_id = '${monitorId}'
+							AND timestamp > now() - INTERVAL 365 DAY
+					) as total_pulses
+				SELECT
+					CASE
+						WHEN total_pulses = 0 THEN 0
+						WHEN total_pulses < expected_pulses_min THEN
+							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
+						ELSE
+							(actual_up_pulses * 100.0) / total_pulses
+					END as uptime
 			`,
 		};
 
@@ -227,7 +322,24 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		const uptime90dData = await uptime90d.json<UptimeRecord>();
 		const uptime365dData = await uptime365d.json<UptimeRecord>();
 
-		if (!latestData.length) return;
+		if (!latestData.length) {
+			const statusData: StatusData = {
+				id: monitorId,
+				type: "monitor",
+				name: monitor.name,
+				status: "down",
+				latency: 0,
+				lastCheck: new Date(),
+				uptime1h: 0,
+				uptime24h: 0,
+				uptime7d: 0,
+				uptime30d: 0,
+				uptime90d: 0,
+				uptime365d: 0,
+			};
+			statusCache.set(monitorId, statusData);
+			return;
+		}
 
 		const statusData: StatusData = {
 			id: monitorId,
@@ -268,6 +380,15 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	let totalLatency = 0;
 	let latencyCount = 0;
 
+	const getAllMonitorIds = (gId: string): string[] => {
+		const monitors = config.monitors.filter((m) => m.groupId === gId).map((m) => m.id);
+		const subgroups = config.groups.filter((g) => g.parentId === gId);
+		const subgroupMonitors = subgroups.flatMap((sg) => getAllMonitorIds(sg.id));
+		return [...monitors, ...subgroupMonitors];
+	};
+
+	const allMonitorIds = getAllMonitorIds(groupId);
+
 	// Process monitors
 	for (const monitor of childMonitors) {
 		totalChildren++;
@@ -297,6 +418,15 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	const strategy = group.strategy || "percentage";
 	const avgLatency = latencyCount > 0 ? totalLatency / latencyCount : 0;
 	const upPercentage = totalChildren > 0 ? (totalUp / totalChildren) * 100 : 0;
+
+	const [uptime1h, uptime24h, uptime7d, uptime30d, uptime90d, uptime365d] = await Promise.all([
+		calculateGroupUptime(group, allMonitorIds, "1h"),
+		calculateGroupUptime(group, allMonitorIds, "24h"),
+		calculateGroupUptime(group, allMonitorIds, "7d"),
+		calculateGroupUptime(group, allMonitorIds, "30d"),
+		calculateGroupUptime(group, allMonitorIds, "90d"),
+		calculateGroupUptime(group, allMonitorIds, "365d"),
+	]);
 
 	let status: "up" | "down" | "degraded";
 
@@ -344,6 +474,13 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		name: group.name,
 		status,
 		latency: avgLatency,
+		lastCheck: new Date(),
+		uptime1h: Math.min(uptime1h, 100),
+		uptime24h: Math.min(uptime24h, 100),
+		uptime7d: Math.min(uptime7d, 100),
+		uptime30d: Math.min(uptime30d, 100),
+		uptime90d: Math.min(uptime90d, 100),
+		uptime365d: Math.min(uptime365d, 100),
 	};
 
 	statusCache.set(groupId, groupStatus);
@@ -385,6 +522,199 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	// Update parent group if exists
 	if (group.parentId) {
 		await updateGroupStatus(group.parentId);
+	}
+}
+
+export async function calculateGroupUptime(group: Group, childMonitorIds: string[], period: string): Promise<number> {
+	if (childMonitorIds.length === 0) return 100; // Empty group is considered 100% up
+
+	const periodMap: Record<string, string> = {
+		"1h": "1 HOUR",
+		"24h": "24 HOUR",
+		"7d": "7 DAY",
+		"30d": "30 DAY",
+		"90d": "90 DAY",
+		"365d": "365 DAY",
+	};
+
+	const clickhousePeriod = periodMap[period];
+	if (!clickhousePeriod) return 0;
+
+	const intervalSeconds = group.interval;
+	const toleranceFactor = group.toleranceFactor;
+	const strategy = group.strategy;
+
+	let query: string;
+
+	switch (strategy) {
+		case "any-up":
+			// For any-up: at least one monitor must be up in each time interval
+			query = `
+				WITH
+					${intervalSeconds} AS check_interval,
+					${toleranceFactor} AS tolerance,
+					toStartOfInterval(now() - INTERVAL ${clickhousePeriod}, INTERVAL ${intervalSeconds} SECOND) AS period_start,
+					now() AS period_end,
+
+					-- Get all time slots in the period
+					time_slots AS (
+						SELECT
+							period_start + (number * check_interval) AS slot_start,
+							period_start + ((number + 1) * check_interval) AS slot_end
+						FROM numbers(
+							toUInt32((period_end - period_start) / check_interval)
+						)
+					),
+
+					-- Get pulses with tolerance window
+					pulses_with_tolerance AS (
+						SELECT
+							monitor_id,
+							status,
+							timestamp,
+							timestamp - (check_interval * tolerance) AS tolerance_start,
+							timestamp + (check_interval * tolerance) AS tolerance_end
+						FROM pulses
+						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
+							AND timestamp >= period_start - INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
+							AND timestamp <= period_end + INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
+					),
+
+					-- Check which slots have at least one monitor up
+					slots_with_up_monitors AS (
+						SELECT DISTINCT
+							ts.slot_start,
+							ts.slot_end
+						FROM time_slots ts
+						INNER JOIN pulses_with_tolerance p ON
+							p.tolerance_start <= ts.slot_end
+							AND p.tolerance_end >= ts.slot_start
+							AND p.status = 'up'
+					)
+
+				SELECT
+					(COUNT(DISTINCT slot_start) * 100.0) /
+					(SELECT COUNT(*) FROM time_slots) AS uptime
+				FROM slots_with_up_monitors
+			`;
+			break;
+
+		case "all-up":
+			// For all-up: all monitors must be up in each time interval
+			query = `
+				WITH
+					${intervalSeconds} AS check_interval,
+					${toleranceFactor} AS tolerance,
+					${childMonitorIds.length} AS total_monitors,
+					toStartOfInterval(now() - INTERVAL ${clickhousePeriod}, INTERVAL ${intervalSeconds} SECOND) AS period_start,
+					now() AS period_end,
+
+					-- Get all time slots in the period
+					time_slots AS (
+						SELECT
+							period_start + (number * check_interval) AS slot_start,
+							period_start + ((number + 1) * check_interval) AS slot_end
+						FROM numbers(
+							toUInt32((period_end - period_start) / check_interval)
+						)
+					),
+
+					-- Get pulses with tolerance window
+					pulses_with_tolerance AS (
+						SELECT
+							monitor_id,
+							status,
+							timestamp,
+							timestamp - (check_interval * tolerance) AS tolerance_start,
+							timestamp + (check_interval * tolerance) AS tolerance_end
+						FROM pulses
+						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
+							AND timestamp >= period_start - INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
+							AND timestamp <= period_end + INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
+					),
+
+					-- Count up monitors per slot
+					monitors_up_per_slot AS (
+						SELECT
+							ts.slot_start,
+							ts.slot_end,
+							COUNT(DISTINCT p.monitor_id) AS monitors_up
+						FROM time_slots ts
+						LEFT JOIN pulses_with_tolerance p ON
+							p.tolerance_start <= ts.slot_end
+							AND p.tolerance_end >= ts.slot_start
+							AND p.status = 'up'
+						GROUP BY ts.slot_start, ts.slot_end
+					)
+
+				SELECT
+					(countIf(monitors_up = total_monitors) * 100.0) /
+					COUNT(*) AS uptime
+				FROM monitors_up_per_slot
+			`;
+			break;
+
+		case "percentage":
+		default:
+			// For percentage: calculate weighted average of individual monitor uptimes
+			// This considers each monitor's own interval for more accurate calculation
+			const monitorConfigs = childMonitorIds.map((id) => {
+				const monitor = config.monitors.find((m) => m.id === id);
+				const monitorInterval = monitor?.interval || 30;
+				const periodSeconds = periodMap[period] ? { "1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000, "90d": 7776000, "365d": 31536000 }[period] : 86400;
+				const expectedPulses = Math.floor(periodSeconds! / monitorInterval);
+				return { id, expectedPulses };
+			});
+
+			const monitorConfigQuery = monitorConfigs
+				.map(({ id, expectedPulses }) => `SELECT '${id}' as monitor_id, ${expectedPulses} as expected_pulses`)
+				.join(" UNION ALL ");
+
+			query = `
+				WITH
+					monitor_configs AS (
+						${monitorConfigQuery}
+					),
+					monitor_uptimes AS (
+						SELECT
+							mc.monitor_id,
+							mc.expected_pulses,
+							COUNT(p.status) as actual_pulses,
+							countIf(p.status = 'up') as up_pulses,
+							CASE
+								WHEN COUNT(p.status) = 0 THEN 0
+								WHEN COUNT(p.status) < mc.expected_pulses THEN
+									(countIf(p.status = 'up') * 100.0) / mc.expected_pulses
+								ELSE
+									(countIf(p.status = 'up') * 100.0) / COUNT(p.status)
+							END as uptime
+						FROM monitor_configs mc
+						LEFT JOIN pulses p ON p.monitor_id = mc.monitor_id
+							AND p.timestamp > now() - INTERVAL ${clickhousePeriod}
+						GROUP BY mc.monitor_id, mc.expected_pulses
+					)
+				SELECT
+					CASE
+						WHEN SUM(expected_pulses) = 0 THEN 0
+						ELSE SUM(uptime * expected_pulses) / SUM(expected_pulses)
+					END AS uptime
+				FROM monitor_uptimes
+			`;
+			break;
+	}
+
+	try {
+		const result = await clickhouse.query({ query, format: "JSONEachRow" });
+		const data = await result.json<{ uptime: number }>();
+		return data[0]?.uptime || 0;
+	} catch (err: any) {
+		Logger.error("Failed to calculate group uptime", {
+			groupId: group.id,
+			period,
+			strategy,
+			"error.message": err?.message,
+		});
+		return 0;
 	}
 }
 

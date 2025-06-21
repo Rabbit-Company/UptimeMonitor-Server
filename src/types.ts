@@ -49,6 +49,10 @@ export interface Group {
 	strategy: "any-up" | "percentage" | "all-up";
 	/** Percentage of children that must be up to consider this group healthy (0–100) */
 	degradedThreshold: number;
+	/** Uses this interval when calculating uptime of a group */
+	interval: number;
+	/** Multiplier for expected interval (e.g., 1.5 = 50% tolerance) */
+	toleranceFactor: number;
 	/** Optional parent group ID */
 	parentId?: string;
 	/** Notification channel IDs to use for this group */

@@ -83,6 +83,8 @@ name = "Production Services"
 parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 50  # percentage - if less than 50% of children are up, group is down
+interval = 60
+toleranceFactor = 1.5
 notificationChannels = []
 
 [[groups]]
@@ -91,6 +93,8 @@ name = "Staging Services"
 parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 0  # staging can be fully down without affecting overall status
+interval = 60
+toleranceFactor = 1.5
 notificationChannels = []
 
 [[groups]]
@@ -99,6 +103,8 @@ name = "Infrastructure"
 parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 80  # infrastructure should mostly be up
+interval = 60
+toleranceFactor = 1.5
 notificationChannels = []
 
 [[groups]]
@@ -106,6 +112,8 @@ id = "third-party"
 name = "Third Party Services"
 strategy = "percentage"
 degradedThreshold = 70
+interval = 60
+toleranceFactor = 1.5
 notificationChannels = []
 
 [[groups]]
@@ -113,6 +121,8 @@ id = "all-services"
 name = "All Services"
 strategy = "percentage"
 degradedThreshold = 75  # overall health threshold
+interval = 60
+toleranceFactor = 1.5
 notificationChannels = []
 
 # Status page definitions

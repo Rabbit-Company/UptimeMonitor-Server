@@ -143,19 +143,19 @@ export interface StatusData {
 	/** Latest measured latency */
 	latency: number;
 	/** Timestamp of the last check */
-	lastCheck?: Date;
+	lastCheck: Date;
 	/** 1-hour uptime percentage */
-	uptime1h?: number;
+	uptime1h: number;
 	/** 24-hour uptime percentage */
-	uptime24h?: number;
+	uptime24h: number;
 	/** 7-day uptime percentage */
-	uptime7d?: number;
+	uptime7d: number;
 	/** 30-day uptime percentage */
-	uptime30d?: number;
+	uptime30d: number;
 	/** 90-day uptime percentage */
-	uptime90d?: number;
+	uptime90d: number;
 	/** 365-day uptime percentage */
-	uptime365d?: number;
+	uptime365d: number;
 	/** Children status data (for groups) */
 	children?: StatusData[];
 }

@@ -559,6 +559,7 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 					-- Get all time slots in the period
 					time_slots AS (
 						SELECT
+							number AS slot_number,
 							period_start + (number * check_interval) AS slot_start,
 							period_start + ((number + 1) * check_interval) AS slot_end
 						FROM numbers(
@@ -566,36 +567,44 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 						)
 					),
 
-					-- Get pulses with tolerance window
-					pulses_with_tolerance AS (
+					-- Get pulses and determine which slot they belong to
+					pulses_in_slots AS (
 						SELECT
+							toUInt32((timestamp - period_start) / check_interval) AS slot_number,
 							monitor_id,
 							status,
-							timestamp,
-							timestamp - (check_interval * tolerance) AS tolerance_start,
-							timestamp + (check_interval * tolerance) AS tolerance_end
+							timestamp
 						FROM pulses
 						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
 							AND timestamp >= period_start - INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
 							AND timestamp <= period_end + INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
 					),
 
-					-- Check which slots have at least one monitor up
-					slots_with_up_monitors AS (
+					-- Account for tolerance by also including adjacent slots
+					expanded_pulses AS (
 						SELECT DISTINCT
-							ts.slot_start,
-							ts.slot_end
-						FROM time_slots ts
-						INNER JOIN pulses_with_tolerance p ON
-							p.tolerance_start <= ts.slot_end
-							AND p.tolerance_end >= ts.slot_start
-							AND p.status = 'up'
+							slot_number AS original_slot,
+							slot_number + offset AS effective_slot,
+							monitor_id,
+							status
+						FROM pulses_in_slots
+						CROSS JOIN (
+							SELECT -1 AS offset UNION ALL SELECT 0 UNION ALL SELECT 1
+						) offsets
+						WHERE status = 'up'
+							AND slot_number + offset >= 0
+							AND slot_number + offset < (SELECT COUNT(*) FROM time_slots)
+					),
+
+					-- Count slots with at least one up monitor
+					slots_with_up AS (
+						SELECT COUNT(DISTINCT effective_slot) AS up_slots
+						FROM expanded_pulses
 					)
 
 				SELECT
-					(COUNT(DISTINCT slot_start) * 100.0) /
-					(SELECT COUNT(*) FROM time_slots) AS uptime
-				FROM slots_with_up_monitors
+					(up_slots * 100.0) / (SELECT COUNT(*) FROM time_slots) AS uptime
+				FROM slots_with_up
 			`;
 			break;
 
@@ -612,6 +621,7 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 					-- Get all time slots in the period
 					time_slots AS (
 						SELECT
+							number AS slot_number,
 							period_start + (number * check_interval) AS slot_start,
 							period_start + ((number + 1) * check_interval) AS slot_end
 						FROM numbers(
@@ -619,38 +629,57 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 						)
 					),
 
-					-- Get pulses with tolerance window
-					pulses_with_tolerance AS (
+					-- Get pulses and determine which slot they belong to
+					pulses_in_slots AS (
 						SELECT
+							toUInt32((timestamp - period_start) / check_interval) AS slot_number,
 							monitor_id,
 							status,
-							timestamp,
-							timestamp - (check_interval * tolerance) AS tolerance_start,
-							timestamp + (check_interval * tolerance) AS tolerance_end
+							timestamp
 						FROM pulses
 						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
 							AND timestamp >= period_start - INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
 							AND timestamp <= period_end + INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
 					),
 
-					-- Count up monitors per slot
-					monitors_up_per_slot AS (
+					-- Account for tolerance by also including adjacent slots
+					expanded_pulses AS (
+						SELECT DISTINCT
+							slot_number AS original_slot,
+							slot_number + offset AS effective_slot,
+							monitor_id,
+							status
+						FROM pulses_in_slots
+						CROSS JOIN (
+							SELECT -1 AS offset UNION ALL SELECT 0 UNION ALL SELECT 1
+						) offsets
+						WHERE status = 'up'
+							AND slot_number + offset >= 0
+							AND slot_number + offset < (SELECT COUNT(*) FROM time_slots)
+					),
+
+					-- Count monitors up per slot
+					monitors_per_slot AS (
 						SELECT
-							ts.slot_start,
-							ts.slot_end,
-							COUNT(DISTINCT p.monitor_id) AS monitors_up
+							effective_slot,
+							COUNT(DISTINCT monitor_id) AS monitors_up
+						FROM expanded_pulses
+						GROUP BY effective_slot
+					),
+
+					-- Join with all slots to include empty ones
+					all_slots_status AS (
+						SELECT
+							ts.slot_number,
+							COALESCE(mps.monitors_up, 0) AS monitors_up
 						FROM time_slots ts
-						LEFT JOIN pulses_with_tolerance p ON
-							p.tolerance_start <= ts.slot_end
-							AND p.tolerance_end >= ts.slot_start
-							AND p.status = 'up'
-						GROUP BY ts.slot_start, ts.slot_end
+						LEFT JOIN monitors_per_slot mps ON ts.slot_number = mps.effective_slot
 					)
 
 				SELECT
 					(countIf(monitors_up = total_monitors) * 100.0) /
 					COUNT(*) AS uptime
-				FROM monitors_up_per_slot
+				FROM all_slots_status
 			`;
 			break;
 

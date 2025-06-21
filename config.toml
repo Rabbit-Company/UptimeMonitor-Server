@@ -156,6 +156,6 @@ enabled = true
 # Discord webhook configuration for critical alerts
 [notifications.channels.critical.discord]
 enabled = true
-webhookUrl = ""
+webhookUrl = "YOUR_DISCORD_WEBHOOK_HERE"
 username = "🚨 Critical Alert Bot"
 avatarUrl = "https://rabbit-company.com/images/logo.png"

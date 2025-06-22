@@ -806,7 +806,7 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 
 		-- Join time series with data
 		SELECT
-			ts.time,
+			formatDateTime(ts.time, '%Y-%m-%dT%H:%i:%sZ') AS time,
 			coalesce(d.avg_latency, 0) AS avg_latency,
 			coalesce(d.min_latency, 0) AS min_latency,
 			coalesce(d.max_latency, 0) AS max_latency,

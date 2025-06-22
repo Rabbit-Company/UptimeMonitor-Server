@@ -22,8 +22,8 @@ const INTERVALS: Record<string, IntervalConfig> = {
 		rangeMs: 60 * 60 * 1000, // 1 hour
 	},
 	"24h": {
-		interval: "5 minute",
-		intervalMs: 5 * 60 * 1000, // 5 minutes
+		interval: "10 minute",
+		intervalMs: 10 * 60 * 1000, // 10 minutes
 		range: "24 HOUR",
 		rangeMs: 24 * 60 * 60 * 1000, // 24 hours
 	},

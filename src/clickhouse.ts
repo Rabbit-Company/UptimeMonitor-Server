@@ -16,40 +16,40 @@ export const clickhouse = createClient(config.clickhouse);
 
 const INTERVALS: Record<string, IntervalConfig> = {
 	"1h": {
-		interval: "1 minute",
-		intervalMs: 60 * 1000, // 1 minute
+		interval: "1 MINUTE",
+		intervalSec: 60,
 		range: "1 HOUR",
-		rangeMs: 60 * 60 * 1000, // 1 hour
+		rangeSec: 3600,
 	},
 	"24h": {
-		interval: "10 minute",
-		intervalMs: 10 * 60 * 1000, // 10 minutes
+		interval: "10 MINUTE",
+		intervalSec: 600,
 		range: "24 HOUR",
-		rangeMs: 24 * 60 * 60 * 1000, // 24 hours
+		rangeSec: 86400,
 	},
 	"7d": {
-		interval: "1 hour",
-		intervalMs: 60 * 60 * 1000, // 1 hour
+		interval: "1 HOUR",
+		intervalSec: 3600,
 		range: "7 DAY",
-		rangeMs: 7 * 24 * 60 * 60 * 1000, // 7 days
+		rangeSec: 604800,
 	},
 	"30d": {
-		interval: "1 day",
-		intervalMs: 24 * 60 * 60 * 1000, // 1 day
+		interval: "1 DAY",
+		intervalSec: 86400,
 		range: "30 DAY",
-		rangeMs: 30 * 24 * 60 * 60 * 1000, // 30 days
+		rangeSec: 2592000,
 	},
 	"90d": {
-		interval: "1 day",
-		intervalMs: 24 * 60 * 60 * 1000, // 1 day
+		interval: "1 DAY",
+		intervalSec: 86400,
 		range: "90 DAY",
-		rangeMs: 90 * 24 * 60 * 60 * 1000, // 90 days
+		rangeSec: 7776000,
 	},
 	"365d": {
-		interval: "1 day",
-		intervalMs: 24 * 60 * 60 * 1000, // 1 day
+		interval: "1 DAY",
+		intervalSec: 86400,
 		range: "1 YEAR",
-		rangeMs: 365 * 24 * 60 * 60 * 1000, // 1 year
+		rangeSec: 31536000,
 	},
 };
 
@@ -678,75 +678,64 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 }
 
 export async function getMonitorHistory(monitorId: string, period: string): Promise<HistoryRecord[]> {
-	const { interval, intervalMs, range, rangeMs }: IntervalConfig = INTERVALS[period] || INTERVALS["24h"]!;
+	const { interval, intervalSec, range, rangeSec }: IntervalConfig = INTERVALS[period] || INTERVALS["24h"]!;
 
 	const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
 	if (!monitor) return [];
 
-	const expectedPulsesPerInterval = Math.floor(intervalMs / (monitor.interval * 1000));
-
-	const query = `
-		WITH
-			-- Calculate interval duration in seconds for expected pulse count
-			${intervalMs / 1000} AS interval_seconds,
-			${monitor.interval} AS check_interval_seconds,
-			${expectedPulsesPerInterval} AS expected_pulses,
-
-			-- Get all pulses in the period
-			raw_pulses AS (
-				SELECT
-					toStartOfInterval(timestamp, INTERVAL ${interval}) AS interval_time,
-					status,
-					latency
-				FROM pulses
-				WHERE monitor_id = '${monitorId}'
-					AND timestamp > now() - INTERVAL ${range}
-			),
-
-			-- Aggregate by interval
-			interval_data AS (
-				SELECT
-					interval_time,
-					avg(latency) AS avg_latency,
-					min(latency) AS min_latency,
-					max(latency) AS max_latency,
-					countIf(status = 'up') AS up_count,
-					count() AS actual_count
-				FROM raw_pulses
-				GROUP BY interval_time
-			),
-
-			-- Generate complete time series
-			time_series AS (
-				SELECT
-					arrayJoin(
-							arrayMap(
-								x -> toDateTime(toStartOfInterval(now(), INTERVAL ${interval}) - x * interval_seconds),
-								range(0, toUInt32(${rangeMs / intervalMs}))
-							)
-					) AS time
-			)
-
-		-- Join time series with data
+	const rawQuery = `
 		SELECT
-			formatDateTime(ts.time, '%Y-%m-%dT%H:%i:%sZ') AS time,
-			coalesce(d.avg_latency, 0) AS avg_latency,
-			coalesce(d.min_latency, 0) AS min_latency,
-			coalesce(d.max_latency, 0) AS max_latency,
-			-- Calculate uptime with missing pulse detection
-			if(d.actual_count IS NULL, 0,
-				if(d.actual_count < expected_pulses,
-					(d.up_count * 100.0) / expected_pulses,
-					(d.up_count * 100.0) / d.actual_count
-				)
-			) AS uptime
-		FROM time_series ts
-		LEFT JOIN interval_data d ON d.interval_time = ts.time
-		WHERE ts.time > now() - INTERVAL ${range}
-			AND ts.time <= now()
-		ORDER BY ts.time
+			formatDateTime(toStartOfInterval(window_start, INTERVAL ${interval}), '%Y-%m-%dT%H:%i:%sZ') AS time,
+			avg(avg_latency) AS avg_latency,
+			min(min_latency) AS min_latency,
+			max(max_latency) AS max_latency,
+			(countIf(is_up) / ${Math.floor(intervalSec / monitor.interval)}.0) * 100 AS uptime
+		FROM (
+			SELECT
+				toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
+				max(status = 'up') AS is_up,
+				avg(latency) AS avg_latency,
+				min(latency) AS min_latency,
+				max(latency) AS max_latency
+			FROM pulses
+			WHERE
+				monitor_id = '${monitorId}'
+				AND timestamp > now() - INTERVAL ${range}
+			GROUP BY window_start
+		)
+		GROUP BY time
+		ORDER BY time
 	`;
 
-	const result = await clickhouse.query({ query, format: "JSONEachRow" });
-	return await result.json<HistoryRecord>();
+	const rawResult = await clickhouse.query({ query: rawQuery, format: "JSONEachRow" });
+	const rawData = await rawResult.json<HistoryRecord>();
+
+	// Generate complete time series
+	const now = new Date();
+	const startTime = new Date(now.getTime() - rangeSec * 1000);
+	const completeSeries: HistoryRecord[] = [];
+
+	const dataMap = new Map<string, HistoryRecord>();
+	rawData.forEach((item) => {
+		dataMap.set(item.time, item);
+	});
+
+	for (
+		let time = new Date(Math.ceil(startTime.getTime() / (intervalSec * 1000)) * (intervalSec * 1000));
+		time <= now;
+		time = new Date(time.getTime() + intervalSec * 1000)
+	) {
+		const timeStr = time.toISOString().replace(/\.\d+Z$/, "Z");
+		const existingData = dataMap.get(timeStr);
+
+		completeSeries.push({
+			time: timeStr,
+			avg_latency: existingData?.avg_latency ?? null,
+			min_latency: existingData?.min_latency ?? null,
+			max_latency: existingData?.max_latency ?? null,
+			uptime: existingData?.uptime ?? 0,
+		});
+	}
+
+	return completeSeries;
 }

@@ -115,17 +115,17 @@ export interface Pulse {
 }
 
 /**
- * Defines interval durations in string and millisecond formats.
+ * Defines interval durations in string and second formats.
  */
 export interface IntervalConfig {
-	/** Interval label (e.g., '5 minute', '6 hour') */
+	/** Interval label (e.g., '5 MINUTE', '6 HOUR') */
 	interval: string;
-	/** Interval in milliseconds */
-	intervalMs: number;
+	/** Interval in seconds */
+	intervalSec: number;
 	/** Aggregation range (e.g., '24 HOUR', '90 DAY') */
 	range: string;
-	/** Aggregation range in milliseconds */
-	rangeMs: number;
+	/** Aggregation range in seconds */
+	rangeSec: number;
 }
 
 /**
@@ -203,11 +203,11 @@ export interface HistoryRecord {
 	/** Timestamp of the record (UTC time) */
 	time: string;
 	/** Average latency during the period */
-	avg_latency: number;
+	avg_latency: number | null;
 	/** Minimum latency recorded */
-	min_latency: number;
+	min_latency: number | null;
 	/** Maximum latency recorded */
-	max_latency: number;
+	max_latency: number | null;
 	/** Uptime percentage during the period */
 	uptime: number;
 }

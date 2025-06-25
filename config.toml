@@ -14,7 +14,7 @@ level = 7
 id = "api-prod"
 name = "Production API"
 token = "tk_prod_api_abc123"
-interval = 60 # Expects pulse every 60s
+interval = 30 # Expects pulse every 30s
 maxRetries = 0 # Zero tolerance - mark down immediately
 toleranceFactor = 1.5 # Multiplier for expected interval (e.g., 1.5 = 50% tolerance)
 resendNotification = 3 # Resend notification every 3 down checks

@@ -133,11 +133,6 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
 		if (!monitor) return;
 
-		// Account for tolerance in expected pulses calculation
-		// If toleranceFactor is 1.5, we allow pulses to be up to 50% late
-		// So we only expect 1/1.5 = 66.7% of the theoretical pulse count
-		const toleranceFactor = monitor.toleranceFactor;
-
 		const queries = {
 			latest: `
 				SELECT status, latency, timestamp as last_check
@@ -147,160 +142,154 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				LIMIT 1
 			`,
 			uptime1h: `
-				WITH
-					${3600 / monitor.interval} as expected_pulses_raw,
-					${toleranceFactor} as tolerance,
-					expected_pulses_raw / tolerance as expected_pulses_min,
-					(
-						SELECT countIf(status = 'up')
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 1 HOUR
-					) as actual_up_pulses,
-					(
-						SELECT count(*)
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 1 HOUR
-					) as total_pulses
 				SELECT
-					CASE
-						WHEN total_pulses = 0 THEN 0
-						WHEN total_pulses < expected_pulses_min THEN
-							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
-						ELSE
-							(actual_up_pulses * 100.0) / total_pulses
-					END as uptime
+					least(
+						sum(
+							CASE
+								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
+									least(
+										dateDiff('second', prev_timestamp, timestamp),
+										${monitor.interval * monitor.toleranceFactor}
+									)
+								ELSE 0
+							END
+						) * 100.0 / 3600,
+						100
+					) AS uptime
+				FROM (
+					SELECT
+						timestamp,
+						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+					FROM pulses
+					WHERE monitor_id = '${monitorId}'
+						AND status = 'up'
+						AND timestamp > now() - INTERVAL 1 HOUR
+				)
 			`,
 			uptime24h: `
-				WITH
-					${86400 / monitor.interval} as expected_pulses_raw,
-					${toleranceFactor} as tolerance,
-					expected_pulses_raw / tolerance as expected_pulses_min,
-					(
-						SELECT countIf(status = 'up')
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 24 HOUR
-					) as actual_up_pulses,
-					(
-						SELECT count(*)
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 24 HOUR
-					) as total_pulses
 				SELECT
-					CASE
-						WHEN total_pulses = 0 THEN 0
-						WHEN total_pulses < expected_pulses_min THEN
-							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
-						ELSE
-							(actual_up_pulses * 100.0) / total_pulses
-					END as uptime
+					least(
+						sum(
+							CASE
+								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
+									least(
+										dateDiff('second', prev_timestamp, timestamp),
+										${monitor.interval * monitor.toleranceFactor}
+									)
+								ELSE 0
+							END
+						) * 100.0 / 86400,
+						100
+					) AS uptime
+				FROM (
+					SELECT
+						timestamp,
+						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+					FROM pulses
+					WHERE monitor_id = '${monitorId}'
+						AND status = 'up'
+						AND timestamp > now() - INTERVAL 24 HOUR
+				)
 			`,
 			uptime7d: `
-				WITH
-					${604800 / monitor.interval} as expected_pulses_raw,
-					${toleranceFactor} as tolerance,
-					expected_pulses_raw / tolerance as expected_pulses_min,
-					(
-						SELECT countIf(status = 'up')
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 7 DAY
-					) as actual_up_pulses,
-					(
-						SELECT count(*)
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 7 DAY
-					) as total_pulses
 				SELECT
-					CASE
-						WHEN total_pulses = 0 THEN 0
-						WHEN total_pulses < expected_pulses_min THEN
-							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
-						ELSE
-							(actual_up_pulses * 100.0) / total_pulses
-					END as uptime
+					least(
+						sum(
+							CASE
+								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
+									least(
+										dateDiff('second', prev_timestamp, timestamp),
+										${monitor.interval * monitor.toleranceFactor}
+									)
+								ELSE 0
+							END
+						) * 100.0 / 604800,
+						100
+					) AS uptime
+				FROM (
+					SELECT
+						timestamp,
+						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+					FROM pulses
+					WHERE monitor_id = '${monitorId}'
+						AND status = 'up'
+						AND timestamp > now() - INTERVAL 7 DAY
+				)
 			`,
 			uptime30d: `
-				WITH
-					${2592000 / monitor.interval} as expected_pulses_raw,
-					${toleranceFactor} as tolerance,
-					expected_pulses_raw / tolerance as expected_pulses_min,
-					(
-						SELECT countIf(status = 'up')
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 30 DAY
-					) as actual_up_pulses,
-					(
-						SELECT count(*)
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 30 DAY
-					) as total_pulses
 				SELECT
-					CASE
-						WHEN total_pulses = 0 THEN 0
-						WHEN total_pulses < expected_pulses_min THEN
-							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
-						ELSE
-							(actual_up_pulses * 100.0) / total_pulses
-					END as uptime
+					least(
+						sum(
+							CASE
+								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
+									least(
+										dateDiff('second', prev_timestamp, timestamp),
+										${monitor.interval * monitor.toleranceFactor}
+									)
+								ELSE 0
+							END
+						) * 100.0 / 2592000,
+						100
+					) AS uptime
+				FROM (
+					SELECT
+						timestamp,
+						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+					FROM pulses
+					WHERE monitor_id = '${monitorId}'
+						AND status = 'up'
+						AND timestamp > now() - INTERVAL 30 DAY
+				)
 			`,
 			uptime90d: `
-				WITH
-					${7776000 / monitor.interval} as expected_pulses_raw,
-					${toleranceFactor} as tolerance,
-					expected_pulses_raw / tolerance as expected_pulses_min,
-					(
-						SELECT countIf(status = 'up')
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 90 DAY
-					) as actual_up_pulses,
-					(
-						SELECT count(*)
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 90 DAY
-					) as total_pulses
 				SELECT
-					CASE
-						WHEN total_pulses = 0 THEN 0
-						WHEN total_pulses < expected_pulses_min THEN
-							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
-						ELSE
-							(actual_up_pulses * 100.0) / total_pulses
-					END as uptime
+					least(
+						sum(
+							CASE
+								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
+									least(
+										dateDiff('second', prev_timestamp, timestamp),
+										${monitor.interval * monitor.toleranceFactor}
+									)
+								ELSE 0
+							END
+						) * 100.0 / 7776000,
+						100
+					) AS uptime
+				FROM (
+					SELECT
+						timestamp,
+						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+					FROM pulses
+					WHERE monitor_id = '${monitorId}'
+						AND status = 'up'
+						AND timestamp > now() - INTERVAL 90 DAY
+				)
 			`,
 			uptime365d: `
-				WITH
-					${31536000 / monitor.interval} as expected_pulses_raw,
-					${toleranceFactor} as tolerance,
-					expected_pulses_raw / tolerance as expected_pulses_min,
-					(
-						SELECT countIf(status = 'up')
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 365 DAY
-					) as actual_up_pulses,
-					(
-						SELECT count(*)
-						FROM pulses
-						WHERE monitor_id = '${monitorId}'
-							AND timestamp > now() - INTERVAL 365 DAY
-					) as total_pulses
 				SELECT
-					CASE
-						WHEN total_pulses = 0 THEN 0
-						WHEN total_pulses < expected_pulses_min THEN
-							least((actual_up_pulses * 100.0) / expected_pulses_min, 100)
-						ELSE
-							(actual_up_pulses * 100.0) / total_pulses
-					END as uptime
+					least(
+						sum(
+							CASE
+								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
+									least(
+										dateDiff('second', prev_timestamp, timestamp),
+										${monitor.interval * monitor.toleranceFactor}
+									)
+								ELSE 0
+							END
+						) * 100.0 / 31536000,
+						100
+					) AS uptime
+				FROM (
+					SELECT
+						timestamp,
+						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+					FROM pulses
+					WHERE monitor_id = '${monitorId}'
+						AND status = 'up'
+						AND timestamp > now() - INTERVAL 365 DAY
+				)
 			`,
 		};
 
@@ -348,12 +337,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			status: latestData[0]!.status,
 			latency: latestData[0]!.latency,
 			lastCheck: new Date(latestData[0]!.last_check),
-			uptime1h: Math.min(uptime1hData[0]?.uptime || 0, 100),
-			uptime24h: Math.min(uptime24hData[0]?.uptime || 0, 100),
-			uptime7d: Math.min(uptime7dData[0]?.uptime || 0, 100),
-			uptime30d: Math.min(uptime30dData[0]?.uptime || 0, 100),
-			uptime90d: Math.min(uptime90dData[0]?.uptime || 0, 100),
-			uptime365d: Math.min(uptime365dData[0]?.uptime || 0, 100),
+			uptime1h: uptime1hData[0]?.uptime || 0,
+			uptime24h: uptime24hData[0]?.uptime || 0,
+			uptime7d: uptime7dData[0]?.uptime || 0,
+			uptime30d: uptime30dData[0]?.uptime || 0,
+			uptime90d: uptime90dData[0]?.uptime || 0,
+			uptime365d: uptime365dData[0]?.uptime || 0,
 		};
 
 		statusCache.set(monitorId, statusData);

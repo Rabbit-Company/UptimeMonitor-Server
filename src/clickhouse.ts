@@ -143,152 +143,86 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			`,
 			uptime1h: `
 				SELECT
-					least(
-						sum(
-							CASE
-								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
-									least(
-										dateDiff('second', prev_timestamp, timestamp),
-										${monitor.interval * monitor.toleranceFactor}
-									)
-								ELSE 0
-							END
-						) * 100.0 / 3600,
-						100
-					) AS uptime
+					(countIf(is_up) / ${Math.floor(3600 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						timestamp,
-						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
+						max(status = 'up') AS is_up
 					FROM pulses
-					WHERE monitor_id = '${monitorId}'
-						AND status = 'up'
+					WHERE
+						monitor_id = '${monitorId}'
 						AND timestamp > now() - INTERVAL 1 HOUR
+					GROUP BY window_start
 				)
 			`,
 			uptime24h: `
 				SELECT
-					least(
-						sum(
-							CASE
-								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
-									least(
-										dateDiff('second', prev_timestamp, timestamp),
-										${monitor.interval * monitor.toleranceFactor}
-									)
-								ELSE 0
-							END
-						) * 100.0 / 86400,
-						100
-					) AS uptime
+					(countIf(is_up) / ${Math.floor(86400 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						timestamp,
-						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
+						max(status = 'up') AS is_up
 					FROM pulses
-					WHERE monitor_id = '${monitorId}'
-						AND status = 'up'
+					WHERE
+						monitor_id = '${monitorId}'
 						AND timestamp > now() - INTERVAL 24 HOUR
+					GROUP BY window_start
 				)
 			`,
 			uptime7d: `
 				SELECT
-					least(
-						sum(
-							CASE
-								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
-									least(
-										dateDiff('second', prev_timestamp, timestamp),
-										${monitor.interval * monitor.toleranceFactor}
-									)
-								ELSE 0
-							END
-						) * 100.0 / 604800,
-						100
-					) AS uptime
+					(countIf(is_up) / ${Math.floor(604800 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						timestamp,
-						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
+						max(status = 'up') AS is_up
 					FROM pulses
-					WHERE monitor_id = '${monitorId}'
-						AND status = 'up'
+					WHERE
+						monitor_id = '${monitorId}'
 						AND timestamp > now() - INTERVAL 7 DAY
+					GROUP BY window_start
 				)
 			`,
 			uptime30d: `
 				SELECT
-					least(
-						sum(
-							CASE
-								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
-									least(
-										dateDiff('second', prev_timestamp, timestamp),
-										${monitor.interval * monitor.toleranceFactor}
-									)
-								ELSE 0
-							END
-						) * 100.0 / 2592000,
-						100
-					) AS uptime
+					(countIf(is_up) / ${Math.floor(2592000 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						timestamp,
-						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
+						max(status = 'up') AS is_up
 					FROM pulses
-					WHERE monitor_id = '${monitorId}'
-						AND status = 'up'
+					WHERE
+						monitor_id = '${monitorId}'
 						AND timestamp > now() - INTERVAL 30 DAY
+					GROUP BY window_start
 				)
 			`,
 			uptime90d: `
 				SELECT
-					least(
-						sum(
-							CASE
-								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
-									least(
-										dateDiff('second', prev_timestamp, timestamp),
-										${monitor.interval * monitor.toleranceFactor}
-									)
-								ELSE 0
-							END
-						) * 100.0 / 7776000,
-						100
-					) AS uptime
+					(countIf(is_up) / ${Math.floor(7776000 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						timestamp,
-						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
+						max(status = 'up') AS is_up
 					FROM pulses
-					WHERE monitor_id = '${monitorId}'
-						AND status = 'up'
+					WHERE
+						monitor_id = '${monitorId}'
 						AND timestamp > now() - INTERVAL 90 DAY
+					GROUP BY window_start
 				)
 			`,
 			uptime365d: `
 				SELECT
-					least(
-						sum(
-							CASE
-								WHEN prev_timestamp > toDateTime('2000-01-01') THEN
-									least(
-										dateDiff('second', prev_timestamp, timestamp),
-										${monitor.interval * monitor.toleranceFactor}
-									)
-								ELSE 0
-							END
-						) * 100.0 / 31536000,
-						100
-					) AS uptime
+					(countIf(is_up) / ${Math.floor(31536000 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						timestamp,
-						lagInFrame(timestamp) OVER (ORDER BY timestamp) AS prev_timestamp
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
+						max(status = 'up') AS is_up
 					FROM pulses
-					WHERE monitor_id = '${monitorId}'
-						AND status = 'up'
+					WHERE
+						monitor_id = '${monitorId}'
 						AND timestamp > now() - INTERVAL 365 DAY
+					GROUP BY window_start
 				)
 			`,
 		};

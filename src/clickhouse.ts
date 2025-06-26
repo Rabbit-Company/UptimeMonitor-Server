@@ -451,20 +451,27 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 export async function calculateGroupUptime(group: Group, childMonitorIds: string[], period: string): Promise<number> {
 	if (childMonitorIds.length === 0) return 100; // Empty group is considered 100% up
 
-	const periodMap: Record<string, string> = {
+	const periodMap: Record<string, number> = {
+		"1h": 3600,
+		"24h": 86400,
+		"7d": 604800,
+		"30d": 2592000,
+		"90d": 7776000,
+		"365d": 31536000,
+	};
+
+	const periodSeconds = periodMap[period];
+	if (!periodSeconds) return 0;
+
+	const clickhousePeriod = {
 		"1h": "1 HOUR",
 		"24h": "24 HOUR",
 		"7d": "7 DAY",
 		"30d": "30 DAY",
 		"90d": "90 DAY",
 		"365d": "365 DAY",
-	};
+	}[period];
 
-	const clickhousePeriod = periodMap[period];
-	if (!clickhousePeriod) return 0;
-
-	const intervalSeconds = group.interval;
-	const toleranceFactor = group.toleranceFactor;
 	const strategy = group.strategy;
 
 	let query: string;
@@ -472,191 +479,142 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 	switch (strategy) {
 		case "any-up":
 			// For any-up: at least one monitor must be up in each time interval
+			// First, we need to get each monitor's interval
+			const monitorIntervalsAnyUp = childMonitorIds.map((id) => {
+				const monitor = config.monitors.find((m) => m.id === id);
+				return { id, interval: monitor?.interval || 30 };
+			});
+
+			// Find the smallest interval to define time windows
+			const minInterval = Math.min(...monitorIntervalsAnyUp.map((m) => m.interval));
+			const expectedWindows = Math.floor(periodSeconds / minInterval);
+
 			query = `
 				WITH
-					${intervalSeconds} AS check_interval,
-					${toleranceFactor} AS tolerance,
-					toStartOfInterval(now() - INTERVAL ${clickhousePeriod}, INTERVAL ${intervalSeconds} SECOND) AS period_start,
-					now() AS period_end,
-
-					-- Get all time slots in the period
-					time_slots AS (
+					-- Define time windows based on the smallest interval
+					time_windows AS (
 						SELECT
-							toUInt64(number) AS slot_number,
-							period_start + (number * check_interval) AS slot_start,
-							period_start + ((number + 1) * check_interval) AS slot_end
-						FROM numbers(
-							toUInt32(greatest(1, (period_end - period_start) / check_interval))
-						)
+							toStartOfInterval(now() - INTERVAL ${clickhousePeriod}, INTERVAL ${minInterval} SECOND) + (number * ${minInterval}) AS window_start
+						FROM numbers(${expectedWindows})
 					),
 
-					-- Get pulses and determine which slot they belong to
-					pulses_in_slots AS (
+					-- Get all pulses for our monitors in the period
+					monitor_pulses AS (
 						SELECT
-							toUInt64(greatest(0, floor((timestamp - period_start) / check_interval))) AS slot_number,
 							monitor_id,
 							status,
-							timestamp
+							timestamp,
+							toStartOfInterval(timestamp, INTERVAL ${minInterval} SECOND) AS window_start
 						FROM pulses
 						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
-							AND timestamp >= period_start - INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
-							AND timestamp <= period_end + INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
-							AND timestamp >= period_start  -- Ensure no negative slot numbers
+							AND timestamp > now() - INTERVAL ${clickhousePeriod}
+							AND status = 'up'
 					),
 
-					-- Account for tolerance by also including adjacent slots
-					expanded_pulses AS (
-						SELECT DISTINCT
-							slot_number AS original_slot,
-							toUInt64(greatest(0, toInt64(slot_number) + offset)) AS effective_slot,
-							monitor_id,
-							status
-						FROM pulses_in_slots
-						CROSS JOIN (
-							SELECT -1 AS offset UNION ALL SELECT 0 UNION ALL SELECT 1
-						) offsets
-						WHERE status = 'up'
-							AND toInt64(slot_number) + offset >= 0
-							AND toUInt64(toInt64(slot_number) + offset) < (SELECT COUNT(*) FROM time_slots)
-					),
-
-					-- Count slots with at least one up monitor
-					slots_with_up AS (
-						SELECT COUNT(DISTINCT effective_slot) AS up_slots
-						FROM expanded_pulses
+					-- For each window, check if ANY monitor is up
+					windows_with_up AS (
+						SELECT DISTINCT window_start
+						FROM monitor_pulses
 					)
 
 				SELECT
 					CASE
-						WHEN (SELECT COUNT(*) FROM time_slots) = 0 THEN 100
-						ELSE (up_slots * 100.0) / (SELECT COUNT(*) FROM time_slots)
+						WHEN ${expectedWindows} = 0 THEN 100
+						ELSE (COUNT(*) * 100.0) / ${expectedWindows}
 					END AS uptime
-				FROM slots_with_up
+				FROM windows_with_up
 			`;
 			break;
 
 		case "all-up":
-			// For all-up: all monitors must be up in each time interval
+			// For all-up: ALL monitors must be up in each time interval
+			// We need to check that all monitors are up at the same time in each interval
+			const monitorIntervalsAllUp = childMonitorIds.map((id) => {
+				const monitor = config.monitors.find((m) => m.id === id);
+				return { id, interval: monitor?.interval || 30 };
+			});
+
+			// Use the smallest interval to define time windows
+			const minIntervalAllUp = Math.min(...monitorIntervalsAllUp.map((m) => m.interval));
+			const expectedWindowsAllUp = Math.floor(periodSeconds / minIntervalAllUp);
+			const totalMonitors = childMonitorIds.length;
+
 			query = `
 				WITH
-					${intervalSeconds} AS check_interval,
-					${toleranceFactor} AS tolerance,
-					${childMonitorIds.length} AS total_monitors,
-					toStartOfInterval(now() - INTERVAL ${clickhousePeriod}, INTERVAL ${intervalSeconds} SECOND) AS period_start,
-					now() AS period_end,
-
-					-- Get all time slots in the period
-					time_slots AS (
+					-- Get all pulses for our monitors in the period
+					monitor_pulses AS (
 						SELECT
-							toUInt64(number) AS slot_number,
-							period_start + (number * check_interval) AS slot_start,
-							period_start + ((number + 1) * check_interval) AS slot_end
-						FROM numbers(
-							toUInt32(greatest(1, (period_end - period_start) / check_interval))
-						)
-					),
-
-					-- Get pulses and determine which slot they belong to
-					pulses_in_slots AS (
-						SELECT
-							toUInt64(greatest(0, floor((timestamp - period_start) / check_interval))) AS slot_number,
 							monitor_id,
 							status,
-							timestamp
+							timestamp,
+							toStartOfInterval(timestamp, INTERVAL ${minIntervalAllUp} SECOND) AS window_start
 						FROM pulses
 						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
-							AND timestamp >= period_start - INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
-							AND timestamp <= period_end + INTERVAL ${Math.ceil(intervalSeconds * toleranceFactor)} SECOND
-							AND timestamp >= period_start  -- Ensure no negative slot numbers
+							AND timestamp > now() - INTERVAL ${clickhousePeriod}
 					),
 
-					-- Account for tolerance by also including adjacent slots
-					expanded_pulses AS (
-						SELECT DISTINCT
-							slot_number AS original_slot,
-							toUInt64(greatest(0, toInt64(slot_number) + offset)) AS effective_slot,
-							monitor_id,
-							status
-						FROM pulses_in_slots
-						CROSS JOIN (
-							SELECT -1 AS offset UNION ALL SELECT 0 UNION ALL SELECT 1
-						) offsets
-						WHERE status = 'up'
-							AND toInt64(slot_number) + offset >= 0
-							AND toUInt64(toInt64(slot_number) + offset) < (SELECT COUNT(*) FROM time_slots)
-					),
-
-					-- Count monitors up per slot
-					monitors_per_slot AS (
+					-- For each window, count how many monitors are up
+					window_monitor_status AS (
 						SELECT
-							effective_slot,
-							COUNT(DISTINCT monitor_id) AS monitors_up
-						FROM expanded_pulses
-						GROUP BY effective_slot
+							window_start,
+							COUNT(DISTINCT CASE WHEN status = 'up' THEN monitor_id END) as monitors_up
+						FROM monitor_pulses
+						GROUP BY window_start
 					),
 
-					-- Join with all slots to include empty ones
-					all_slots_status AS (
-						SELECT
-							ts.slot_number,
-							COALESCE(mps.monitors_up, 0) AS monitors_up
-						FROM time_slots ts
-						LEFT JOIN monitors_per_slot mps ON ts.slot_number = mps.effective_slot
+					-- Windows where ALL monitors are up
+					windows_all_up AS (
+						SELECT window_start
+						FROM window_monitor_status
+						WHERE monitors_up = ${totalMonitors}
 					)
 
 				SELECT
 					CASE
-						WHEN COUNT(*) = 0 THEN 100
-						ELSE (countIf(monitors_up = total_monitors) * 100.0) / COUNT(*)
+						WHEN ${expectedWindowsAllUp} = 0 THEN 100
+						ELSE (COUNT(DISTINCT window_start) * 100.0) / ${expectedWindowsAllUp}
 					END AS uptime
-				FROM all_slots_status
+				FROM windows_all_up
 			`;
 			break;
 
 		case "percentage":
 		default:
 			// For percentage: calculate weighted average of individual monitor uptimes
-			// This considers each monitor's own interval for more accurate calculation
-			const monitorConfigs = childMonitorIds.map((id) => {
+			const monitorQueriesPerc = childMonitorIds.map((id, index) => {
 				const monitor = config.monitors.find((m) => m.id === id);
-				const monitorInterval = monitor?.interval || 30;
-				const periodSeconds = periodMap[period] ? { "1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000, "90d": 7776000, "365d": 31536000 }[period] : 86400;
-				const expectedPulses = Math.floor(periodSeconds! / monitorInterval);
-				return { id, expectedPulses };
+				const interval = monitor?.interval || 30;
+				const expectedIntervals = Math.floor(periodSeconds / interval);
+
+				return `
+					SELECT
+						'${id}' as monitor_id,
+						${expectedIntervals} as expected_intervals,
+						COUNT(DISTINCT window_start) as intervals_with_up,
+						CASE
+							WHEN ${expectedIntervals} = 0 THEN 100
+							ELSE (COUNT(DISTINCT window_start) * 100.0) / ${expectedIntervals}
+						END as uptime
+					FROM (
+						SELECT
+							toStartOfInterval(timestamp, INTERVAL ${interval} SECOND) AS window_start
+						FROM pulses
+						WHERE monitor_id = '${id}'
+							AND timestamp > now() - INTERVAL ${clickhousePeriod}
+							AND status = 'up'
+					)
+				`;
 			});
 
-			const monitorConfigQuery = monitorConfigs
-				.map(({ id, expectedPulses }) => `SELECT '${id}' as monitor_id, ${expectedPulses} as expected_pulses`)
-				.join(" UNION ALL ");
-
 			query = `
-				WITH
-					monitor_configs AS (
-						${monitorConfigQuery}
-					),
-					monitor_uptimes AS (
-						SELECT
-							mc.monitor_id,
-							mc.expected_pulses,
-							COUNT(p.status) as actual_pulses,
-							countIf(p.status = 'up') as up_pulses,
-							CASE
-								WHEN COUNT(p.status) = 0 THEN 0
-								WHEN COUNT(p.status) < mc.expected_pulses THEN
-									(countIf(p.status = 'up') * 100.0) / mc.expected_pulses
-								ELSE
-									(countIf(p.status = 'up') * 100.0) / COUNT(p.status)
-							END as uptime
-						FROM monitor_configs mc
-						LEFT JOIN pulses p ON p.monitor_id = mc.monitor_id
-							AND p.timestamp > now() - INTERVAL ${clickhousePeriod}
-						GROUP BY mc.monitor_id, mc.expected_pulses
-					)
+				WITH monitor_uptimes AS (
+					${monitorQueriesPerc.join(" UNION ALL ")}
+				)
 				SELECT
 					CASE
-						WHEN SUM(expected_pulses) = 0 THEN 0
-						ELSE SUM(uptime * expected_pulses) / SUM(expected_pulses)
-					END AS uptime
+						WHEN SUM(expected_intervals) = 0 THEN 100
+						ELSE SUM(uptime * expected_intervals) / SUM(expected_intervals)
+					END as uptime
 				FROM monitor_uptimes
 			`;
 			break;

@@ -697,3 +697,136 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 
 	return completeSeries;
 }
+
+export async function getGroupHistory(groupId: string, period: string): Promise<HistoryRecord[]> {
+	const { interval, intervalSec, range, rangeSec }: IntervalConfig = INTERVALS[period] || INTERVALS["24h"]!;
+
+	const group: Group | undefined = config.groups.find((g: Group) => g.id === groupId);
+	if (!group) return [];
+
+	// Get direct children only (monitors and subgroups)
+	const childMonitors: Monitor[] = config.monitors.filter((m: Monitor) => m.groupId === groupId);
+	const childGroups: Group[] = config.groups.filter((g: Group) => g.parentId === groupId);
+
+	if (childMonitors.length === 0 && childGroups.length === 0) {
+		return [];
+	}
+
+	// Get history data for all direct child monitors
+	const monitorHistoryPromises = childMonitors.map((monitor) => getMonitorHistory(monitor.id, period));
+
+	// Get history data for all direct child groups (recursive)
+	const groupHistoryPromises = childGroups.map((childGroup) => getGroupHistory(childGroup.id, period));
+
+	const allHistoryData = await Promise.all([...monitorHistoryPromises, ...groupHistoryPromises]);
+
+	const timeSeriesMap = new Map<
+		string,
+		{
+			latencies: number[];
+			uptimes: { value: number; isMonitor: boolean; monitorInterval?: number }[];
+		}
+	>();
+
+	// Process all history data and group by timestamp
+	allHistoryData.forEach((historyData, index) => {
+		const isMonitor = index < childMonitors.length;
+		const monitorInterval = isMonitor ? childMonitors[index]?.interval : undefined;
+
+		historyData.forEach((record) => {
+			if (!timeSeriesMap.has(record.time)) {
+				timeSeriesMap.set(record.time, { latencies: [], uptimes: [] });
+			}
+
+			const entry = timeSeriesMap.get(record.time)!;
+
+			if (record.avg_latency !== null) {
+				entry.latencies.push(record.avg_latency);
+			}
+
+			entry.uptimes.push({
+				value: record.uptime,
+				isMonitor,
+				monitorInterval,
+			});
+		});
+	});
+
+	const aggregatedHistory: HistoryRecord[] = [];
+
+	// Generate complete time series
+	const now = new Date();
+	const startTime = new Date(now.getTime() - rangeSec * 1000);
+
+	for (
+		let time = new Date(Math.ceil(startTime.getTime() / (intervalSec * 1000)) * (intervalSec * 1000));
+		time <= now;
+		time = new Date(time.getTime() + intervalSec * 1000)
+	) {
+		const timeStr = time.toISOString().replace(/\.\d+Z$/, "Z");
+		const data = timeSeriesMap.get(timeStr);
+
+		let avgLatency: number | null = null;
+		let uptime = 0;
+
+		if (data) {
+			// Calculate average latency (excluding null values)
+			if (data.latencies.length > 0) {
+				avgLatency = data.latencies.reduce((sum, lat) => sum + lat, 0) / data.latencies.length;
+			}
+
+			// Calculate uptime based on strategy
+			switch (group.strategy) {
+				case "any-up":
+					// For any-up: if ANY child has uptime > 0, consider the group up (100%)
+					uptime = data.uptimes.some((u) => u.value > 0) ? 100 : 0;
+					break;
+
+				case "all-up":
+					// For all-up: ALL children must have 100% uptime
+					if (data.uptimes.length === 0) {
+						uptime = 100; // No children means up
+					} else {
+						uptime = data.uptimes.every((u) => u.value === 100) ? 100 : 0;
+					}
+					break;
+
+				case "percentage":
+				default:
+					// For percentage: weighted average of child uptimes
+					if (data.uptimes.length === 0) {
+						uptime = 100;
+					} else {
+						// For monitors, weight by their expected intervals in this time window
+						let totalWeight = 0;
+						let weightedSum = 0;
+
+						data.uptimes.forEach((uptimeData) => {
+							let weight = 1;
+
+							// If it's a monitor, weight by expected intervals
+							if (uptimeData.isMonitor && uptimeData.monitorInterval) {
+								weight = Math.floor(intervalSec / uptimeData.monitorInterval);
+							}
+
+							totalWeight += weight;
+							weightedSum += uptimeData.value * weight;
+						});
+
+						uptime = totalWeight > 0 ? weightedSum / totalWeight : 0;
+					}
+					break;
+			}
+		}
+
+		aggregatedHistory.push({
+			time: timeStr,
+			avg_latency: avgLatency,
+			min_latency: avgLatency, // For groups, min/max are the same as avg
+			max_latency: avgLatency,
+			uptime: Math.min(Math.max(uptime, 0), 100),
+		});
+	}
+
+	return aggregatedHistory;
+}

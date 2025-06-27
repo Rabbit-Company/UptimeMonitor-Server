@@ -1,8 +1,8 @@
 import { Web } from "@rabbit-company/web";
 import { Logger } from "./logger";
 import { config } from "./config";
-import type { Monitor, StatusData, StatusPage } from "./types";
-import { getMonitorHistory, initClickHouse, statusCache, storePulse, updateMonitorStatus } from "./clickhouse";
+import type { Group, Monitor, StatusData, StatusPage } from "./types";
+import { getGroupHistory, getMonitorHistory, initClickHouse, statusCache, storePulse, updateMonitorStatus } from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
 import { logger } from "@rabbit-company/web-middleware/logger";
 import { cors } from "@rabbit-company/web-middleware/cors";
@@ -144,6 +144,33 @@ app.get("/v1/monitors/:id/history", async (ctx) => {
 
 	return ctx.json({
 		monitorId,
+		period,
+		data,
+	});
+});
+
+app.get("/v1/groups/:id/history", async (ctx) => {
+	const groupId: string = ctx.params["id"] || "";
+	const period: string = ctx.query().get("period") || "24h";
+
+	const group: Group | undefined = config.groups.find((m: Group) => m.id === groupId);
+	if (!group) {
+		return ctx.json({ error: "Group not found" }, 404);
+	}
+
+	if (!["1h", "24h", "7d", "30d", "90d", "365d"].includes(period)) {
+		return ctx.json({ error: "Invalid period" }, 401);
+	}
+	let data;
+
+	try {
+		data = await getGroupHistory(groupId, period);
+	} catch (err: any) {
+		Logger.error("Retrieval of group history failed", { groupId: groupId, period: period, "error.message": err?.message });
+	}
+
+	return ctx.json({
+		groupId,
 		period,
 		data,
 	});

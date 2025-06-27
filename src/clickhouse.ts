@@ -723,7 +723,9 @@ export async function getGroupHistory(groupId: string, period: string): Promise<
 	const timeSeriesMap = new Map<
 		string,
 		{
-			latencies: number[];
+			avg_latency: number[];
+			min_latency: number[];
+			max_latency: number[];
 			uptimes: { value: number; isMonitor: boolean; monitorInterval?: number }[];
 		}
 	>();
@@ -735,13 +737,21 @@ export async function getGroupHistory(groupId: string, period: string): Promise<
 
 		historyData.forEach((record) => {
 			if (!timeSeriesMap.has(record.time)) {
-				timeSeriesMap.set(record.time, { latencies: [], uptimes: [] });
+				timeSeriesMap.set(record.time, { avg_latency: [], min_latency: [], max_latency: [], uptimes: [] });
 			}
 
 			const entry = timeSeriesMap.get(record.time)!;
 
 			if (record.avg_latency !== null) {
-				entry.latencies.push(record.avg_latency);
+				entry.avg_latency.push(record.avg_latency);
+			}
+
+			if (record.min_latency !== null) {
+				entry.min_latency.push(record.min_latency);
+			}
+
+			if (record.max_latency !== null) {
+				entry.max_latency.push(record.max_latency);
 			}
 
 			entry.uptimes.push({
@@ -766,13 +776,22 @@ export async function getGroupHistory(groupId: string, period: string): Promise<
 		const timeStr = time.toISOString().replace(/\.\d+Z$/, "Z");
 		const data = timeSeriesMap.get(timeStr);
 
+		let minLatency: number | null = null;
 		let avgLatency: number | null = null;
+		let maxLatency: number | null = null;
 		let uptime = 0;
 
 		if (data) {
-			// Calculate average latency (excluding null values)
-			if (data.latencies.length > 0) {
-				avgLatency = data.latencies.reduce((sum, lat) => sum + lat, 0) / data.latencies.length;
+			if (data.avg_latency.length > 0) {
+				avgLatency = data.avg_latency.reduce((sum, lat) => sum + lat, 0) / data.avg_latency.length;
+			}
+
+			if (data.min_latency.length > 0) {
+				minLatency = data.min_latency.reduce((sum, lat) => sum + lat, 0) / data.min_latency.length;
+			}
+
+			if (data.max_latency.length > 0) {
+				maxLatency = data.max_latency.reduce((sum, lat) => sum + lat, 0) / data.max_latency.length;
 			}
 
 			// Calculate uptime based on strategy
@@ -822,8 +841,8 @@ export async function getGroupHistory(groupId: string, period: string): Promise<
 		aggregatedHistory.push({
 			time: timeStr,
 			avg_latency: avgLatency,
-			min_latency: avgLatency, // For groups, min/max are the same as avg
-			max_latency: avgLatency,
+			min_latency: minLatency,
+			max_latency: maxLatency,
 			uptime: Math.min(Math.max(uptime, 0), 100),
 		});
 	}

@@ -779,7 +779,7 @@ export async function getGroupHistory(groupId: string, period: string): Promise<
 		let minLatency: number | null = null;
 		let avgLatency: number | null = null;
 		let maxLatency: number | null = null;
-		let uptime = 0;
+		let uptime: number = 0;
 
 		if (data) {
 			if (data.avg_latency.length > 0) {
@@ -797,17 +797,11 @@ export async function getGroupHistory(groupId: string, period: string): Promise<
 			// Calculate uptime based on strategy
 			switch (group.strategy) {
 				case "any-up":
-					// For any-up: if ANY child has uptime > 0, consider the group up (100%)
-					uptime = data.uptimes.some((u) => u.value > 0) ? 100 : 0;
+					uptime = Math.max(...data.uptimes.flatMap((u) => u.value));
 					break;
 
 				case "all-up":
-					// For all-up: ALL children must have 100% uptime
-					if (data.uptimes.length === 0) {
-						uptime = 100; // No children means up
-					} else {
-						uptime = data.uptimes.every((u) => u.value === 100) ? 100 : 0;
-					}
+					uptime = Math.min(...data.uptimes.flatMap((u) => u.value));
 					break;
 
 				case "percentage":

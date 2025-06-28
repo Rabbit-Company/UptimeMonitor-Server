@@ -15,8 +15,8 @@
 	},
 	"dependencies": {
 		"@clickhouse/client": "^1.11.2",
-		"@rabbit-company/web": "^0.13.0",
-		"@rabbit-company/web-middleware": "^0.13.0",
+		"@rabbit-company/web": "^0.14.0",
+		"@rabbit-company/web-middleware": "^0.14.0",
 		"nodemailer": "^7.0.3"
 	}
 }

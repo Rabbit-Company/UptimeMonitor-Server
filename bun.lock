@@ -5,13 +5,13 @@
       "name": "uptimemonitor-server",
       "dependencies": {
         "@clickhouse/client": "^1.11.2",
-        "@rabbit-company/web": "^0.13.0",
-        "@rabbit-company/web-middleware": "^0.13.0",
-        "@types/nodemailer": "^6.4.17",
+        "@rabbit-company/web": "^0.14.0",
+        "@rabbit-company/web-middleware": "^0.14.0",
         "nodemailer": "^7.0.3",
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "@types/nodemailer": "^6.4.17",
       },
       "peerDependencies": {
         "typescript": "^5",
@@ -27,9 +27,9 @@
 
     "@rabbit-company/rate-limiter": ["@rabbit-company/rate-limiter@3.0.0", "", { "peerDependencies": { "typescript": "^5.5.4" } }, "sha512-NMtBAfXUGmyqc42Sxl6jOC1y4G5M/TAJxwJGn6SPQU/O5kVRufU5FioJwUaWlAhPiaD8qG/1EsdxTcDCwlGSHw=="],
 
-    "@rabbit-company/web": ["@rabbit-company/web@0.13.0", "", {}, "sha512-j3NEqWhR3rAINdmQz3zPiR8ZuAksyG2X1Fr9MEr0pJ+sS0xyKPtJA8XTyJke+Vt9U8cnCHBD1tVtBIZsRVOsmg=="],
+    "@rabbit-company/web": ["@rabbit-company/web@0.14.0", "", {}, "sha512-SeuvwUdkchsSPki3ealrRIVwOTV67+dV1P2XuQ3+mQIZU1aGL6zPLBmbvAzMW8MjGCpoWSScQfH3Dxq8Z+xuGQ=="],
 
-    "@rabbit-company/web-middleware": ["@rabbit-company/web-middleware@0.13.0", "", { "dependencies": { "@rabbit-company/logger": "^5.5.0", "@rabbit-company/rate-limiter": "^3.0.0" }, "peerDependencies": { "@rabbit-company/web": "^0.13.0" } }, "sha512-LRmks+OtRs43gKboxrwvaIt5Cbdw75BvIVEwWX73M/fEb67O0fJfreQqgzI7nxMXMwF+dDh8+791FZsKYjh5Dw=="],
+    "@rabbit-company/web-middleware": ["@rabbit-company/web-middleware@0.14.0", "", { "dependencies": { "@rabbit-company/logger": "^5.5.0", "@rabbit-company/rate-limiter": "^3.0.0" }, "peerDependencies": { "@rabbit-company/web": "^0.14.0" } }, "sha512-hjvDsAr14gfzvNJtrrnxZ7GGSdJRvkjhofFIMWeEE1Wc7rkiAB3u9c965vsIzx43xInnHJP0qqMt8Hs2Bd98zA=="],
 
     "@types/bun": ["@types/bun@1.2.16", "", { "dependencies": { "bun-types": "1.2.16" } }, "sha512-1aCZJ/6nSiViw339RsaNhkNoEloLaPzZhxMOYEa7OzRzO41IGg5n/7I43/ZIAW/c+Q6cT12Vf7fOZOoVIzb5BQ=="],
 

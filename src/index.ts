@@ -4,9 +4,10 @@ import { config } from "./config";
 import type { Group, Monitor, StatusData, StatusPage } from "./types";
 import { getGroupHistory, getMonitorHistory, initClickHouse, statusCache, storePulse, updateMonitorStatus } from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
+import { missingPulseDetector } from "./missing-pulse-detector";
 import { logger } from "@rabbit-company/web-middleware/logger";
 import { cors } from "@rabbit-company/web-middleware/cors";
-import { missingPulseDetector } from "./missing-pulse-detector";
+import { cache } from "@rabbit-company/web-middleware/cache";
 
 await initClickHouse();
 
@@ -61,23 +62,30 @@ app.get("/v1/push/:token", async (ctx) => {
 	return ctx.json({ success: true, monitorId: monitor.id });
 });
 
-app.get("/v1/status/:slug", async (ctx) => {
-	const slug: string = ctx.params["slug"] || "";
+app.get(
+	"/v1/status/:slug",
+	cache({
+		ttl: 60,
+		generateETags: false,
+	}),
+	async (ctx) => {
+		const slug: string = ctx.params["slug"] || "";
 
-	const statusPage: StatusPage | undefined = config.statusPages.find((sp: StatusPage) => sp.slug === slug);
-	if (!statusPage) {
-		return ctx.json({ error: "Status page not found" }, 404);
+		const statusPage: StatusPage | undefined = config.statusPages.find((sp: StatusPage) => sp.slug === slug);
+		if (!statusPage) {
+			return ctx.json({ error: "Status page not found" }, 404);
+		}
+
+		const statusData: StatusData[] = buildStatusTree(statusPage.items);
+
+		return ctx.json({
+			name: statusPage.name,
+			slug: statusPage.slug,
+			items: statusData,
+			lastUpdated: new Date(),
+		});
 	}
-
-	const statusData: StatusData[] = buildStatusTree(statusPage.items);
-
-	return ctx.json({
-		name: statusPage.name,
-		slug: statusPage.slug,
-		items: statusData,
-		lastUpdated: new Date(),
-	});
-});
+);
 
 app.get("/v1/status/:slug/summary", async (ctx) => {
 	const slug: string = ctx.params["slug"] || "";
@@ -122,59 +130,73 @@ app.get("/v1/status/:slug/summary", async (ctx) => {
 	});
 });
 
-app.get("/v1/monitors/:id/history", async (ctx) => {
-	const monitorId: string = ctx.params["id"] || "";
-	const period: string = ctx.query().get("period") || "24h";
+app.get(
+	"/v1/monitors/:id/history",
+	cache({
+		ttl: 60,
+		generateETags: false,
+	}),
+	async (ctx) => {
+		const monitorId: string = ctx.params["id"] || "";
+		const period: string = ctx.query().get("period") || "24h";
 
-	const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
-	if (!monitor) {
-		return ctx.json({ error: "Monitor not found" }, 404);
+		const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
+		if (!monitor) {
+			return ctx.json({ error: "Monitor not found" }, 404);
+		}
+
+		if (!["1h", "24h", "7d", "30d", "90d", "365d"].includes(period)) {
+			return ctx.json({ error: "Invalid period" }, 401);
+		}
+		let data;
+
+		try {
+			data = await getMonitorHistory(monitorId, period);
+		} catch (err: any) {
+			Logger.error("Retrieval of monitor history failed", { monitorId: monitorId, period: period, "error.message": err?.message });
+		}
+
+		return ctx.json({
+			monitorId,
+			period,
+			data,
+		});
 	}
+);
 
-	if (!["1h", "24h", "7d", "30d", "90d", "365d"].includes(period)) {
-		return ctx.json({ error: "Invalid period" }, 401);
+app.get(
+	"/v1/groups/:id/history",
+	cache({
+		ttl: 60,
+		generateETags: false,
+	}),
+	async (ctx) => {
+		const groupId: string = ctx.params["id"] || "";
+		const period: string = ctx.query().get("period") || "24h";
+
+		const group: Group | undefined = config.groups.find((m: Group) => m.id === groupId);
+		if (!group) {
+			return ctx.json({ error: "Group not found" }, 404);
+		}
+
+		if (!["1h", "24h", "7d", "30d", "90d", "365d"].includes(period)) {
+			return ctx.json({ error: "Invalid period" }, 401);
+		}
+		let data;
+
+		try {
+			data = await getGroupHistory(groupId, period);
+		} catch (err: any) {
+			Logger.error("Retrieval of group history failed", { groupId: groupId, period: period, "error.message": err?.message });
+		}
+
+		return ctx.json({
+			groupId,
+			period,
+			data,
+		});
 	}
-	let data;
-
-	try {
-		data = await getMonitorHistory(monitorId, period);
-	} catch (err: any) {
-		Logger.error("Retrieval of monitor history failed", { monitorId: monitorId, period: period, "error.message": err?.message });
-	}
-
-	return ctx.json({
-		monitorId,
-		period,
-		data,
-	});
-});
-
-app.get("/v1/groups/:id/history", async (ctx) => {
-	const groupId: string = ctx.params["id"] || "";
-	const period: string = ctx.query().get("period") || "24h";
-
-	const group: Group | undefined = config.groups.find((m: Group) => m.id === groupId);
-	if (!group) {
-		return ctx.json({ error: "Group not found" }, 404);
-	}
-
-	if (!["1h", "24h", "7d", "30d", "90d", "365d"].includes(period)) {
-		return ctx.json({ error: "Invalid period" }, 401);
-	}
-	let data;
-
-	try {
-		data = await getGroupHistory(groupId, period);
-	} catch (err: any) {
-		Logger.error("Retrieval of group history failed", { groupId: groupId, period: period, "error.message": err?.message });
-	}
-
-	return ctx.json({
-		groupId,
-		period,
-		data,
-	});
-});
+);
 
 app.listen({ hostname: "0.0.0.0", port: config.server?.port || 3000 });
 

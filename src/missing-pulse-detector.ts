@@ -1,4 +1,5 @@
-import { statusCache, storePulse, eventEmitter } from "./clickhouse";
+import { cache } from "./cache";
+import { storePulse, eventEmitter } from "./clickhouse";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { NotificationManager } from "./notifications";
@@ -30,7 +31,7 @@ export class MissingPulseDetector {
 
 		Logger.info("Starting missing pulse detector", {
 			checkInterval: this.checkInterval,
-			monitorCount: config.monitors.length,
+			monitorCount: cache.getAllMonitors().length,
 		});
 
 		// Run immediately on start
@@ -60,9 +61,9 @@ export class MissingPulseDetector {
 		const now = Date.now();
 		const detectionPromises: Promise<void>[] = [];
 
-		for (const monitor of config.monitors) {
+		cache.getAllMonitors().forEach((monitor) => {
 			detectionPromises.push(this.checkMonitor(monitor, now));
-		}
+		});
 
 		await Promise.allSettled(detectionPromises);
 	}
@@ -72,7 +73,7 @@ export class MissingPulseDetector {
 	 */
 	private async checkMonitor(monitor: Monitor, now: number): Promise<void> {
 		try {
-			const status = statusCache.get(monitor.id);
+			const status = cache.getStatus(monitor.id);
 			const lastCheck = status?.lastCheck?.getTime();
 
 			if (!lastCheck) {
@@ -121,7 +122,7 @@ export class MissingPulseDetector {
 
 		// Only mark as down after maxRetries consecutive misses
 		if (missedCount >= monitor.maxRetries) {
-			const currentStatus = statusCache.get(monitor.id);
+			const currentStatus = cache.getStatus(monitor.id);
 
 			// Only store a new "down" pulse if the monitor was previously up
 			if (currentStatus?.status !== "down") {
@@ -271,20 +272,20 @@ export class MissingPulseDetector {
 		const monitorsWithMissingPulses = [];
 
 		for (const [monitorId, missedCount] of this.missedPulses.entries()) {
-			const monitor = config.monitors.find((m) => m.id === monitorId);
-			if (monitor) {
-				const consecutiveDownCount = this.consecutiveDownCounts.get(monitorId) || 0;
+			const monitor = cache.getMonitor(monitorId);
+			if (!monitor) continue;
 
-				monitorsWithMissingPulses.push({
-					monitorId,
-					monitorName: monitor.name,
-					missedCount,
-					maxRetries: monitor.maxRetries,
-					toleranceFactor: monitor.toleranceFactor,
-					consecutiveDownCount,
-					resendNotification: monitor.resendNotification,
-				});
-			}
+			const consecutiveDownCount = this.consecutiveDownCounts.get(monitorId) || 0;
+
+			monitorsWithMissingPulses.push({
+				monitorId,
+				monitorName: monitor.name,
+				missedCount,
+				maxRetries: monitor.maxRetries,
+				toleranceFactor: monitor.toleranceFactor,
+				consecutiveDownCount,
+				resendNotification: monitor.resendNotification,
+			});
 		}
 
 		return {
@@ -309,7 +310,7 @@ export class MissingPulseDetector {
 				previousConsecutiveDownCount: previousDownCount,
 			});
 
-			const monitor = config.monitors.find((m) => m.id === monitorId);
+			const monitor = cache.getMonitor(monitorId);
 			if (monitor && monitor.notificationChannels && monitor.notificationChannels.length > 0) {
 				this.notificationManager.sendNotification(monitor.notificationChannels, {
 					type: "recovered",

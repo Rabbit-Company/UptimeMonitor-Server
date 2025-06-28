@@ -1,20 +1,19 @@
 import { Web } from "@rabbit-company/web";
 import { Logger } from "./logger";
 import { config } from "./config";
+import { cache } from "./cache";
 import type { Group, Monitor, StatusData, StatusPage } from "./types";
-import { getGroupHistory, getMonitorHistory, initClickHouse, statusCache, storePulse, updateMonitorStatus } from "./clickhouse";
+import { getGroupHistory, getMonitorHistory, initClickHouse, storePulse, updateMonitorStatus } from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { logger } from "@rabbit-company/web-middleware/logger";
 import { cors } from "@rabbit-company/web-middleware/cors";
-import { cache } from "@rabbit-company/web-middleware/cache";
+import { cache as webCache } from "@rabbit-company/web-middleware/cache";
 
 await initClickHouse();
 
 // Initialize all monitors and groups status
-for (const monitor of config.monitors) {
-	await updateMonitorStatus(monitor.id);
-}
+await Promise.all(cache.getAllMonitors().map((monitor) => updateMonitorStatus(monitor.id)));
 
 missingPulseDetector.start();
 
@@ -34,13 +33,13 @@ app.get("/v1/health/missing-pulse-detector", (ctx) => {
 });
 
 app.get("/v1/push/:token", async (ctx) => {
-	const { token } = ctx.params;
+	const token: string = ctx.params["token"] || "";
 	const query = ctx.query();
 
 	const status = query.get("status");
 	let latency: number | null = query.get("latency") ? parseFloat(query.get("latency") || "") : null;
 
-	const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.token === token);
+	const monitor: Monitor | undefined = cache.getMonitorByToken(token);
 	if (!monitor) {
 		return ctx.json({ error: "Invalid token" }, 401);
 	}
@@ -64,14 +63,14 @@ app.get("/v1/push/:token", async (ctx) => {
 
 app.get(
 	"/v1/status/:slug",
-	cache({
+	webCache({
 		ttl: 60,
 		generateETags: false,
 	}),
 	async (ctx) => {
 		const slug: string = ctx.params["slug"] || "";
 
-		const statusPage: StatusPage | undefined = config.statusPages.find((sp: StatusPage) => sp.slug === slug);
+		const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
 		if (!statusPage) {
 			return ctx.json({ error: "Status page not found" }, 404);
 		}
@@ -90,7 +89,7 @@ app.get(
 app.get("/v1/status/:slug/summary", async (ctx) => {
 	const slug: string = ctx.params["slug"] || "";
 
-	const statusPage: StatusPage | undefined = config.statusPages.find((sp: StatusPage) => sp.slug === slug);
+	const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
 	if (!statusPage) {
 		return ctx.json({ error: "Status page not found" }, 404);
 	}
@@ -101,7 +100,7 @@ app.get("/v1/status/:slug/summary", async (ctx) => {
 
 	const countStatus = (items: string[]): void => {
 		for (const id of items) {
-			const status = statusCache.get(id);
+			const status = cache.getStatus(id);
 			if (!status) continue;
 
 			if (status.type === "monitor") {
@@ -132,7 +131,7 @@ app.get("/v1/status/:slug/summary", async (ctx) => {
 
 app.get(
 	"/v1/monitors/:id/history",
-	cache({
+	webCache({
 		ttl: 60,
 		generateETags: false,
 	}),
@@ -140,7 +139,7 @@ app.get(
 		const monitorId: string = ctx.params["id"] || "";
 		const period: string = ctx.query().get("period") || "24h";
 
-		const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
+		const monitor: Monitor | undefined = cache.getMonitor(monitorId);
 		if (!monitor) {
 			return ctx.json({ error: "Monitor not found" }, 404);
 		}
@@ -166,7 +165,7 @@ app.get(
 
 app.get(
 	"/v1/groups/:id/history",
-	cache({
+	webCache({
 		ttl: 60,
 		generateETags: false,
 	}),
@@ -174,7 +173,7 @@ app.get(
 		const groupId: string = ctx.params["id"] || "";
 		const period: string = ctx.query().get("period") || "24h";
 
-		const group: Group | undefined = config.groups.find((m: Group) => m.id === groupId);
+		const group: Group | undefined = cache.getGroup(groupId);
 		if (!group) {
 			return ctx.json({ error: "Group not found" }, 404);
 		}

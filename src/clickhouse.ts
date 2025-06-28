@@ -5,8 +5,8 @@ import { EventEmitter } from "events";
 import type { Group, HistoryRecord, IntervalConfig, Monitor, PulseRecord, StatusData, UptimeRecord } from "./types";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { NotificationManager } from "./notifications";
+import { cache } from "./cache";
 
-export const statusCache = new Map<string, StatusData>();
 export const eventEmitter = new EventEmitter();
 
 export const updateQueue = new Set<string>();
@@ -130,7 +130,7 @@ export async function storePulse(monitorId: string, status: "up" | "down", laten
 
 export async function updateMonitorStatus(monitorId: string): Promise<void> {
 	try {
-		const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
+		const monitor: Monitor | undefined = cache.getMonitor(monitorId);
 		if (!monitor) return;
 
 		const queries = {
@@ -260,7 +260,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				uptime90d: 0,
 				uptime365d: 0,
 			};
-			statusCache.set(monitorId, statusData);
+			cache.setStatus(monitorId, statusData);
 			return;
 		}
 
@@ -279,7 +279,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			uptime365d: uptime365dData[0]?.uptime || 0,
 		};
 
-		statusCache.set(monitorId, statusData);
+		cache.setStatus(monitorId, statusData);
 
 		// Update parent groups
 		if (monitor.groupId) {
@@ -291,12 +291,11 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 }
 
 export async function updateGroupStatus(groupId: string): Promise<void> {
-	const group: Group | undefined = config.groups.find((g: Group) => g.id === groupId);
+	const group: Group | undefined = cache.getGroup(groupId);
 	if (!group) return;
 
 	// Get all children (monitors and subgroups)
-	const childMonitors: Monitor[] = config.monitors.filter((m: Monitor) => m.groupId === groupId);
-	const childGroups: Group[] = config.groups.filter((g: Group) => g.parentId === groupId);
+	const { monitors: childMonitors, groups: childGroups } = cache.getDirectChildren(groupId);
 
 	let totalUp = 0;
 	let totalChildren = 0;
@@ -309,7 +308,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	// Process monitors
 	for (const monitor of childMonitors) {
 		totalChildren++;
-		const status = statusCache.get(monitor.id);
+		const status = cache.getStatus(monitor.id);
 		if (status) {
 			if (status.status === "up") totalUp++;
 			if (status.latency) {
@@ -322,7 +321,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	// Process subgroups
 	for (const subgroup of childGroups) {
 		totalChildren++;
-		const status = statusCache.get(subgroup.id);
+		const status = cache.getStatus(subgroup.id);
 		if (status) {
 			if (status.status === "up") totalUp++;
 			if (status.latency) {
@@ -383,7 +382,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 			break;
 	}
 
-	const previousStatus = statusCache.get(groupId)?.status;
+	const previousStatus = cache.getStatus(groupId)?.status;
 
 	const groupStatus: StatusData = {
 		id: groupId,
@@ -400,7 +399,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		uptime365d: Math.min(uptime365d, 100),
 	};
 
-	statusCache.set(groupId, groupStatus);
+	cache.setStatus(groupId, groupStatus);
 
 	if (previousStatus && previousStatus !== status && group.notificationChannels && group.notificationChannels.length > 0) {
 		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
@@ -469,15 +468,15 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 	const strategy = group.strategy;
 
 	// Separate monitors and groups
-	const directMonitorIds = directChildIds.filter((id) => config.monitors.some((m) => m.id === id));
-	const directGroupIds = directChildIds.filter((id) => config.groups.some((g) => g.id === id));
+	const directMonitorIds = directChildIds.filter((id) => cache.hasMonitor(id));
+	const directGroupIds = directChildIds.filter((id) => cache.hasGroup(id));
 
 	// Collect uptimes from all direct children
 	const uptimes: number[] = [];
 
 	// Get uptimes from direct child groups (from cache)
 	for (const groupId of directGroupIds) {
-		const groupStatus = statusCache.get(groupId);
+		const groupStatus = cache.getStatus(groupId);
 		if (groupStatus) {
 			const uptimeKey = `uptime${period.replace("d", "d").replace("h", "h")}` as keyof StatusData;
 			const uptime = groupStatus[uptimeKey];
@@ -499,7 +498,7 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 			case "any-up":
 				// For any-up with only monitors: at least one monitor must be up in each time interval
 				const monitorIntervalsAnyUp = directMonitorIds.map((id) => {
-					const monitor = config.monitors.find((m) => m.id === id);
+					const monitor = cache.getMonitor(id);
 					return { id, interval: monitor?.interval || 30 };
 				});
 
@@ -535,7 +534,7 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 			case "all-up":
 				// For all-up with only monitors: ALL monitors must be up in each time interval
 				const monitorIntervalsAllUp = directMonitorIds.map((id) => {
-					const monitor = config.monitors.find((m) => m.id === id);
+					const monitor = cache.getMonitor(id);
 					return { id, interval: monitor?.interval || 30 };
 				});
 
@@ -580,7 +579,7 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 			default:
 				// For percentage with only monitors: calculate weighted average
 				const monitorQueriesPerc = directMonitorIds.map((id) => {
-					const monitor = config.monitors.find((m) => m.id === id);
+					const monitor = cache.getMonitor(id);
 					const interval = monitor?.interval || 30;
 					const expectedIntervals = Math.floor(periodSeconds / interval);
 
@@ -651,7 +650,7 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 export async function getMonitorHistory(monitorId: string, period: string): Promise<HistoryRecord[]> {
 	const { interval, intervalSec, range, rangeSec }: IntervalConfig = INTERVALS[period] || INTERVALS["24h"]!;
 
-	const monitor: Monitor | undefined = config.monitors.find((m: Monitor) => m.id === monitorId);
+	const monitor: Monitor | undefined = cache.getMonitor(monitorId);
 	if (!monitor) return [];
 
 	const rawQuery = `
@@ -714,12 +713,11 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 export async function getGroupHistory(groupId: string, period: string): Promise<HistoryRecord[]> {
 	const { interval, intervalSec, range, rangeSec }: IntervalConfig = INTERVALS[period] || INTERVALS["24h"]!;
 
-	const group: Group | undefined = config.groups.find((g: Group) => g.id === groupId);
+	const group: Group | undefined = cache.getGroup(groupId);
 	if (!group) return [];
 
 	// Get direct children only (monitors and subgroups)
-	const childMonitors: Monitor[] = config.monitors.filter((m: Monitor) => m.groupId === groupId);
-	const childGroups: Group[] = config.groups.filter((g: Group) => g.parentId === groupId);
+	const { monitors: childMonitors, groups: childGroups } = cache.getDirectChildren(groupId);
 
 	if (childMonitors.length === 0 && childGroups.length === 0) {
 		return [];

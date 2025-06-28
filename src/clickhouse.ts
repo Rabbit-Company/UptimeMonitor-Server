@@ -303,14 +303,8 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	let totalLatency = 0;
 	let latencyCount = 0;
 
-	const getAllMonitorIds = (gId: string): string[] => {
-		const monitors = config.monitors.filter((m) => m.groupId === gId).map((m) => m.id);
-		const subgroups = config.groups.filter((g) => g.parentId === gId);
-		const subgroupMonitors = subgroups.flatMap((sg) => getAllMonitorIds(sg.id));
-		return [...monitors, ...subgroupMonitors];
-	};
-
-	const allMonitorIds = getAllMonitorIds(groupId);
+	// Get direct children IDs (both monitors and groups)
+	const directChildIds = [...childMonitors.map((m) => m.id), ...childGroups.map((g) => g.id)];
 
 	// Process monitors
 	for (const monitor of childMonitors) {
@@ -343,12 +337,12 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	const upPercentage = totalChildren > 0 ? (totalUp / totalChildren) * 100 : 0;
 
 	const [uptime1h, uptime24h, uptime7d, uptime30d, uptime90d, uptime365d] = await Promise.all([
-		calculateGroupUptime(group, allMonitorIds, "1h"),
-		calculateGroupUptime(group, allMonitorIds, "24h"),
-		calculateGroupUptime(group, allMonitorIds, "7d"),
-		calculateGroupUptime(group, allMonitorIds, "30d"),
-		calculateGroupUptime(group, allMonitorIds, "90d"),
-		calculateGroupUptime(group, allMonitorIds, "365d"),
+		calculateGroupUptime(group, directChildIds, "1h"),
+		calculateGroupUptime(group, directChildIds, "24h"),
+		calculateGroupUptime(group, directChildIds, "7d"),
+		calculateGroupUptime(group, directChildIds, "30d"),
+		calculateGroupUptime(group, directChildIds, "90d"),
+		calculateGroupUptime(group, directChildIds, "365d"),
 	]);
 
 	let status: "up" | "down" | "degraded";
@@ -448,8 +442,8 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	}
 }
 
-export async function calculateGroupUptime(group: Group, childMonitorIds: string[], period: string): Promise<number> {
-	if (childMonitorIds.length === 0) return 100; // Empty group is considered 100% up
+export async function calculateGroupUptime(group: Group, directChildIds: string[], period: string): Promise<number> {
+	if (directChildIds.length === 0) return 100; // Empty group is considered 100% up
 
 	const periodMap: Record<string, number> = {
 		"1h": 3600,
@@ -474,164 +468,183 @@ export async function calculateGroupUptime(group: Group, childMonitorIds: string
 
 	const strategy = group.strategy;
 
-	let query: string;
+	// Separate monitors and groups
+	const directMonitorIds = directChildIds.filter((id) => config.monitors.some((m) => m.id === id));
+	const directGroupIds = directChildIds.filter((id) => config.groups.some((g) => g.id === id));
+
+	// Collect uptimes from all direct children
+	const uptimes: number[] = [];
+
+	// Get uptimes from direct child groups (from cache)
+	for (const groupId of directGroupIds) {
+		const groupStatus = statusCache.get(groupId);
+		if (groupStatus) {
+			const uptimeKey = `uptime${period.replace("d", "d").replace("h", "h")}` as keyof StatusData;
+			const uptime = groupStatus[uptimeKey];
+			if (typeof uptime === "number") {
+				uptimes.push(uptime);
+			}
+		} else {
+			uptimes.push(0); // No status means 0% uptime
+		}
+	}
+
+	// Get uptimes from direct monitors (from database)
+	if (directMonitorIds.length > 0) {
+		// Calculate monitor uptimes based on the strategy
+		let monitorUptime: number = 0;
+		let query: string;
+
+		switch (strategy) {
+			case "any-up":
+				// For any-up with only monitors: at least one monitor must be up in each time interval
+				const monitorIntervalsAnyUp = directMonitorIds.map((id) => {
+					const monitor = config.monitors.find((m) => m.id === id);
+					return { id, interval: monitor?.interval || 30 };
+				});
+
+				const minInterval = Math.min(...monitorIntervalsAnyUp.map((m) => m.interval));
+				const expectedWindows = Math.floor(periodSeconds / minInterval);
+
+				query = `
+					WITH
+						monitor_pulses AS (
+							SELECT
+								monitor_id,
+								status,
+								timestamp,
+								toStartOfInterval(timestamp, INTERVAL ${minInterval} SECOND) AS window_start
+							FROM pulses
+							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
+								AND timestamp > now() - INTERVAL ${clickhousePeriod}
+								AND status = 'up'
+						),
+						windows_with_up AS (
+							SELECT DISTINCT window_start
+							FROM monitor_pulses
+						)
+					SELECT
+						CASE
+							WHEN ${expectedWindows} = 0 THEN 100
+							ELSE (COUNT(*) * 100.0) / ${expectedWindows}
+						END AS uptime
+					FROM windows_with_up
+				`;
+				break;
+
+			case "all-up":
+				// For all-up with only monitors: ALL monitors must be up in each time interval
+				const monitorIntervalsAllUp = directMonitorIds.map((id) => {
+					const monitor = config.monitors.find((m) => m.id === id);
+					return { id, interval: monitor?.interval || 30 };
+				});
+
+				const minIntervalAllUp = Math.min(...monitorIntervalsAllUp.map((m) => m.interval));
+				const expectedWindowsAllUp = Math.floor(periodSeconds / minIntervalAllUp);
+				const totalMonitors = directMonitorIds.length;
+
+				query = `
+					WITH
+						monitor_pulses AS (
+							SELECT
+								monitor_id,
+								status,
+								timestamp,
+								toStartOfInterval(timestamp, INTERVAL ${minIntervalAllUp} SECOND) AS window_start
+							FROM pulses
+							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
+								AND timestamp > now() - INTERVAL ${clickhousePeriod}
+						),
+						window_monitor_status AS (
+							SELECT
+								window_start,
+								COUNT(DISTINCT CASE WHEN status = 'up' THEN monitor_id END) as monitors_up
+							FROM monitor_pulses
+							GROUP BY window_start
+						),
+						windows_all_up AS (
+							SELECT window_start
+							FROM window_monitor_status
+							WHERE monitors_up = ${totalMonitors}
+						)
+					SELECT
+						CASE
+							WHEN ${expectedWindowsAllUp} = 0 THEN 100
+							ELSE (COUNT(DISTINCT window_start) * 100.0) / ${expectedWindowsAllUp}
+						END AS uptime
+					FROM windows_all_up
+				`;
+				break;
+
+			case "percentage":
+			default:
+				// For percentage with only monitors: calculate weighted average
+				const monitorQueriesPerc = directMonitorIds.map((id) => {
+					const monitor = config.monitors.find((m) => m.id === id);
+					const interval = monitor?.interval || 30;
+					const expectedIntervals = Math.floor(periodSeconds / interval);
+
+					return `
+						SELECT
+							'${id}' as monitor_id,
+							${expectedIntervals} as expected_intervals,
+							COUNT(DISTINCT window_start) as intervals_with_up,
+							CASE
+								WHEN ${expectedIntervals} = 0 THEN 100
+								ELSE (COUNT(DISTINCT window_start) * 100.0) / ${expectedIntervals}
+							END as uptime
+						FROM (
+							SELECT
+								toStartOfInterval(timestamp, INTERVAL ${interval} SECOND) AS window_start
+							FROM pulses
+							WHERE monitor_id = '${id}'
+								AND timestamp > now() - INTERVAL ${clickhousePeriod}
+								AND status = 'up'
+						)
+					`;
+				});
+
+				query = `
+					WITH monitor_uptimes AS (
+						${monitorQueriesPerc.join(" UNION ALL ")}
+					)
+					SELECT
+						CASE
+							WHEN SUM(expected_intervals) = 0 THEN 100
+							ELSE SUM(uptime * expected_intervals) / SUM(expected_intervals)
+						END as uptime
+					FROM monitor_uptimes
+				`;
+				break;
+		}
+
+		try {
+			const result = await clickhouse.query({ query, format: "JSONEachRow" });
+			const data = await result.json<{ uptime: number }>();
+			monitorUptime = data[0]?.uptime || 0;
+			uptimes.push(monitorUptime);
+		} catch (err: any) {
+			Logger.error("Failed to calculate monitor uptime", {
+				groupId: group.id,
+				period,
+				strategy,
+				"error.message": err?.message,
+			});
+			uptimes.push(0);
+		}
+	}
+
+	// Apply the group's strategy to all collected uptimes
+	if (uptimes.length === 0) return 100; // No children means 100% up
 
 	switch (strategy) {
 		case "any-up":
-			// For any-up: at least one monitor must be up in each time interval
-			// First, we need to get each monitor's interval
-			const monitorIntervalsAnyUp = childMonitorIds.map((id) => {
-				const monitor = config.monitors.find((m) => m.id === id);
-				return { id, interval: monitor?.interval || 30 };
-			});
-
-			// Find the smallest interval to define time windows
-			const minInterval = Math.min(...monitorIntervalsAnyUp.map((m) => m.interval));
-			const expectedWindows = Math.floor(periodSeconds / minInterval);
-
-			query = `
-				WITH
-					-- Define time windows based on the smallest interval
-					time_windows AS (
-						SELECT
-							toStartOfInterval(now() - INTERVAL ${clickhousePeriod}, INTERVAL ${minInterval} SECOND) + (number * ${minInterval}) AS window_start
-						FROM numbers(${expectedWindows})
-					),
-
-					-- Get all pulses for our monitors in the period
-					monitor_pulses AS (
-						SELECT
-							monitor_id,
-							status,
-							timestamp,
-							toStartOfInterval(timestamp, INTERVAL ${minInterval} SECOND) AS window_start
-						FROM pulses
-						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
-							AND timestamp > now() - INTERVAL ${clickhousePeriod}
-							AND status = 'up'
-					),
-
-					-- For each window, check if ANY monitor is up
-					windows_with_up AS (
-						SELECT DISTINCT window_start
-						FROM monitor_pulses
-					)
-
-				SELECT
-					CASE
-						WHEN ${expectedWindows} = 0 THEN 100
-						ELSE (COUNT(*) * 100.0) / ${expectedWindows}
-					END AS uptime
-				FROM windows_with_up
-			`;
-			break;
-
+			return Math.max(...uptimes);
 		case "all-up":
-			// For all-up: ALL monitors must be up in each time interval
-			// We need to check that all monitors are up at the same time in each interval
-			const monitorIntervalsAllUp = childMonitorIds.map((id) => {
-				const monitor = config.monitors.find((m) => m.id === id);
-				return { id, interval: monitor?.interval || 30 };
-			});
-
-			// Use the smallest interval to define time windows
-			const minIntervalAllUp = Math.min(...monitorIntervalsAllUp.map((m) => m.interval));
-			const expectedWindowsAllUp = Math.floor(periodSeconds / minIntervalAllUp);
-			const totalMonitors = childMonitorIds.length;
-
-			query = `
-				WITH
-					-- Get all pulses for our monitors in the period
-					monitor_pulses AS (
-						SELECT
-							monitor_id,
-							status,
-							timestamp,
-							toStartOfInterval(timestamp, INTERVAL ${minIntervalAllUp} SECOND) AS window_start
-						FROM pulses
-						WHERE monitor_id IN (${childMonitorIds.map((id) => `'${id}'`).join(",")})
-							AND timestamp > now() - INTERVAL ${clickhousePeriod}
-					),
-
-					-- For each window, count how many monitors are up
-					window_monitor_status AS (
-						SELECT
-							window_start,
-							COUNT(DISTINCT CASE WHEN status = 'up' THEN monitor_id END) as monitors_up
-						FROM monitor_pulses
-						GROUP BY window_start
-					),
-
-					-- Windows where ALL monitors are up
-					windows_all_up AS (
-						SELECT window_start
-						FROM window_monitor_status
-						WHERE monitors_up = ${totalMonitors}
-					)
-
-				SELECT
-					CASE
-						WHEN ${expectedWindowsAllUp} = 0 THEN 100
-						ELSE (COUNT(DISTINCT window_start) * 100.0) / ${expectedWindowsAllUp}
-					END AS uptime
-				FROM windows_all_up
-			`;
-			break;
-
+			return Math.min(...uptimes);
 		case "percentage":
 		default:
-			// For percentage: calculate weighted average of individual monitor uptimes
-			const monitorQueriesPerc = childMonitorIds.map((id, index) => {
-				const monitor = config.monitors.find((m) => m.id === id);
-				const interval = monitor?.interval || 30;
-				const expectedIntervals = Math.floor(periodSeconds / interval);
-
-				return `
-					SELECT
-						'${id}' as monitor_id,
-						${expectedIntervals} as expected_intervals,
-						COUNT(DISTINCT window_start) as intervals_with_up,
-						CASE
-							WHEN ${expectedIntervals} = 0 THEN 100
-							ELSE (COUNT(DISTINCT window_start) * 100.0) / ${expectedIntervals}
-						END as uptime
-					FROM (
-						SELECT
-							toStartOfInterval(timestamp, INTERVAL ${interval} SECOND) AS window_start
-						FROM pulses
-						WHERE monitor_id = '${id}'
-							AND timestamp > now() - INTERVAL ${clickhousePeriod}
-							AND status = 'up'
-					)
-				`;
-			});
-
-			query = `
-				WITH monitor_uptimes AS (
-					${monitorQueriesPerc.join(" UNION ALL ")}
-				)
-				SELECT
-					CASE
-						WHEN SUM(expected_intervals) = 0 THEN 100
-						ELSE SUM(uptime * expected_intervals) / SUM(expected_intervals)
-					END as uptime
-				FROM monitor_uptimes
-			`;
-			break;
-	}
-
-	try {
-		const result = await clickhouse.query({ query, format: "JSONEachRow" });
-		const data = await result.json<{ uptime: number }>();
-		return data[0]?.uptime || 0;
-	} catch (err: any) {
-		Logger.error("Failed to calculate group uptime", {
-			groupId: group.id,
-			period,
-			strategy,
-			"error.message": err?.message,
-		});
-		return 0;
+			return uptimes.reduce((sum, u) => sum + u, 0) / uptimes.length;
 	}
 }
 

@@ -9,7 +9,6 @@ A powerful, enterprise-grade uptime monitoring system with granular notification
 - 🔔 **Granular Notifications** - Channel-based notification system with per-monitor/group control
 - 📈 **Real-Time Status Pages** - Multiple customizable status pages for different audiences
 - ⚡ **High Performance** - Built with Bun and ClickHouse for maximum throughput
-- 🎯 **Zero-Config Deployment** - Docker-ready with sensible defaults
 - 🔒 **Production Ready** - Comprehensive validation, error handling, and monitoring
 
 ## 🚀 Quick Start

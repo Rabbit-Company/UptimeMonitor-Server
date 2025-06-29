@@ -6,6 +6,7 @@ import type { Group, HistoryRecord, IntervalConfig, Monitor, PulseRecord, Status
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { NotificationManager } from "./notifications";
 import { cache } from "./cache";
+import { formatDateTimeISOCompact, formatDateTimeISOString } from "./times";
 
 export const eventEmitter = new EventEmitter();
 
@@ -108,7 +109,7 @@ export async function storePulse(monitorId: string, status: "up" | "down", laten
 					monitor_id: monitorId,
 					status,
 					latency,
-					timestamp: timestamp.toISOString().replace("T", " ").replace("Z", ""),
+					timestamp: formatDateTimeISOCompact(timestamp, { includeMilliseconds: true }),
 				},
 			],
 			format: "JSONEachRow",
@@ -695,7 +696,7 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 		time <= now;
 		time = new Date(time.getTime() + intervalSec * 1000)
 	) {
-		const timeStr = time.toISOString().replace(/\.\d+Z$/, "Z");
+		const timeStr = formatDateTimeISOString(time);
 		const existingData = dataMap.get(timeStr);
 
 		completeSeries.push({
@@ -784,7 +785,7 @@ export async function getGroupHistory(groupId: string, period: string): Promise<
 		time <= now;
 		time = new Date(time.getTime() + intervalSec * 1000)
 	) {
-		const timeStr = time.toISOString().replace(/\.\d+Z$/, "Z");
+		const timeStr = formatDateTimeISOString(time);
 		const data = timeSeriesMap.get(timeStr);
 
 		let minLatency: number | null = null;

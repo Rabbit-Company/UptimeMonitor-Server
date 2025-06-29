@@ -11,7 +11,7 @@
 		"@types/nodemailer": "^6.4.17"
 	},
 	"peerDependencies": {
-		"typescript": "^5"
+		"typescript": "^5.8.3"
 	},
 	"dependencies": {
 		"@clickhouse/client": "^1.11.2",

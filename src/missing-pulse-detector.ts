@@ -225,10 +225,13 @@ export class MissingPulseDetector {
 		this.lastNotification.set(monitor.id, now);
 		this.lastNotificationDownCount.set(monitor.id, consecutiveDownCount);
 
+		const totalDowntime = consecutiveDownCount * monitor.interval * 1000;
+
 		Logger.error("MONITOR STILL DOWN", {
 			monitorId: monitor.id,
 			monitorName: monitor.name,
 			consecutiveDownCount,
+			totalDowntime,
 			message: `Monitor "${monitor.name}" is still DOWN - ${consecutiveDownCount} consecutive down checks`,
 		});
 
@@ -238,6 +241,7 @@ export class MissingPulseDetector {
 				monitorId: monitor.id,
 				monitorName: monitor.name,
 				consecutiveDownCount,
+				downtime: totalDowntime,
 				timestamp: new Date(),
 				sourceType: "monitor",
 			});

@@ -31,6 +31,9 @@ services:
       - "9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+      # This makes ClickHouse consume less resources, which is useful for small setups.
+      # https://clickhouse.com/docs/en/operations/tips#using-less-than-16gb-of-ram
+      - ./clickhouse/low-resources.xml:/etc/clickhouse-server/config.d/low-resources.xml:ro
     environment:
       - CLICKHOUSE_DB=uptime_monitor
       - CLICKHOUSE_USER=uptime_user

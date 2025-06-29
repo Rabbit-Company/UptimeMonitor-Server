@@ -233,13 +233,6 @@ export interface EmailConfig {
 	};
 	from: string;
 	to: string[];
-	templates: {
-		subject: {
-			down: string;
-			stillDown: string;
-			recovered: string;
-		};
-	};
 }
 
 export interface DiscordConfig {

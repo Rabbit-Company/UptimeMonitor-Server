@@ -339,31 +339,6 @@ function validateEmailConfig(config: unknown, channelId: string): any {
 		}
 	}
 
-	// Validate templates
-	if (!isObject(cfg.templates)) {
-		errors.push(`notifications.channels.${channelId}.email.templates must be an object`);
-	} else {
-		const templates = cfg.templates as Record<string, unknown>;
-
-		if (!isObject(templates.subject)) {
-			errors.push(`notifications.channels.${channelId}.email.templates.subject must be an object`);
-		} else {
-			const subject = templates.subject as Record<string, unknown>;
-
-			if (!isString(subject.down) || subject.down.trim().length === 0) {
-				errors.push(`notifications.channels.${channelId}.email.templates.subject.down must be a non-empty string`);
-			}
-
-			if (!isString(subject.stillDown) || subject.stillDown.trim().length === 0) {
-				errors.push(`notifications.channels.${channelId}.email.templates.subject.stillDown must be a non-empty string`);
-			}
-
-			if (!isString(subject.recovered) || subject.recovered.trim().length === 0) {
-				errors.push(`notifications.channels.${channelId}.email.templates.subject.recovered must be a non-empty string`);
-			}
-		}
-	}
-
 	if (errors.length > 0) {
 		throw new ConfigValidationError(errors);
 	}
@@ -381,13 +356,6 @@ function validateEmailConfig(config: unknown, channelId: string): any {
 		},
 		from: cfg.from,
 		to: cfg.to,
-		templates: {
-			subject: {
-				down: ((cfg.templates as any).subject as any).down,
-				stillDown: ((cfg.templates as any).subject as any).stillDown,
-				recovered: ((cfg.templates as any).subject as any).recovered,
-			},
-		},
 	};
 }
 

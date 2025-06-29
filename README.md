@@ -72,6 +72,19 @@ username = "🚨 Critical Alert Bot"
 [notifications.channels.critical.discord.mentions]
 everyone = true
 roles = ["187949199596191745"]  # @DevOps role ID
+
+# Critical Email Notifications
+[notifications.channels.critical.email]
+enabled = true
+from = '"Rabbit Company" <info@rabbit-company.com>'
+to = [""]
+
+[notifications.channels.critical.email.smtp]
+host = "mail.rabbit-company.com"
+port = 465
+secure = true
+user = "info@rabbit-company.com"
+pass = ""
 ```
 
 ## 📡 Sending Pulses

@@ -146,7 +146,7 @@ items = ["production"]  # show only production group
 
 # Notification Channel definitions
 
-# Critical Discord Notification Channel Configuration
+# Critical Notification Channel Configuration
 [notifications.channels.critical]
 id = "critical"
 name = "Critical Production Alerts"
@@ -155,7 +155,20 @@ enabled = true
 
 # Discord webhook configuration for critical alerts
 [notifications.channels.critical.discord]
-enabled = true
+enabled = false
 webhookUrl = "YOUR_DISCORD_WEBHOOK_HERE"
 username = "🚨 Critical Alert Bot"
 avatarUrl = "https://rabbit-company.com/images/logo.png"
+
+# Email configuration for critical alerts
+[notifications.channels.critical.email]
+enabled = false
+from = '"Rabbit Company" <info@rabbit-company.com>'
+to = [""]
+
+[notifications.channels.critical.email.smtp]
+host = "mail.rabbit-company.com"
+port = 465
+secure = true
+user = "info@rabbit-company.com"
+pass = ""

@@ -1,6 +1,8 @@
 import nodemailer, { createTransport } from "nodemailer";
 import { Logger } from "../../logger";
+import { formatDateTimeLocal, formatDuration } from "../../times";
 import type { EmailConfig, NotificationEvent, NotificationProvider } from "../../types";
+import { cache } from "../../cache";
 
 export class EmailProvider implements NotificationProvider {
 	private transporter: nodemailer.Transporter | null = null;
@@ -79,8 +81,9 @@ export class EmailProvider implements NotificationProvider {
 		htmlBody: string;
 		textBody: string;
 	} {
-		const timestamp = event.timestamp.toISOString();
-		const formattedTime = event.timestamp.toLocaleString();
+		const formattedTime = formatDateTimeLocal(event.timestamp);
+		const downtimeDuration = event.downtime ? formatDuration(event.downtime) : "Just now";
+		const interval = event.sourceType === "group" ? cache.getGroup(event.monitorId)!.interval : cache.getMonitor(event.monitorId)!.interval;
 
 		let subject: string;
 		let htmlBody: string;
@@ -88,26 +91,28 @@ export class EmailProvider implements NotificationProvider {
 
 		switch (event.type) {
 			case "down":
-				subject = this.config.templates.subject.down.replace("{monitorName}", event.monitorName);
-
-				const downtimeMinutes = event.downtime ? Math.round(event.downtime / 60000) : 0;
+				subject = `🚨 Down Alert: ${event.monitorName}`;
 
 				htmlBody = `
           <html>
             <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5;">
               <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
                 <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
-                  <h1 style="margin: 0; font-size: 24px;">🚨 Monitor Down Alert</h1>
+                  <h1 style="margin: 0; font-size: 24px;">${event.sourceType === "group" ? "🚨 Group Down Alert" : "🚨 Monitor Down Alert"}</h1>
                 </div>
                 <div style="padding: 30px;">
                   <h2 style="color: #dc3545; margin-top: 0;">Service Outage Detected</h2>
                   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
-                    Monitor <strong>${event.monitorName}</strong> has stopped responding and is now marked as <strong>DOWN</strong>.
+                    ${
+											event.sourceType === "group"
+												? `Group <strong>${event.monitorName}</strong> has degraded below acceptable thresholds.`
+												: `Monitor <strong>${event.monitorName}</strong> has stopped responding and is now marked as <strong>DOWN</strong>.`
+										}
                   </p>
                   <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
                     <table style="width: 100%; border-collapse: collapse;">
                       <tr>
-                        <td style="padding: 8px 0; font-weight: bold; width: 150px;">Monitor:</td>
+                        <td style="padding: 8px 0; font-weight: bold; width: 150px;">${event.sourceType === "group" ? "Group:" : "Monitor:"}</td>
                         <td style="padding: 8px 0;">${event.monitorName}</td>
                       </tr>
                       <tr>
@@ -115,17 +120,37 @@ export class EmailProvider implements NotificationProvider {
                         <td style="padding: 8px 0; color: #dc3545; font-weight: bold;">DOWN</td>
                       </tr>
                       <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">Type:</td>
+                        <td style="padding: 8px 0;">${event.sourceType === "group" ? "Group" : "Monitor"}</td>
+                      </tr>
+                      <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Detected at:</td>
                         <td style="padding: 8px 0;">${formattedTime}</td>
                       </tr>
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Downtime:</td>
-                        <td style="padding: 8px 0;">${downtimeMinutes} minutes</td>
+                        <td style="padding: 8px 0;">${downtimeDuration}</td>
                       </tr>
                       <tr>
-                        <td style="padding: 8px 0; font-weight: bold;">Monitor ID:</td>
+                        <td style="padding: 8px 0; font-weight: bold;">${event.sourceType === "group" ? "Group ID:" : "Monitor ID:"}</td>
                         <td style="padding: 8px 0; font-family: monospace; font-size: 14px;">${event.monitorId}</td>
                       </tr>
+                      ${
+												event.groupInfo
+													? `
+                      <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">Strategy:</td>
+                        <td style="padding: 8px 0;">${event.groupInfo.strategy}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">Children Status:</td>
+                        <td style="padding: 8px 0;">${event.groupInfo.childrenUp}/${event.groupInfo.totalChildren} up (${event.groupInfo.upPercentage.toFixed(
+															1
+													  )}%)</td>
+                      </tr>
+                      `
+													: ""
+											}
                     </table>
                   </div>
                   <p style="color: #6c757d; font-size: 14px; margin-top: 30px;">
@@ -138,34 +163,41 @@ export class EmailProvider implements NotificationProvider {
         `;
 
 				textBody = `
-🚨 MONITOR DOWN ALERT
+🚨 ${event.sourceType === "group" ? "GROUP" : "MONITOR"} DOWN ALERT
 
 Service Outage Detected
 
-Monitor: ${event.monitorName}
+${event.sourceType === "group" ? "Group" : "Monitor"}: ${event.monitorName}
 Status: DOWN
+Type: ${event.sourceType === "group" ? "Group" : "Monitor"}
 Detected at: ${formattedTime}
-Downtime: ${downtimeMinutes} minutes
-Monitor ID: ${event.monitorId}
+Downtime: ${downtimeDuration}
+${event.sourceType === "group" ? "Group" : "Monitor"} ID: ${event.monitorId}
+${
+	event.groupInfo
+		? `Strategy: ${event.groupInfo.strategy}
+Children Status: ${event.groupInfo.childrenUp}/${event.groupInfo.totalChildren} up (${event.groupInfo.upPercentage.toFixed(1)}%)`
+		: ""
+}
 
 This is an automated notification from your monitoring system.
         `.trim();
 				break;
 
 			case "still-down":
-				subject = this.config.templates.subject.stillDown
-					.replace("{monitorName}", event.monitorName)
-					.replace("{consecutiveCount}", String(event.consecutiveDownCount || 0));
+				subject = `⚠️ Still Down: ${event.monitorName} (${event.consecutiveDownCount || 0} checks)`;
+
+				const totalDowntime = event.downtime ? formatDuration(event.downtime) : `${event.consecutiveDownCount || 0} consecutive checks`;
 
 				htmlBody = `
           <html>
             <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5;">
               <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+                <div style="background-color: #fd7e14; color: white; padding: 20px; text-align: center;">
                   <h1 style="margin: 0; font-size: 24px;">⚠️ Monitor Still Down</h1>
                 </div>
                 <div style="padding: 30px;">
-                  <h2 style="color: #dc3545; margin-top: 0;">Continued Outage</h2>
+                  <h2 style="color: #fd7e14; margin-top: 0;">Continued Outage</h2>
                   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
                     Monitor <strong>${event.monitorName}</strong> remains down after multiple consecutive checks.
                   </p>
@@ -177,7 +209,11 @@ This is an automated notification from your monitoring system.
                       </tr>
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Status:</td>
-                        <td style="padding: 8px 0; color: #dc3545; font-weight: bold;">STILL DOWN</td>
+                        <td style="padding: 8px 0; color: #fd7e14; font-weight: bold;">STILL DOWN</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">Type:</td>
+                        <td style="padding: 8px 0;">${event.sourceType === "group" ? "Group" : "Monitor"}</td>
                       </tr>
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Checked at:</td>
@@ -186,6 +222,10 @@ This is an automated notification from your monitoring system.
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Consecutive downs:</td>
                         <td style="padding: 8px 0;">${event.consecutiveDownCount || 0}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">Total downtime:</td>
+                        <td style="padding: 8px 0;">${totalDowntime}</td>
                       </tr>
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Monitor ID:</td>
@@ -209,8 +249,10 @@ Continued Outage
 
 Monitor: ${event.monitorName}
 Status: STILL DOWN
+Type: ${event.sourceType === "group" ? "Group" : "Monitor"}
 Checked at: ${formattedTime}
 Consecutive downs: ${event.consecutiveDownCount || 0}
+Total downtime: ${totalDowntime}
 Monitor ID: ${event.monitorId}
 
 This is an automated notification from your monitoring system.
@@ -218,29 +260,39 @@ This is an automated notification from your monitoring system.
 				break;
 
 			case "recovered":
-				subject = this.config.templates.subject.recovered.replace("{monitorName}", event.monitorName);
+				subject = `✅ Recovered: ${event.monitorName}`;
+
+				const outageDuration = event.downtime
+					? formatDuration(event.downtime)
+					: formatDuration((event.previousConsecutiveDownCount || 0) * (interval || 30) * 1000);
 
 				htmlBody = `
           <html>
             <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5;">
               <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
                 <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
-                  <h1 style="margin: 0; font-size: 24px;">✅ Monitor Recovered</h1>
+                  <h1 style="margin: 0; font-size: 24px;">${event.sourceType === "group" ? "✅ Group Recovered" : "✅ Monitor Recovered"}</h1>
                 </div>
                 <div style="padding: 30px;">
                   <h2 style="color: #28a745; margin-top: 0;">Service Restored</h2>
                   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
-                    Great news! Monitor <strong>${event.monitorName}</strong> has recovered and is now responding normally.
+                    Great news! ${event.sourceType === "group" ? "Group" : "Monitor"} <strong>${event.monitorName}</strong> has recovered and is now ${
+					event.sourceType === "group" ? "healthy" : "responding normally"
+				}.
                   </p>
                   <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
                     <table style="width: 100%; border-collapse: collapse;">
                       <tr>
-                        <td style="padding: 8px 0; font-weight: bold; width: 150px;">Monitor:</td>
+                        <td style="padding: 8px 0; font-weight: bold; width: 150px;">${event.sourceType === "group" ? "Group:" : "Monitor:"}</td>
                         <td style="padding: 8px 0;">${event.monitorName}</td>
                       </tr>
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Status:</td>
                         <td style="padding: 8px 0; color: #28a745; font-weight: bold;">UP</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">Type:</td>
+                        <td style="padding: 8px 0;">${event.sourceType === "group" ? "Group" : "Monitor"}</td>
                       </tr>
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Recovered at:</td>
@@ -251,9 +303,29 @@ This is an automated notification from your monitoring system.
                         <td style="padding: 8px 0;">${event.previousConsecutiveDownCount || 0} consecutive down checks</td>
                       </tr>
                       <tr>
-                        <td style="padding: 8px 0; font-weight: bold;">Monitor ID:</td>
+                        <td style="padding: 8px 0; font-weight: bold;">Total outage duration:</td>
+                        <td style="padding: 8px 0;">${outageDuration}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">${event.sourceType === "group" ? "Group ID:" : "Monitor ID:"}</td>
                         <td style="padding: 8px 0; font-family: monospace; font-size: 14px;">${event.monitorId}</td>
                       </tr>
+                      ${
+												event.groupInfo
+													? `
+                      <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">Strategy:</td>
+                        <td style="padding: 8px 0;">${event.groupInfo.strategy}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-weight: bold;">Children Status:</td>
+                        <td style="padding: 8px 0;">${event.groupInfo.childrenUp}/${event.groupInfo.totalChildren} up (${event.groupInfo.upPercentage.toFixed(
+															1
+													  )}%)</td>
+                      </tr>
+                      `
+													: ""
+											}
                     </table>
                   </div>
                   <p style="color: #6c757d; font-size: 14px; margin-top: 30px;">
@@ -266,15 +338,23 @@ This is an automated notification from your monitoring system.
         `;
 
 				textBody = `
-✅ MONITOR RECOVERED
+✅ ${event.sourceType === "group" ? "GROUP" : "MONITOR"} RECOVERED
 
 Service Restored
 
-Monitor: ${event.monitorName}
+${event.sourceType === "group" ? "Group" : "Monitor"}: ${event.monitorName}
 Status: UP
+Type: ${event.sourceType === "group" ? "Group" : "Monitor"}
 Recovered at: ${formattedTime}
 Previous outage: ${event.previousConsecutiveDownCount || 0} consecutive down checks
-Monitor ID: ${event.monitorId}
+Total outage duration: ${outageDuration}
+${event.sourceType === "group" ? "Group" : "Monitor"} ID: ${event.monitorId}
+${
+	event.groupInfo
+		? `Strategy: ${event.groupInfo.strategy}
+Children Status: ${event.groupInfo.childrenUp}/${event.groupInfo.totalChildren} up (${event.groupInfo.upPercentage.toFixed(1)}%)`
+		: ""
+}
 
 This is an automated notification from your monitoring system.
         `.trim();

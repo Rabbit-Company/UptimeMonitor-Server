@@ -84,11 +84,33 @@ export class MissingPulseDetector {
 	private async checkMonitor(monitor: Monitor, now: number): Promise<void> {
 		try {
 			const status = cache.getStatus(monitor.id);
+
+			// No status data yet - monitor hasn't sent its first pulse
+			if (!status) {
+				// Check if enough time has passed since startup to consider this a problem
+				const timeSinceStartup = now - this.startupTime;
+				const expectedInterval = monitor.interval * 1000;
+				const maxAllowedInterval = expectedInterval * monitor.toleranceFactor;
+
+				// Only start checking after grace period + one full interval
+				if (timeSinceStartup > this.gracePeriod + maxAllowedInterval) {
+					Logger.warn("Monitor has never sent a pulse", {
+						monitorId: monitor.id,
+						monitorName: monitor.name,
+						timeSinceStartup: Math.round(timeSinceStartup / 1000) + "s",
+						gracePeriod: this.gracePeriod / 1000 + "s",
+					});
+
+					await this.handleMissingPulse(monitor, timeSinceStartup, expectedInterval);
+				}
+				return;
+			}
+
 			const lastCheck = status?.lastCheck?.getTime();
 
 			if (!lastCheck) {
 				// No data yet, skip
-				Logger.debug("No status data for monitor", { monitorId: monitor.id });
+				Logger.debug("No last check time for monitor", { monitorId: monitor.id });
 				return;
 			}
 

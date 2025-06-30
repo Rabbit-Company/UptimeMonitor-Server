@@ -247,6 +247,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		const uptime365dData = await uptime365d.json<UptimeRecord>();
 
 		if (!latestData.length) {
+			Logger.debug("No pulse data found for monitor", {
+				monitorId,
+				monitorName: monitor.name,
+			});
+
+			/*
 			const statusData: StatusData = {
 				id: monitorId,
 				type: "monitor",
@@ -262,6 +268,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				uptime365d: 0,
 			};
 			cache.setStatus(monitorId, statusData);
+			*/
 			return;
 		}
 

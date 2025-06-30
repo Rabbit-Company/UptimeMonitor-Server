@@ -13,11 +13,21 @@ export class MissingPulseDetector {
 	private consecutiveDownCounts: Map<string, number> = new Map();
 	private lastNotificationDownCount: Map<string, number> = new Map();
 	private notificationManager: NotificationManager;
+	private startupTime: number;
+	private gracePeriod: number;
 
 	constructor(options: MissingPulseDetectorOptions = {}) {
 		this.checkInterval = options.checkInterval || 30000; // Check every 30 seconds globally
-
+		this.gracePeriod = 300000; // 5 minutes default
+		this.startupTime = Date.now();
 		this.notificationManager = new NotificationManager(config.notifications || { channels: {} });
+	}
+
+	/**
+	 * Check if we're still in the startup grace period
+	 */
+	private isInGracePeriod(): boolean {
+		return Date.now() - this.startupTime < this.gracePeriod;
 	}
 
 	/**
@@ -118,6 +128,7 @@ export class MissingPulseDetector {
 			missedIntervals,
 			consecutiveMisses: missedCount,
 			maxRetries: monitor.maxRetries,
+			inGracePeriod: this.isInGracePeriod(),
 		});
 
 		// Only mark as down after maxRetries consecutive misses
@@ -141,7 +152,7 @@ export class MissingPulseDetector {
 				});
 
 				// Check if we should send notification
-				if (this.shouldSendNotification(monitor)) {
+				if (!this.isInGracePeriod() && this.shouldSendNotification(monitor)) {
 					this.notifyMonitorDown(monitor, timeSinceLastCheck);
 				}
 			} else {
@@ -150,7 +161,7 @@ export class MissingPulseDetector {
 				this.consecutiveDownCounts.set(monitor.id, currentDownCount);
 
 				// Check if we should resend notification
-				if (this.shouldSendNotification(monitor)) {
+				if (!this.isInGracePeriod() && this.shouldSendNotification(monitor)) {
 					this.notifyMonitorStillDown(monitor, currentDownCount);
 				}
 			}

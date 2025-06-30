@@ -306,7 +306,8 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	const { monitors: childMonitors, groups: childGroups } = cache.getDirectChildren(groupId);
 
 	let totalUp = 0;
-	let totalChildren = 0;
+	let totalDown = 0;
+	let totalUnknown = 0;
 	let totalLatency = 0;
 	let latencyCount = 0;
 
@@ -315,33 +316,71 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 
 	// Process monitors
 	for (const monitor of childMonitors) {
-		totalChildren++;
 		const status = cache.getStatus(monitor.id);
 		if (status) {
-			if (status.status === "up") totalUp++;
+			if (status.status === "up") {
+				totalUp++;
+			} else if (status.status === "down") {
+				totalDown++;
+			}
 			if (status.latency) {
 				totalLatency += status.latency;
 				latencyCount++;
 			}
+		} else {
+			// No status yet - count as unknown
+			totalUnknown++;
 		}
 	}
 
 	// Process subgroups
 	for (const subgroup of childGroups) {
-		totalChildren++;
 		const status = cache.getStatus(subgroup.id);
 		if (status) {
-			if (status.status === "up") totalUp++;
+			if (status.status === "up") {
+				totalUp++;
+			} else if (status.status === "down" || status.status === "degraded") {
+				totalDown++;
+			}
 			if (status.latency) {
 				totalLatency += status.latency;
 				latencyCount++;
 			}
+		} else {
+			// No status yet - count as unknown
+			totalUnknown++;
 		}
+	}
+
+	const totalKnown = totalUp + totalDown;
+	const totalChildren = totalKnown + totalUnknown;
+
+	// Skip update if more than 50% of children have unknown status
+	if (totalChildren > 0 && totalUnknown > totalChildren / 2) {
+		Logger.debug("Skipping group status update - too many unknown children", {
+			groupId,
+			groupName: group.name,
+			totalUp,
+			totalDown,
+			totalUnknown,
+			totalChildren,
+		});
+		return;
+	}
+
+	// If no known children, skip update
+	if (totalKnown === 0) {
+		Logger.debug("Skipping group status update - no known children", {
+			groupId,
+			groupName: group.name,
+			totalUnknown,
+		});
+		return;
 	}
 
 	const strategy = group.strategy || "percentage";
 	const avgLatency = latencyCount > 0 ? totalLatency / latencyCount : 0;
-	const upPercentage = totalChildren > 0 ? (totalUp / totalChildren) * 100 : 0;
+	const upPercentage = totalKnown > 0 ? (totalUp / totalKnown) * 100 : 0;
 
 	const [uptime1h, uptime24h, uptime7d, uptime30d, uptime90d, uptime365d] = await Promise.all([
 		calculateGroupUptime(group, directChildIds, "1h"),
@@ -359,8 +398,8 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 			// If ANY child is up, group is up
 			if (totalUp > 0) {
 				status = "up";
-			} else if (totalChildren === 0) {
-				status = "up"; // Empty group
+			} else if (totalKnown === 0) {
+				return;
 			} else {
 				status = "down";
 			}
@@ -369,8 +408,8 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		case "all-up":
 			// ALL children must be up for group to be up
 			if (totalChildren === 0) {
-				status = "up"; // Empty group
-			} else if (totalUp === totalChildren) {
+				return;
+			} else if (totalUp === totalKnown) {
 				status = "up";
 			} else {
 				status = "down";
@@ -392,6 +431,9 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 
 	const previousStatus = cache.getStatus(groupId)?.status;
 
+	// Don't send notifications during startup grace period
+	const isStartup = !previousStatus && totalUnknown > 0;
+
 	const groupStatus: StatusData = {
 		id: groupId,
 		type: "group",
@@ -409,7 +451,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 
 	cache.setStatus(groupId, groupStatus);
 
-	if (previousStatus && previousStatus !== status && group.notificationChannels && group.notificationChannels.length > 0) {
+	if (previousStatus && previousStatus !== status && !isStartup && group.notificationChannels && group.notificationChannels.length > 0) {
 		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
 
 		if (status === "down" || status === "degraded") {
@@ -422,7 +464,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 				groupInfo: {
 					strategy: group.strategy,
 					childrenUp: totalUp,
-					totalChildren,
+					totalChildren: totalKnown,
 					upPercentage,
 				},
 			});
@@ -436,7 +478,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 				groupInfo: {
 					strategy: group.strategy,
 					childrenUp: totalUp,
-					totalChildren,
+					totalChildren: totalKnown,
 					upPercentage,
 				},
 			});

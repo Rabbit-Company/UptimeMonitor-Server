@@ -153,6 +153,15 @@ export class MissingPulseDetector {
 			inGracePeriod: this.isInGracePeriod(),
 		});
 
+		// Don't mark monitors as down during grace period
+		if (this.isInGracePeriod()) {
+			Logger.info("Skipping status change during grace period", {
+				monitorId: monitor.id,
+				monitorName: monitor.name,
+			});
+			return;
+		}
+
 		// Only mark as down after maxRetries consecutive misses
 		if (missedCount >= monitor.maxRetries) {
 			const currentStatus = cache.getStatus(monitor.id);
@@ -174,7 +183,7 @@ export class MissingPulseDetector {
 				});
 
 				// Check if we should send notification
-				if (!this.isInGracePeriod() && this.shouldSendNotification(monitor)) {
+				if (this.shouldSendNotification(monitor)) {
 					this.notifyMonitorDown(monitor, timeSinceLastCheck);
 				}
 			} else {
@@ -183,7 +192,7 @@ export class MissingPulseDetector {
 				this.consecutiveDownCounts.set(monitor.id, currentDownCount);
 
 				// Check if we should resend notification
-				if (!this.isInGracePeriod() && this.shouldSendNotification(monitor)) {
+				if (this.shouldSendNotification(monitor)) {
 					this.notifyMonitorStillDown(monitor, currentDownCount);
 				}
 			}

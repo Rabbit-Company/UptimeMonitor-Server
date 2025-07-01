@@ -126,11 +126,10 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			`,
 			uptime1h: `
 				SELECT
-					(countIf(is_up) / ${Math.floor(3600 / monitor.interval)}.0) * 100 AS uptime
+					(COUNT(*) / ${Math.floor(3600 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
-						max(status = 'up') AS is_up
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start
 					FROM pulses
 					WHERE
 						monitor_id = '${monitorId}'

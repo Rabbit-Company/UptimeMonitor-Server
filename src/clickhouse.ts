@@ -60,30 +60,12 @@ export async function initClickHouse(): Promise<void> {
 			query: `
       CREATE TABLE IF NOT EXISTS pulses (
         monitor_id String,
-        status Enum('up' = 1, 'down' = 2),
         latency Nullable(Float32),
         timestamp DateTime64(3)
       ) ENGINE = MergeTree()
       ORDER BY (monitor_id, timestamp)
       PARTITION BY toYYYYMM(timestamp)
 			TTL toDateTime(timestamp) + INTERVAL 1 YEAR DELETE
-    `,
-		});
-
-		await clickhouse.exec({
-			query: `
-      CREATE TABLE IF NOT EXISTS monitor_status (
-        monitor_id String,
-        status Enum('up' = 1, 'down' = 2),
-        latency Float32,
-        last_check DateTime64(3),
-        uptime_24h Float32,
-        uptime_7d Float32,
-        uptime_30d Float32,
-        updated_at DateTime64(3)
-      ) ENGINE = ReplacingMergeTree(updated_at)
-      ORDER BY monitor_id
-			TTL toDateTime(updated_at) + INTERVAL 1 YEAR DELETE
     `,
 		});
 	} catch (err: any) {
@@ -98,7 +80,7 @@ setInterval(async () => {
 	await Promise.all(monitors.map(updateMonitorStatus));
 }, BATCH_INTERVAL);
 
-export async function storePulse(monitorId: string, status: "up" | "down", latency: number | null): Promise<void> {
+export async function storePulse(monitorId: string, latency: number | null): Promise<void> {
 	const timestamp = new Date();
 
 	try {
@@ -107,7 +89,6 @@ export async function storePulse(monitorId: string, status: "up" | "down", laten
 			values: [
 				{
 					monitor_id: monitorId,
-					status,
 					latency,
 					timestamp: formatDateTimeISOCompact(timestamp, { includeMilliseconds: true }),
 				},
@@ -121,12 +102,10 @@ export async function storePulse(monitorId: string, status: "up" | "down", laten
 	updateQueue.add(monitorId);
 
 	// Reset missed pulse counter when we receive a pulse
-	if (status === "up") {
-		missingPulseDetector.resetMonitor(monitorId);
-	}
+	missingPulseDetector.resetMonitor(monitorId);
 
 	// Emit event for real-time updates
-	eventEmitter.emit("pulse", { monitorId, status, latency, timestamp });
+	eventEmitter.emit("pulse", { monitorId, status: "up", latency, timestamp });
 }
 
 export async function updateMonitorStatus(monitorId: string): Promise<void> {
@@ -134,9 +113,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		const monitor: Monitor | undefined = cache.getMonitor(monitorId);
 		if (!monitor) return;
 
+		const now = Date.now();
+		const maxAllowedInterval = monitor.interval * monitor.toleranceFactor * 1000;
+
 		const queries = {
 			latest: `
-				SELECT status, latency, timestamp as last_check
+				SELECT latency, timestamp as last_check
 				FROM pulses
 				WHERE monitor_id = '${monitorId}'
 				ORDER BY timestamp DESC
@@ -158,11 +140,10 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			`,
 			uptime24h: `
 				SELECT
-					(countIf(is_up) / ${Math.floor(86400 / monitor.interval)}.0) * 100 AS uptime
+					(COUNT(*) / ${Math.floor(86400 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
-						max(status = 'up') AS is_up
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start
 					FROM pulses
 					WHERE
 						monitor_id = '${monitorId}'
@@ -172,11 +153,10 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			`,
 			uptime7d: `
 				SELECT
-					(countIf(is_up) / ${Math.floor(604800 / monitor.interval)}.0) * 100 AS uptime
+					(COUNT(*) / ${Math.floor(604800 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
-						max(status = 'up') AS is_up
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start
 					FROM pulses
 					WHERE
 						monitor_id = '${monitorId}'
@@ -186,11 +166,10 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			`,
 			uptime30d: `
 				SELECT
-					(countIf(is_up) / ${Math.floor(2592000 / monitor.interval)}.0) * 100 AS uptime
+					(COUNT(*) / ${Math.floor(2592000 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
-						max(status = 'up') AS is_up
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start
 					FROM pulses
 					WHERE
 						monitor_id = '${monitorId}'
@@ -200,11 +179,10 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			`,
 			uptime90d: `
 				SELECT
-					(countIf(is_up) / ${Math.floor(7776000 / monitor.interval)}.0) * 100 AS uptime
+					(COUNT(*) / ${Math.floor(7776000 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
-						max(status = 'up') AS is_up
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start
 					FROM pulses
 					WHERE
 						monitor_id = '${monitorId}'
@@ -214,11 +192,10 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			`,
 			uptime365d: `
 				SELECT
-					(countIf(is_up) / ${Math.floor(31536000 / monitor.interval)}.0) * 100 AS uptime
+					(COUNT(*) / ${Math.floor(31536000 / monitor.interval)}.0) * 100 AS uptime
 				FROM (
 					SELECT
-						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
-						max(status = 'up') AS is_up
+						toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start
 					FROM pulses
 					WHERE
 						monitor_id = '${monitorId}'
@@ -251,32 +228,19 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				monitorId,
 				monitorName: monitor.name,
 			});
-
-			/*
-			const statusData: StatusData = {
-				id: monitorId,
-				type: "monitor",
-				name: monitor.name,
-				status: "down",
-				latency: 0,
-				lastCheck: new Date(),
-				uptime1h: 0,
-				uptime24h: 0,
-				uptime7d: 0,
-				uptime30d: 0,
-				uptime90d: 0,
-				uptime365d: 0,
-			};
-			cache.setStatus(monitorId, statusData);
-			*/
 			return;
 		}
+
+		const lastCheckTime = new Date(latestData[0]!.last_check).getTime();
+		const timeSinceLastCheck = now - lastCheckTime;
+
+		const status: "up" | "down" = timeSinceLastCheck <= maxAllowedInterval ? "up" : "down";
 
 		const statusData: StatusData = {
 			id: monitorId,
 			type: "monitor",
 			name: monitor.name,
-			status: latestData[0]!.status,
+			status,
 			latency: latestData[0]!.latency,
 			lastCheck: new Date(latestData[0]!.last_check),
 			uptime1h: uptime1hData[0]?.uptime || 0,
@@ -570,13 +534,11 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						monitor_pulses AS (
 							SELECT
 								monitor_id,
-								status,
 								timestamp,
 								toStartOfInterval(timestamp, INTERVAL ${minInterval} SECOND) AS window_start
 							FROM pulses
 							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
 								AND timestamp > now() - INTERVAL ${clickhousePeriod}
-								AND status = 'up'
 						),
 						windows_with_up AS (
 							SELECT DISTINCT window_start
@@ -607,7 +569,6 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						monitor_pulses AS (
 							SELECT
 								monitor_id,
-								status,
 								timestamp,
 								toStartOfInterval(timestamp, INTERVAL ${minIntervalAllUp} SECOND) AS window_start
 							FROM pulses
@@ -617,14 +578,14 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						window_monitor_status AS (
 							SELECT
 								window_start,
-								COUNT(DISTINCT CASE WHEN status = 'up' THEN monitor_id END) as monitors_up
+								COUNT(DISTINCT monitor_id) as monitors_with_pulse
 							FROM monitor_pulses
 							GROUP BY window_start
 						),
 						windows_all_up AS (
 							SELECT window_start
 							FROM window_monitor_status
-							WHERE monitors_up = ${totalMonitors}
+							WHERE monitors_with_pulse = ${totalMonitors}
 						)
 					SELECT
 						CASE
@@ -658,7 +619,6 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 							FROM pulses
 							WHERE monitor_id = '${id}'
 								AND timestamp > now() - INTERVAL ${clickhousePeriod}
-								AND status = 'up'
 						)
 					`;
 				});
@@ -719,11 +679,10 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 			avg(avg_latency) AS avg_latency,
 			min(min_latency) AS min_latency,
 			max(max_latency) AS max_latency,
-			(countIf(is_up) / ${Math.floor(intervalSec / monitor.interval)}.0) * 100 AS uptime
+			(COUNT(*) / ${Math.floor(intervalSec / monitor.interval)}.0) * 100 AS uptime
 		FROM (
 			SELECT
 				toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS window_start,
-				max(status = 'up') AS is_up,
 				avg(latency) AS avg_latency,
 				min(latency) AS min_latency,
 				max(latency) AS max_latency

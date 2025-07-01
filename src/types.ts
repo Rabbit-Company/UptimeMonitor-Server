@@ -106,8 +106,6 @@ export interface Config {
 export interface Pulse {
 	/** ID of the monitor sending the pulse */
 	monitorId: string;
-	/** Status of the monitor at the time of pulse */
-	status: "up" | "down";
 	/** Response latency in milliseconds */
 	latency: number | null;
 	/** Timestamp of when the pulse was received */
@@ -168,8 +166,8 @@ export interface SSEPulseEvent {
 	type: "pulse" | "ping";
 	/** Monitor ID (for 'pulse' events) */
 	monitorId?: string;
-	/** Current status of the monitor */
-	status?: "up" | "down";
+	/** Current status of the monitor (always 'up' for pulses) */
+	status?: "up";
 	/** Measured latency */
 	latency?: number;
 	/** Timestamp of the event */
@@ -180,8 +178,6 @@ export interface SSEPulseEvent {
  * A single pulse record stored in the database.
  */
 export interface PulseRecord {
-	/** Status of the monitor ('up' or 'down') */
-	status: "up" | "down";
 	/** Measured latency */
 	latency: number;
 	/** Timestamp of the last check (UTC time) */

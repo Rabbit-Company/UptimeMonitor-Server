@@ -36,7 +36,6 @@ app.get("/v1/push/:token", async (ctx) => {
 	const token: string = ctx.params["token"] || "";
 	const query = ctx.query();
 
-	const status = query.get("status");
 	let latency: number | null = query.get("latency") ? parseFloat(query.get("latency") || "") : null;
 
 	const monitor: Monitor | undefined = cache.getMonitorByToken(token);
@@ -44,19 +43,16 @@ app.get("/v1/push/:token", async (ctx) => {
 		return ctx.json({ error: "Invalid token" }, 401);
 	}
 
-	if (!status || !["up", "down"].includes(status)) {
-		return ctx.json({ error: "Invalid status" }, 401);
-	}
-
 	if (latency !== null) {
 		if (!latency || isNaN(latency) || latency <= 0) {
 			return ctx.json({ error: "Invalid latency" }, 401);
 		}
+
+		// Cap latency at 10 minutes
+		latency = Math.min(latency, 600000);
 	}
 
-	if (typeof latency === "number") latency = Math.min(latency, 600000);
-
-	await storePulse(monitor.id, status as "up" | "down", latency);
+	await storePulse(monitor.id, latency);
 
 	return ctx.json({ success: true, monitorId: monitor.id });
 });

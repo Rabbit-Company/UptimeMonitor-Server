@@ -1,5 +1,5 @@
 import { cache } from "./cache";
-import { storePulse, eventEmitter } from "./clickhouse";
+import { eventEmitter } from "./clickhouse";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { NotificationManager } from "./notifications";
@@ -108,11 +108,14 @@ export class MissingPulseDetector {
 			const maxAllowedInterval = expectedInterval * monitor.toleranceFactor; // Use monitor-specific tolerance
 			const timeSinceLastCheck = now - lastCheck;
 
+			// Monitor is considered down if no pulse received within tolerance
 			if (timeSinceLastCheck > maxAllowedInterval) {
 				await this.handleMissingPulse(monitor, timeSinceLastCheck, expectedInterval);
 			} else {
-				// Reset missed pulse count if we got a recent pulse
-				this.missedPulses.delete(monitor.id);
+				// Monitor is up - reset counters if it was previously down
+				if (this.missedPulses.has(monitor.id)) {
+					this.missedPulses.delete(monitor.id);
+				}
 			}
 		} catch (error) {
 			Logger.error("Error checking monitor for missing pulses", {
@@ -153,17 +156,21 @@ export class MissingPulseDetector {
 		}
 
 		// Only mark as down after maxRetries consecutive misses
-		if (missedCount >= monitor.maxRetries) {
+		if (missedCount > monitor.maxRetries) {
 			const currentStatus = cache.getStatus(monitor.id);
 
-			// Only store a new "down" pulse if the monitor was previously up
-			if (currentStatus?.status !== "down") {
-				await storePulse(monitor.id, "down", null);
+			// Monitor is now considered down
+			// In the up-pulse-only system, we don't store down pulses
+			// The absence of recent pulses indicates the down state
 
-				// Increment consecutive down count
-				const currentDownCount = (this.consecutiveDownCounts.get(monitor.id) || 0) + 1;
-				this.consecutiveDownCounts.set(monitor.id, currentDownCount);
+			// Increment consecutive down count
+			const currentDownCount = (this.consecutiveDownCounts.get(monitor.id) || 0) + 1;
+			this.consecutiveDownCounts.set(monitor.id, currentDownCount);
 
+			// Check if this is the first time going down (transition from up to down)
+			const wasUp = currentStatus?.status === "up" || !this.consecutiveDownCounts.has(monitor.id);
+
+			if (wasUp) {
 				Logger.error("Monitor marked as down due to missing pulses", {
 					monitorId: monitor.id,
 					monitorName: monitor.name,
@@ -171,18 +178,14 @@ export class MissingPulseDetector {
 					lastCheckTime: currentStatus?.lastCheck,
 					consecutiveDownCount: currentDownCount,
 				});
+			}
 
-				// Check if we should send notification
-				if (this.shouldSendNotification(monitor)) {
+			// Check if we should send notification
+			if (this.shouldSendNotification(monitor)) {
+				// Determine notification type based on whether this is the first down or ongoing
+				if (currentDownCount === 1) {
 					this.notifyMonitorDown(monitor, timeSinceLastCheck);
-				}
-			} else {
-				// Monitor is already down, increment consecutive down count
-				const currentDownCount = (this.consecutiveDownCounts.get(monitor.id) || 0) + 1;
-				this.consecutiveDownCounts.set(monitor.id, currentDownCount);
-
-				// Check if we should resend notification
-				if (this.shouldSendNotification(monitor)) {
+				} else {
 					this.notifyMonitorStillDown(monitor, currentDownCount);
 				}
 			}
@@ -333,6 +336,7 @@ export class MissingPulseDetector {
 
 	/**
 	 * Reset missed pulse count for a specific monitor
+	 * Called when a pulse is received
 	 */
 	resetMonitor(monitorId: string): void {
 		this.missedPulses.delete(monitorId);
@@ -340,7 +344,7 @@ export class MissingPulseDetector {
 
 		// Reset consecutive down count when monitor comes back up
 		const previousDownCount = this.consecutiveDownCounts.get(monitorId);
-		if (previousDownCount) {
+		if (previousDownCount && previousDownCount > 0) {
 			Logger.info("Monitor recovered", {
 				monitorId,
 				previousConsecutiveDownCount: previousDownCount,

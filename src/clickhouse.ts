@@ -6,7 +6,7 @@ import type { Group, HistoryRecord, IntervalConfig, Monitor, PulseRecord, Status
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { NotificationManager } from "./notifications";
 import { cache } from "./cache";
-import { formatDateTimeISOCompact, formatDateTimeISOString } from "./times";
+import { formatDateTimeISOCompact, formatDateTimeISOString, GRACE_PERIOD, isInGracePeriod, STARTUP_TIME } from "./times";
 
 export const eventEmitter = new EventEmitter();
 
@@ -451,7 +451,17 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 
 	cache.setStatus(groupId, groupStatus);
 
-	if (previousStatus && previousStatus !== status && !isStartup && group.notificationChannels && group.notificationChannels.length > 0) {
+	// Log if we're skipping notifications during grace period
+	if (!previousStatus && isInGracePeriod()) {
+		Logger.info("Skipping group notifications during grace period", {
+			groupId,
+			groupName: group.name,
+			status,
+			gracePeriodRemaining: Math.round((GRACE_PERIOD - (Date.now() - STARTUP_TIME)) / 1000) + "s",
+		});
+	}
+
+	if (previousStatus && previousStatus !== status && !isInGracePeriod() && group.notificationChannels && group.notificationChannels.length > 0) {
 		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
 
 		if (status === "down" || status === "degraded") {

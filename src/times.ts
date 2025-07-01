@@ -1,3 +1,13 @@
+export const STARTUP_TIME = Date.now();
+export const GRACE_PERIOD = 300000; // 5 minutes
+
+/**
+ * Check if we're still in the startup grace period
+ */
+export function isInGracePeriod(): boolean {
+	return Date.now() - STARTUP_TIME < GRACE_PERIOD;
+}
+
 /**
 	Output Example: `2001-10-15 20:56` or `2001-10-15 20:56:27`
 */

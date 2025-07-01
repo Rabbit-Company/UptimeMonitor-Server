@@ -3,6 +3,7 @@ import { storePulse, eventEmitter } from "./clickhouse";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { NotificationManager } from "./notifications";
+import { GRACE_PERIOD, isInGracePeriod, STARTUP_TIME } from "./times";
 import type { MissingPulseDetectorOptions, Monitor, NotificationsConfig } from "./types";
 
 export class MissingPulseDetector {
@@ -13,21 +14,10 @@ export class MissingPulseDetector {
 	private consecutiveDownCounts: Map<string, number> = new Map();
 	private lastNotificationDownCount: Map<string, number> = new Map();
 	private notificationManager: NotificationManager;
-	private startupTime: number;
-	private gracePeriod: number;
 
 	constructor(options: MissingPulseDetectorOptions = {}) {
 		this.checkInterval = options.checkInterval || 30000; // Check every 30 seconds globally
-		this.gracePeriod = 300000; // 5 minutes default
-		this.startupTime = Date.now();
 		this.notificationManager = new NotificationManager(config.notifications || { channels: {} });
-	}
-
-	/**
-	 * Check if we're still in the startup grace period
-	 */
-	private isInGracePeriod(): boolean {
-		return Date.now() - this.startupTime < this.gracePeriod;
 	}
 
 	/**
@@ -88,17 +78,17 @@ export class MissingPulseDetector {
 			// No status data yet - monitor hasn't sent its first pulse
 			if (!status) {
 				// Check if enough time has passed since startup to consider this a problem
-				const timeSinceStartup = now - this.startupTime;
+				const timeSinceStartup = now - STARTUP_TIME;
 				const expectedInterval = monitor.interval * 1000;
 				const maxAllowedInterval = expectedInterval * monitor.toleranceFactor;
 
 				// Only start checking after grace period + one full interval
-				if (timeSinceStartup > this.gracePeriod + maxAllowedInterval) {
+				if (timeSinceStartup > GRACE_PERIOD + maxAllowedInterval) {
 					Logger.warn("Monitor has never sent a pulse", {
 						monitorId: monitor.id,
 						monitorName: monitor.name,
 						timeSinceStartup: Math.round(timeSinceStartup / 1000) + "s",
-						gracePeriod: this.gracePeriod / 1000 + "s",
+						gracePeriod: GRACE_PERIOD / 1000 + "s",
 					});
 
 					await this.handleMissingPulse(monitor, timeSinceStartup, expectedInterval);
@@ -150,11 +140,11 @@ export class MissingPulseDetector {
 			missedIntervals,
 			consecutiveMisses: missedCount,
 			maxRetries: monitor.maxRetries,
-			inGracePeriod: this.isInGracePeriod(),
+			inGracePeriod: isInGracePeriod(),
 		});
 
 		// Don't mark monitors as down during grace period
-		if (this.isInGracePeriod()) {
+		if (isInGracePeriod()) {
 			Logger.info("Skipping status change during grace period", {
 				monitorId: monitor.id,
 				monitorName: monitor.name,

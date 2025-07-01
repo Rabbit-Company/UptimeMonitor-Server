@@ -90,8 +90,6 @@ export class MissingPulseDetector {
 						timeSinceStartup: Math.round(timeSinceStartup / 1000) + "s",
 						gracePeriod: GRACE_PERIOD / 1000 + "s",
 					});
-
-					await this.handleMissingPulse(monitor, timeSinceStartup, expectedInterval);
 				}
 				return;
 			}

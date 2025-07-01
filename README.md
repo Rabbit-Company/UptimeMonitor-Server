@@ -92,11 +92,8 @@ pass = ""
 ### Manual Pulse Sending
 
 ```bash
-# Send a successful pulse
-curl -X GET http://localhost:3000/v1/push/:token?status=up&latency=15.10
-
-# Send a failure pulse
-curl -X GET http://localhost:3000/v1/push/:token?status=down
+# Send a pulse with latency
+curl -X GET http://localhost:3000/v1/push/:token?latency=15.10
 ```
 
 ### Automated Pulse Sending

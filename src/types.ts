@@ -291,6 +291,30 @@ export interface NotificationEvent {
 	};
 }
 
+/**
+ * Represents the current state of a monitor being tracked for missing pulses
+ */
+export interface MonitorState {
+	/** Number of consecutive missed pulse detections */
+	missedCount: number;
+	/** Number of consecutive times the monitor has been marked as down */
+	consecutiveDownCount: number;
+	/** The down count at which the last notification was sent */
+	lastNotificationCount: number;
+	/** Timestamp when the monitor first went down (undefined if monitor is up) */
+	downStartTime?: number;
+}
+
+/**
+ * Contains information about a monitor's downtime
+ */
+export interface DowntimeInfo {
+	/** Total duration of downtime in milliseconds */
+	actualDowntime: number;
+	/** Timestamp when the downtime started */
+	downStartTime: number;
+}
+
 export interface NotificationProvider {
 	sendNotification(event: NotificationEvent): Promise<void>;
 }

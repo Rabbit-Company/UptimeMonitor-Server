@@ -151,7 +151,7 @@ items = ["production"]  # show only production group
 id = "critical"
 name = "Critical Production Alerts"
 description = "High-priority alerts for production outages - sent to #alerts channel"
-enabled = true
+enabled = false
 
 # Discord webhook configuration for critical alerts
 [notifications.channels.critical.discord]

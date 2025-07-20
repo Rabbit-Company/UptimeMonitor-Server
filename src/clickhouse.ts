@@ -653,14 +653,21 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 
 	const rawQuery = `
 		WITH
-			-- Get all time windows in the period
+			-- Get all complete time windows in the period
 			time_windows AS (
-				SELECT toStartOfInterval(
-					now() - INTERVAL ${rangeSec} SECOND + INTERVAL number * ${intervalSec} SECOND,
-					INTERVAL ${interval}
-				) AS window_start
-				FROM numbers(0, ${Math.ceil(rangeSec / intervalSec)})
-				WHERE window_start <= now() - INTERVAL ${toleranceSeconds} SECOND
+				SELECT window_start
+				FROM (
+					SELECT toStartOfInterval(
+						now() - INTERVAL ${rangeSec} SECOND + INTERVAL number * ${intervalSec} SECOND,
+						INTERVAL ${interval}
+					) AS window_start
+					FROM numbers(0, ${Math.ceil(rangeSec / intervalSec)})
+				)
+				WHERE
+					-- Ensure the window has started
+					window_start <= now() - INTERVAL ${toleranceSeconds} SECOND
+					-- Ensure the window has completed (full interval duration has passed)
+					AND window_start + INTERVAL ${intervalSec} SECOND <= now() - INTERVAL ${toleranceSeconds} SECOND
 			),
 			-- Get pulse data aggregated by monitor interval within each time window
 			pulse_data AS (
@@ -673,7 +680,7 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 				FROM pulses
 				WHERE
 					monitor_id = '${monitorId}'
-					AND timestamp > now() - INTERVAL ${range}
+					AND timestamp > now() - INTERVAL ${range} - INTERVAL ${interval}
 					AND timestamp <= now() - INTERVAL ${toleranceSeconds} SECOND
 				GROUP BY window_start, monitor_interval
 			),
@@ -694,15 +701,8 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 			wa.min_latency,
 			wa.max_latency,
 			CASE
-				-- If this window is in the future or within tolerance, return 100
-				WHEN tw.window_start > now() - INTERVAL ${toleranceSeconds} SECOND THEN 100
-				-- If we're looking at a window that should have data
-				WHEN tw.window_start <= now() - INTERVAL ${toleranceSeconds} SECOND THEN
-					CASE
-						WHEN ${intervalsPerWindow} = 0 THEN 100
-						ELSE (COALESCE(wa.intervals_with_pulses, 0) * 100.0) / ${intervalsPerWindow}
-					END
-				ELSE 100
+				WHEN ${intervalsPerWindow} = 0 THEN 100
+				ELSE (COALESCE(wa.intervals_with_pulses, 0) * 100.0) / ${intervalsPerWindow}
 			END AS uptime
 		FROM time_windows tw
 		LEFT JOIN window_aggregates wa ON tw.window_start = wa.window_start
@@ -712,9 +712,7 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 	const rawResult = await clickhouse.query({ query: rawQuery, format: "JSONEachRow" });
 	const rawData = await rawResult.json<HistoryRecord>();
 
-	// Filter out any future windows that might have been included
-	const now = new Date();
-	return rawData.filter((record) => new Date(record.time) <= now);
+	return rawData;
 }
 
 export async function getGroupHistory(groupId: string, period: string): Promise<HistoryRecord[]> {

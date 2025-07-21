@@ -124,7 +124,7 @@ export class MissingPulseDetector {
 	 * Get the maximum allowed interval for a monitor
 	 */
 	private getMaxAllowedInterval(monitor: Monitor): number {
-		return monitor.interval * 1000 * monitor.toleranceFactor;
+		return monitor.interval * 1000;
 	}
 
 	/**
@@ -169,7 +169,6 @@ export class MissingPulseDetector {
 			monitorName: monitor.name,
 			timeSinceLastCheck: Math.round(timeSinceLastCheck / 1000) + "s",
 			expectedInterval: expectedInterval / 1000 + "s",
-			toleranceFactor: monitor.toleranceFactor,
 			missedIntervals,
 			consecutiveMisses: missedCount,
 			maxRetries: monitor.maxRetries,
@@ -375,7 +374,6 @@ export class MissingPulseDetector {
 			monitorName: string;
 			missedCount: number;
 			maxRetries: number;
-			toleranceFactor: number;
 			consecutiveDownCount: number;
 			resendNotification: number;
 			actualDowntime?: number;
@@ -397,7 +395,6 @@ export class MissingPulseDetector {
 				monitorName: monitor.name,
 				missedCount: state.missedCount,
 				maxRetries: monitor.maxRetries,
-				toleranceFactor: monitor.toleranceFactor,
 				consecutiveDownCount: state.consecutiveDownCount,
 				resendNotification: monitor.resendNotification,
 				actualDowntime,

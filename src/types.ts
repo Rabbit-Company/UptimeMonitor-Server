@@ -22,8 +22,6 @@ export interface Monitor {
 	interval: number;
 	/** Maximum missed checks before marking the monitor as down */
 	maxRetries: number;
-	/** Multiplier for expected interval (e.g., 1.5 = 50% tolerance) */
-	toleranceFactor: number;
 	/** Resend notification after this many consecutive down checks (0 = never) */
 	resendNotification: number;
 	/** Optional group ID this monitor belongs to */
@@ -51,8 +49,6 @@ export interface Group {
 	degradedThreshold: number;
 	/** Uses this interval when calculating uptime of a group */
 	interval: number;
-	/** Multiplier for expected interval (e.g., 1.5 = 50% tolerance) */
-	toleranceFactor: number;
 	/** Optional parent group ID */
 	parentId?: string;
 	/** Notification channel IDs to use for this group */

@@ -89,11 +89,6 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		errors.push(`monitors[${index}].maxRetries must be a positive number`);
 	}
 
-	// Validate toleranceFactor
-	if (!isNumber(monitor.toleranceFactor) || monitor.toleranceFactor <= 0) {
-		errors.push(`monitors[${index}].toleranceFactor must be a positive number`);
-	}
-
 	// Validate resendNotification
 	if (!isNumber(monitor.resendNotification) || monitor.resendNotification < 0) {
 		errors.push(`monitors[${index}].resendNotification must be a positive number`);
@@ -116,7 +111,6 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		token: monitor.token as string,
 		interval: monitor.interval as number,
 		maxRetries: monitor.maxRetries as number,
-		toleranceFactor: monitor.toleranceFactor as number,
 		resendNotification: monitor.resendNotification as number,
 		groupId: monitor.groupId as string | undefined,
 		notificationChannels,
@@ -150,11 +144,6 @@ function validateGroup(group: unknown, index: number): Group {
 		errors.push(`group[${index}].interval must be a positive number`);
 	}
 
-	// Validate toleranceFactor
-	if (!isNumber(group.toleranceFactor) || group.toleranceFactor <= 0) {
-		errors.push(`group[${index}].toleranceFactor must be a positive number`);
-	}
-
 	// Validate optional parentId
 	if (group.parentId !== undefined && (!isString(group.parentId) || group.parentId.trim().length === 0)) {
 		errors.push(`groups[${index}].parentId must be a non-empty string if provided`);
@@ -179,7 +168,6 @@ function validateGroup(group: unknown, index: number): Group {
 		strategy: group.strategy as "any-up" | "percentage" | "all-up",
 		degradedThreshold: group.degradedThreshold as number,
 		interval: group.interval as number,
-		toleranceFactor: group.toleranceFactor as number,
 		parentId: group.parentId as string | undefined,
 		notificationChannels,
 	};

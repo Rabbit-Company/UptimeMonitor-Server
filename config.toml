@@ -16,7 +16,6 @@ name = "Production API"
 token = "tk_prod_api_abc123"
 interval = 30 # Expects pulse every 30s
 maxRetries = 0 # Zero tolerance - mark down immediately
-toleranceFactor = 1.5 # Multiplier for expected interval (e.g., 1.5 = 50% tolerance)
 resendNotification = 3 # Resend notification every 3 down checks
 groupId = "production"
 notificationChannels = ["critical"]
@@ -27,7 +26,6 @@ name = "Staging API"
 token = "tk_staging_api_def456"
 interval = 60
 maxRetries = 0
-toleranceFactor = 1.5
 resendNotification = 3
 groupId = "staging"
 notificationChannels = []
@@ -38,7 +36,6 @@ name = "Production Website"
 token = "tk_prod_web_ghi789"
 interval = 30
 maxRetries = 0
-toleranceFactor = 1.5
 resendNotification = 3
 groupId = "production"
 notificationChannels = []
@@ -49,7 +46,6 @@ name = "Production Database"
 token = "tk_prod_db_jkl012"
 interval = 60
 maxRetries = 0
-toleranceFactor = 1.5
 resendNotification = 3
 groupId = "production"
 notificationChannels = []
@@ -60,7 +56,6 @@ name = "Global CDN"
 token = "tk_cdn_mno345"
 interval = 120
 maxRetries = 0
-toleranceFactor = 1.5
 resendNotification = 3
 groupId = "infrastructure"
 notificationChannels = []
@@ -71,7 +66,6 @@ name = "Payment Gateway"
 token = "tk_payment_pqr678"
 interval = 30
 maxRetries = 0
-toleranceFactor = 1.5
 resendNotification = 3
 groupId = "third-party"
 notificationChannels = []
@@ -84,7 +78,6 @@ parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 50  # percentage - if less than 50% of children are up, group is down
 interval = 60
-toleranceFactor = 1.5
 notificationChannels = []
 
 [[groups]]
@@ -94,7 +87,6 @@ parentId = "all-services"
 strategy = "any-up"
 degradedThreshold = 0  # staging can be fully down without affecting overall status
 interval = 60
-toleranceFactor = 1.5
 notificationChannels = []
 
 [[groups]]
@@ -104,7 +96,6 @@ parentId = "all-services"
 strategy = "all-up"
 degradedThreshold = 80  # infrastructure should mostly be up
 interval = 60
-toleranceFactor = 1.5
 notificationChannels = []
 
 [[groups]]
@@ -113,7 +104,6 @@ name = "Third Party Services"
 strategy = "percentage"
 degradedThreshold = 70
 interval = 60
-toleranceFactor = 1.5
 notificationChannels = []
 
 [[groups]]
@@ -122,7 +112,6 @@ name = "All Services"
 strategy = "percentage"
 degradedThreshold = 75  # overall health threshold
 interval = 60
-toleranceFactor = 1.5
 notificationChannels = []
 
 # Status page definitions

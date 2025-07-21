@@ -80,9 +80,7 @@ setInterval(async () => {
 	await Promise.all(monitors.map(updateMonitorStatus));
 }, BATCH_INTERVAL);
 
-export async function storePulse(monitorId: string, latency: number | null): Promise<void> {
-	const timestamp = new Date();
-
+export async function storePulse(monitorId: string, latency: number | null, timestamp: Date): Promise<void> {
 	try {
 		await clickhouse.insert({
 			table: "pulses",
@@ -114,10 +112,9 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		if (!monitor) return;
 
 		const now = Date.now();
-		const maxAllowedInterval = monitor.interval * monitor.toleranceFactor * 1000;
-		const toleranceSeconds = monitor.interval * monitor.toleranceFactor;
+		const maxAllowedInterval = monitor.interval * 1000;
 
-		const generateUptimeQuery = (period: string): string => {
+		const generateUptimeQuery = (period: string, monitorId: string, interval: number): string => {
 			const periodMap: Record<string, string> = {
 				"1h": "1 HOUR",
 				"24h": "24 HOUR",
@@ -127,34 +124,38 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				"365d": "365 DAY",
 			};
 
-			const periodSeconds: Record<string, number> = {
-				"1h": 3600,
-				"24h": 86400,
-				"7d": 604800,
-				"30d": 2592000,
-				"90d": 7776000,
-				"365d": 31536000,
-			};
-
 			const clickhousePeriod = periodMap[period]!;
-			const totalSeconds = periodSeconds[period]!;
-
-			const effectiveSeconds = totalSeconds - toleranceSeconds;
-			const expectedIntervals = Math.max(0, Math.floor(effectiveSeconds / monitor.interval));
 
 			return `
+				WITH
+					-- Define the time range
+					time_range AS (
+						SELECT
+							now() - INTERVAL ${clickhousePeriod} AS start_time,
+							now() AS end_time
+					),
+					-- Calculate expected intervals
+					expected AS (
+						SELECT
+							floor((end_time - start_time) / ${interval}) AS expected_intervals
+						FROM time_range
+					),
+					-- Count actual intervals with pulses
+					actual AS (
+						SELECT
+							COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) AS actual_intervals
+						FROM pulses, time_range
+						WHERE
+							monitor_id = '${monitorId}'
+							AND timestamp >= start_time
+							AND timestamp < end_time
+					)
 				SELECT
 					CASE
-						WHEN ${expectedIntervals} <= 0 THEN 100
-						ELSE (
-							COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND)) * 100.0 / ${expectedIntervals}
-						)
+						WHEN expected_intervals = 0 THEN 100
+						ELSE (actual_intervals * 100.0 / expected_intervals)
 					END AS uptime
-				FROM pulses
-				WHERE
-					monitor_id = '${monitorId}'
-					AND timestamp > now() - INTERVAL ${clickhousePeriod}
-					AND timestamp <= now() - INTERVAL ${toleranceSeconds} SECOND
+				FROM expected, actual
 			`;
 		};
 
@@ -166,12 +167,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				ORDER BY timestamp DESC
 				LIMIT 1
 			`,
-			uptime1h: generateUptimeQuery("1h"),
-			uptime24h: generateUptimeQuery("24h"),
-			uptime7d: generateUptimeQuery("7d"),
-			uptime30d: generateUptimeQuery("30d"),
-			uptime90d: generateUptimeQuery("90d"),
-			uptime365d: generateUptimeQuery("365d"),
+			uptime1h: generateUptimeQuery("1h", monitorId, monitor.interval),
+			uptime24h: generateUptimeQuery("24h", monitorId, monitor.interval),
+			uptime7d: generateUptimeQuery("7d", monitorId, monitor.interval),
+			uptime30d: generateUptimeQuery("30d", monitorId, monitor.interval),
+			uptime90d: generateUptimeQuery("90d", monitorId, monitor.interval),
+			uptime365d: generateUptimeQuery("365d", monitorId, monitor.interval),
 		};
 
 		const [latest, uptime1h, uptime24h, uptime7d, uptime30d, uptime90d, uptime365d] = await Promise.all([
@@ -492,14 +493,11 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 				// For any-up with only monitors: at least one monitor must be up in each time interval
 				const monitorIntervalsAnyUp = directMonitorIds.map((id) => {
 					const monitor = cache.getMonitor(id);
-					return { id, interval: monitor?.interval || 30, toleranceFactor: monitor?.toleranceFactor || 1.5 };
+					return { id, interval: monitor?.interval || 30 };
 				});
 
 				const minInterval = Math.min(...monitorIntervalsAnyUp.map((m) => m.interval));
-				const maxTolerance = Math.max(...monitorIntervalsAnyUp.map((m) => m.interval * m.toleranceFactor));
-
-				const effectiveSecondsAnyUp = periodSeconds - maxTolerance;
-				const expectedWindows = Math.max(0, Math.floor(effectiveSecondsAnyUp / minInterval));
+				const expectedWindows = Math.max(0, Math.floor(periodSeconds / minInterval));
 
 				query = `
 					WITH distinct_windows AS (
@@ -507,7 +505,6 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						FROM pulses
 						WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
 							AND timestamp > now() - INTERVAL ${clickhousePeriod}
-							AND timestamp <= now() - INTERVAL ${maxTolerance} SECOND
 					)
 					SELECT
 						CASE
@@ -522,14 +519,11 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 				// For all-up with only monitors: ALL monitors must be up in each time interval
 				const monitorIntervalsAllUp = directMonitorIds.map((id) => {
 					const monitor = cache.getMonitor(id);
-					return { id, interval: monitor?.interval || 30, toleranceFactor: monitor?.toleranceFactor || 1.5 };
+					return { id, interval: monitor?.interval || 30 };
 				});
 
 				const minIntervalAllUp = Math.min(...monitorIntervalsAllUp.map((m) => m.interval));
-				const maxToleranceAllUp = Math.max(...monitorIntervalsAllUp.map((m) => m.interval * m.toleranceFactor));
-
-				const effectiveSecondsAllUp = periodSeconds - maxToleranceAllUp;
-				const expectedWindowsAllUp = Math.max(0, Math.floor(effectiveSecondsAllUp / minIntervalAllUp));
+				const expectedWindowsAllUp = Math.max(0, Math.floor(periodSeconds / minIntervalAllUp));
 				const totalMonitors = directMonitorIds.length;
 
 				query = `
@@ -541,7 +535,6 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 							FROM pulses
 							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
 								AND timestamp > now() - INTERVAL ${clickhousePeriod}
-								AND timestamp <= now() - INTERVAL ${maxToleranceAllUp} SECOND
 						),
 						window_monitor_counts AS (
 							SELECT
@@ -570,12 +563,7 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 				const monitorQueries = directMonitorIds.map((id) => {
 					const monitor = cache.getMonitor(id);
 					const interval = monitor?.interval || 30;
-					const toleranceFactor = monitor?.toleranceFactor || 1.5;
-					const toleranceSeconds = interval * toleranceFactor;
-
-					// Calculate expected intervals for this specific monitor
-					const effectiveSeconds = periodSeconds - toleranceSeconds;
-					const expectedIntervals = Math.max(0, Math.floor(effectiveSeconds / interval));
+					const expectedIntervals = Math.max(0, Math.floor(periodSeconds / interval));
 
 					return `
 						SELECT
@@ -590,7 +578,6 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						FROM pulses
 						WHERE monitor_id = '${id}'
 							AND timestamp > now() - INTERVAL ${clickhousePeriod}
-							AND timestamp <= now() - INTERVAL ${toleranceSeconds} SECOND
 					`;
 				});
 
@@ -648,7 +635,6 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 	const monitor: Monitor | undefined = cache.getMonitor(monitorId);
 	if (!monitor) return [];
 
-	const toleranceSeconds = monitor.interval * monitor.toleranceFactor;
 	const intervalsPerWindow = Math.floor(intervalSec / monitor.interval);
 
 	const rawQuery = `
@@ -665,9 +651,9 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 				)
 				WHERE
 					-- Ensure the window has started
-					window_start <= now() - INTERVAL ${toleranceSeconds} SECOND
+					window_start <= now()
 					-- Ensure the window has completed (full interval duration has passed)
-					AND window_start + INTERVAL ${intervalSec} SECOND <= now() - INTERVAL ${toleranceSeconds} SECOND
+					AND window_start + INTERVAL ${intervalSec} SECOND <= now()
 			),
 			-- Get pulse data aggregated by monitor interval within each time window
 			pulse_data AS (
@@ -681,7 +667,7 @@ export async function getMonitorHistory(monitorId: string, period: string): Prom
 				WHERE
 					monitor_id = '${monitorId}'
 					AND timestamp > now() - INTERVAL ${range} - INTERVAL ${interval}
-					AND timestamp <= now() - INTERVAL ${toleranceSeconds} SECOND
+					AND timestamp <= now()
 				GROUP BY window_start, monitor_interval
 			),
 			-- Aggregate by time window

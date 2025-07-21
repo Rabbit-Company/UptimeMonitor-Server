@@ -37,7 +37,6 @@ name = "Production API"
 token = "secure-random-token"
 interval = 60  # Expect pulse every 60 seconds
 maxRetries = 3
-toleranceFactor = 1.5
 resendNotification = 5
 notificationChannels = ["critical"]
 

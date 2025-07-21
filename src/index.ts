@@ -36,23 +36,96 @@ app.get("/v1/push/:token", async (ctx) => {
 	const token: string = ctx.params["token"] || "";
 	const query = ctx.query();
 
-	let latency: number | null = query.get("latency") ? parseFloat(query.get("latency") || "") : null;
-
 	const monitor: Monitor | undefined = cache.getMonitorByToken(token);
 	if (!monitor) {
 		return ctx.json({ error: "Invalid token" }, 401);
 	}
 
+	// Parse latency
+	let latency: number | null = query.get("latency") ? parseFloat(query.get("latency") || "") : null;
 	if (latency !== null) {
 		if (!latency || isNaN(latency) || latency <= 0) {
-			return ctx.json({ error: "Invalid latency" }, 401);
+			return ctx.json({ error: "Invalid latency" }, 400);
 		}
-
 		// Cap latency at 10 minutes
 		latency = Math.min(latency, 600000);
 	}
 
-	await storePulse(monitor.id, latency);
+	// Parse startTime (when the check started)
+	let startTime: Date | null = null;
+	const startTimeParam = query.get("startTime");
+	if (startTimeParam) {
+		try {
+			// Handle ISO format or timestamp
+			const parsed = isNaN(Number(startTimeParam)) ? new Date(startTimeParam) : new Date(Number(startTimeParam));
+
+			if (!isNaN(parsed.getTime())) {
+				startTime = parsed;
+			} else {
+				return ctx.json({ error: "Invalid startTime format" }, 400);
+			}
+		} catch (error) {
+			return ctx.json({ error: "Invalid startTime format" }, 400);
+		}
+	}
+
+	// Parse endTime (when the check completed)
+	let endTime: Date | null = null;
+	const endTimeParam = query.get("endTime");
+	if (endTimeParam) {
+		try {
+			// Handle ISO format or timestamp
+			const parsed = isNaN(Number(endTimeParam)) ? new Date(endTimeParam) : new Date(Number(endTimeParam));
+
+			if (!isNaN(parsed.getTime())) {
+				endTime = parsed;
+			} else {
+				return ctx.json({ error: "Invalid endTime format" }, 400);
+			}
+		} catch (error) {
+			return ctx.json({ error: "Invalid endTime format" }, 400);
+		}
+	}
+
+	// Validate timing logic
+	if (startTime && endTime) {
+		// If both are provided, calculate latency from them
+		const calculatedLatency = endTime.getTime() - startTime.getTime();
+		if (calculatedLatency < 0) {
+			return ctx.json({ error: "endTime must be after startTime" }, 400);
+		}
+		// Update latency with calculated value
+		if (!latency) latency = Math.min(calculatedLatency, 600000); // Cap at 10 minutes
+	} else if (startTime && latency !== null) {
+		// If startTime and latency are provided, calculate endTime
+		endTime = new Date(startTime.getTime() + latency);
+	} else if (endTime && latency !== null) {
+		// If endTime and latency are provided, calculate startTime
+		startTime = new Date(endTime.getTime() - latency);
+	} else if (latency !== null) {
+		// If only latency is provided, calculate based on current time
+		endTime = new Date();
+		startTime = new Date(endTime.getTime() - latency);
+	} else {
+		// No timing information provided, use current time
+		endTime = new Date();
+		startTime = endTime;
+	}
+
+	// Validate timestamps aren't too far in the future or past
+	const now = new Date();
+	const maxFuture = 60000; // 1 minute in the future (for clock drift)
+	const maxPast = 31536000000; // 1 year in the past
+
+	if (endTime.getTime() > now.getTime() + maxFuture) {
+		return ctx.json({ error: "Timestamp too far in the future" }, 400);
+	}
+
+	if (startTime.getTime() < now.getTime() - maxPast) {
+		return ctx.json({ error: "Timestamp too far in the past" }, 400);
+	}
+
+	await storePulse(monitor.id, latency, startTime);
 
 	return ctx.json({ success: true, monitorId: monitor.id });
 });

@@ -122,9 +122,18 @@ export class MissingPulseDetector {
 
 	/**
 	 * Get the maximum allowed interval for a monitor
+	 * Uses the smaller of: 50% buffer or 30 seconds
 	 */
 	private getMaxAllowedInterval(monitor: Monitor): number {
-		return monitor.interval * 1000;
+		const baseInterval = monitor.interval * 1000;
+
+		// Calculate 50% buffer
+		const percentageBuffer = baseInterval * 0.5;
+
+		// Use whichever is smaller: 50% or 30 seconds
+		const gracePeriod = Math.min(percentageBuffer, 30000);
+
+		return baseInterval + gracePeriod;
 	}
 
 	/**

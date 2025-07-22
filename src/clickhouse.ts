@@ -113,8 +113,29 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 
 		const now = Date.now();
 		const maxAllowedInterval = monitor.interval * 1000;
+		const prevStatus = cache.getStatus(monitorId);
 
-		const generateUptimeQuery = (period: string, monitorId: string, interval: number): string => {
+		let firstPulse = prevStatus?.firstPulse;
+		if (!firstPulse) {
+			try {
+				const query = `
+					SELECT
+						formatDateTime(MIN(timestamp), '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
+    			FROM pulses
+    			WHERE monitor_id = '${monitorId}'
+				`;
+				const result = await clickhouse.query({ query, format: "JSONEachRow" });
+				const data = await result.json<{ first_pulse: string }>();
+				if (data[0]?.first_pulse) firstPulse = new Date(data[0].first_pulse);
+			} catch (err: any) {
+				Logger.error("Failed to get first pulse for monitor", {
+					monitorId: monitorId,
+					"error.message": err?.message,
+				});
+			}
+		}
+
+		const generateUptimeQuery = (period: string, monitorId: string, interval: number, firstPulse: Date | undefined): string => {
 			const periodMap: Record<string, string> = {
 				"1h": "1 HOUR",
 				"24h": "24 HOUR",
@@ -125,13 +146,17 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			};
 
 			const clickhousePeriod = periodMap[period]!;
+			const pulseDate = firstPulse ? formatDateTimeISOCompact(firstPulse) : "2001-10-15 00:00:00";
 
 			return `
 				WITH
 					-- Define the time range
 					time_range AS (
 						SELECT
-							now() - INTERVAL ${clickhousePeriod} AS start_time,
+							GREATEST(
+								toDateTime('${pulseDate}'),
+								now() - INTERVAL ${clickhousePeriod}
+							) AS start_time,
 							now() AS end_time
 					),
 					-- Calculate expected intervals
@@ -167,12 +192,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				ORDER BY timestamp DESC
 				LIMIT 1
 			`,
-			uptime1h: generateUptimeQuery("1h", monitorId, monitor.interval),
-			uptime24h: generateUptimeQuery("24h", monitorId, monitor.interval),
-			uptime7d: generateUptimeQuery("7d", monitorId, monitor.interval),
-			uptime30d: generateUptimeQuery("30d", monitorId, monitor.interval),
-			uptime90d: generateUptimeQuery("90d", monitorId, monitor.interval),
-			uptime365d: generateUptimeQuery("365d", monitorId, monitor.interval),
+			uptime1h: generateUptimeQuery("1h", monitorId, monitor.interval, firstPulse),
+			uptime24h: generateUptimeQuery("24h", monitorId, monitor.interval, firstPulse),
+			uptime7d: generateUptimeQuery("7d", monitorId, monitor.interval, firstPulse),
+			uptime30d: generateUptimeQuery("30d", monitorId, monitor.interval, firstPulse),
+			uptime90d: generateUptimeQuery("90d", monitorId, monitor.interval, firstPulse),
+			uptime365d: generateUptimeQuery("365d", monitorId, monitor.interval, firstPulse),
 		};
 
 		const [latest, uptime1h, uptime24h, uptime7d, uptime30d, uptime90d, uptime365d] = await Promise.all([
@@ -204,14 +229,15 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		const lastCheckTime = new Date(latestData[0]!.last_check + "Z").getTime();
 		const timeSinceLastCheck = now - lastCheckTime;
 
-		const status: "up" | "down" = timeSinceLastCheck <= maxAllowedInterval ? "up" : "down";
+		const statusString: "up" | "down" = timeSinceLastCheck <= maxAllowedInterval ? "up" : "down";
 
 		const statusData: StatusData = {
 			id: monitorId,
 			type: "monitor",
 			name: monitor.name,
-			status,
+			status: statusString,
 			latency: latestData[0]!.latency,
+			firstPulse: firstPulse,
 			lastCheck: new Date(latestData[0]!.last_check + "Z"),
 			uptime1h: uptime1hData[0]?.uptime || 0,
 			uptime24h: uptime24hData[0]?.uptime || 0,
@@ -484,6 +510,11 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 
 	// Get uptimes from direct monitors (from database)
 	if (directMonitorIds.length > 0) {
+		let firstPulses: Record<string, Date> = {};
+		directMonitorIds.forEach((monitorId) => {
+			firstPulses[monitorId] = cache.getStatus(monitorId)?.firstPulse || new Date("2001-10-15 00:00:00");
+		});
+
 		// Calculate monitor uptimes based on the strategy
 		let monitorUptime: number = 0;
 		let query: string = "";
@@ -497,21 +528,41 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 				});
 
 				const minInterval = Math.min(...monitorIntervalsAnyUp.map((m) => m.interval));
+
+				const earliestFirstPulse = directMonitorIds.reduce((earliest, id) => {
+					const fp = firstPulses[id];
+					return fp && (!earliest || fp < earliest) ? fp : earliest;
+				}, undefined as Date | undefined);
+
+				const rangeStart = earliestFirstPulse
+					? `GREATEST(toDateTime('${formatDateTimeISOCompact(earliestFirstPulse)}'), now() - INTERVAL ${clickhousePeriod})`
+					: `now() - INTERVAL ${clickhousePeriod}`;
+
 				const expectedWindows = Math.max(0, Math.floor(periodSeconds / minInterval));
 
 				query = `
-					WITH distinct_windows AS (
-						SELECT DISTINCT toStartOfInterval(timestamp, INTERVAL ${minInterval} SECOND) AS window_start
-						FROM pulses
-						WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
-							AND timestamp > now() - INTERVAL ${clickhousePeriod}
-					)
+					WITH
+						time_range AS (
+							SELECT ${rangeStart} AS start_time, now() AS end_time
+						),
+						expected AS (
+							SELECT
+								floor((end_time - start_time) / ${minInterval}) AS expected_intervals
+							FROM time_range
+						),
+						distinct_windows AS (
+							SELECT DISTINCT toStartOfInterval(timestamp, INTERVAL ${minInterval} SECOND) AS window_start
+							FROM pulses, time_range
+							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
+								AND timestamp >= start_time
+                AND timestamp <= end_time
+						)
 					SELECT
 						CASE
-							WHEN ${expectedWindows} = 0 THEN 100
-							ELSE (COUNT(*) * 100.0) / ${expectedWindows}
+							WHEN expected_intervals = 0 THEN 100
+							ELSE (COUNT(*) * 100.0) / expected_intervals
 						END AS uptime
-					FROM distinct_windows
+					FROM expected, distinct_windows
 				`;
 				break;
 
@@ -523,18 +574,37 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 				});
 
 				const minIntervalAllUp = Math.min(...monitorIntervalsAllUp.map((m) => m.interval));
-				const expectedWindowsAllUp = Math.max(0, Math.floor(periodSeconds / minIntervalAllUp));
 				const totalMonitors = directMonitorIds.length;
+
+				const latestFirstPulse = directMonitorIds.reduce((latest, id) => {
+					const fp = firstPulses[id];
+					return fp && (!latest || fp > latest) ? fp : latest;
+				}, undefined as Date | undefined);
+
+				const rangeStartAllUp = latestFirstPulse
+					? `GREATEST(toDateTime('${formatDateTimeISOCompact(latestFirstPulse)}'), now() - INTERVAL ${clickhousePeriod})`
+					: `now() - INTERVAL ${clickhousePeriod}`;
+
+				const expectedWindowsAllUp = Math.max(0, Math.floor(periodSeconds / minIntervalAllUp));
 
 				query = `
 					WITH
+						time_range AS (
+							SELECT ${rangeStartAllUp} AS start_time, now() AS end_time
+						),
+						expected AS (
+							SELECT
+								floor((end_time - start_time) / ${minIntervalAllUp}) AS expected_intervals
+							FROM time_range
+						),
 						monitor_windows AS (
 							SELECT
 								monitor_id,
 								toStartOfInterval(timestamp, INTERVAL ${minIntervalAllUp} SECOND) AS window_start
-							FROM pulses
+							FROM pulses, time_range
 							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
-								AND timestamp > now() - INTERVAL ${clickhousePeriod}
+								AND timestamp >= start_time
+                AND timestamp <= end_time
 						),
 						window_monitor_counts AS (
 							SELECT
@@ -550,10 +620,10 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						)
 					SELECT
 						CASE
-							WHEN ${expectedWindowsAllUp} = 0 THEN 100
-							ELSE (COUNT(*) * 100.0) / ${expectedWindowsAllUp}
+							WHEN expected_intervals = 0 THEN 100
+							ELSE (COUNT(*) * 100.0) / expected_intervals
 						END AS uptime
-					FROM complete_windows
+					FROM expected, complete_windows
 				`;
 				break;
 
@@ -563,21 +633,41 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 				const monitorQueries = directMonitorIds.map((id) => {
 					const monitor = cache.getMonitor(id);
 					const interval = monitor?.interval || 30;
-					const expectedIntervals = Math.max(0, Math.floor(periodSeconds / interval));
+					const firstPulse = firstPulses[id];
+					const pulseDate = firstPulse ? formatDateTimeISOCompact(firstPulse) : "2001-10-15 00:00:00";
 
 					return `
+						WITH
+							time_range AS (
+								SELECT
+									GREATEST(
+										toDateTime('${pulseDate}'),
+										now() - INTERVAL ${clickhousePeriod}
+									) AS start_time,
+									now() AS end_time
+							),
+							expected AS (
+								SELECT
+									floor((end_time - start_time) / ${interval}) AS expected_intervals
+								FROM time_range
+							),
+							actual AS (
+								SELECT
+									COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) AS actual_intervals
+								FROM pulses, time_range
+								WHERE
+									monitor_id = '${id}'
+									AND timestamp >= start_time
+									AND timestamp <= end_time
+							)
 						SELECT
 							'${id}' as monitor_id,
-							${expectedIntervals} as expected_intervals,
+							${interval} as interval,
 							CASE
-								WHEN ${expectedIntervals} = 0 THEN 100
-								ELSE (
-									COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) * 100.0 / ${expectedIntervals}
-								)
+								WHEN expected_intervals = 0 THEN 100
+								ELSE (actual_intervals * 100.0 / expected_intervals)
 							END as uptime
-						FROM pulses
-						WHERE monitor_id = '${id}'
-							AND timestamp > now() - INTERVAL ${clickhousePeriod}
+						FROM expected, actual
 					`;
 				});
 
@@ -590,8 +680,8 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						)
 						SELECT
 							CASE
-								WHEN SUM(expected_intervals) = 0 THEN 100
-								ELSE SUM(uptime * expected_intervals) / SUM(expected_intervals)
+								WHEN SUM(interval) = 0 THEN 100
+								ELSE SUM(uptime * interval) / SUM(interval)
 							END as uptime
 						FROM monitor_uptimes
 					`;

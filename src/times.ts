@@ -28,10 +28,10 @@ export function formatDateTimeLocal(date: Date | string | number, options: { inc
 }
 
 /**
- * Output Example: `2001-10-15 20:56:27.542` or `2001-10-15 20:56:27`
+ * Output Example: `2001-10-15 20:56:27` or `2001-10-15 20:56:27.542`
  */
 export function formatDateTimeISOCompact(date: Date | string | number, options: { includeMilliseconds?: boolean } = {}): string {
-	const { includeMilliseconds = true } = options;
+	const { includeMilliseconds = false } = options;
 	const dt = date instanceof Date ? date : new Date(date);
 
 	const iso = dt.toISOString();

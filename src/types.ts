@@ -138,6 +138,8 @@ export interface StatusData {
 	latency: number;
 	/** Timestamp of the last check */
 	lastCheck: Date;
+	/** Timestamp of the first received pulse */
+	firstPulse?: Date;
 	/** 1-hour uptime percentage */
 	uptime1h: number;
 	/** 24-hour uptime percentage */

@@ -545,9 +545,9 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						time_range AS (
 							SELECT ${rangeStart} AS start_time, now() AS end_time
 						),
-						expected AS (
+						expected_intervals AS (
 							SELECT
-								floor((end_time - start_time) / ${minInterval}) AS expected_intervals
+								floor((toUnixTimestamp(end_time) - toUnixTimestamp(start_time)) / ${minInterval}) AS value
 							FROM time_range
 						),
 						distinct_windows AS (
@@ -556,13 +556,15 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
 								AND timestamp >= start_time
                 AND timestamp <= end_time
-						)
+						),
+						actual_intervals AS (
+              SELECT COUNT() AS value FROM distinct_windows
+            )
 					SELECT
 						CASE
-							WHEN expected_intervals = 0 THEN 100
-							ELSE (COUNT(*) * 100.0) / expected_intervals
-						END AS uptime
-					FROM expected, distinct_windows
+							WHEN (SELECT value FROM expected_intervals) = 0 THEN 100
+							ELSE ((SELECT value FROM actual_intervals) * 100.0) / (SELECT value FROM expected_intervals)
+            END AS uptime
 				`;
 				break;
 
@@ -592,9 +594,9 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 						time_range AS (
 							SELECT ${rangeStartAllUp} AS start_time, now() AS end_time
 						),
-						expected AS (
+						expected_intervals AS (
 							SELECT
-								floor((end_time - start_time) / ${minIntervalAllUp}) AS expected_intervals
+								floor((toUnixTimestamp(end_time) - toUnixTimestamp(start_time)) / ${minIntervalAllUp}) AS value
 							FROM time_range
 						),
 						monitor_windows AS (
@@ -617,13 +619,15 @@ export async function calculateGroupUptime(group: Group, directChildIds: string[
 							SELECT window_start
 							FROM window_monitor_counts
 							WHERE monitors_present = ${totalMonitors}
-						)
+						),
+						actual_intervals AS (
+							SELECT COUNT() AS value FROM complete_windows
+            )
 					SELECT
 						CASE
-							WHEN expected_intervals = 0 THEN 100
-							ELSE (COUNT(*) * 100.0) / expected_intervals
-						END AS uptime
-					FROM expected, complete_windows
+							WHEN (SELECT value FROM expected_intervals) = 0 THEN 100
+							ELSE ((SELECT value FROM actual_intervals) * 100.0) / (SELECT value FROM expected_intervals)
+            END AS uptime
 				`;
 				break;
 

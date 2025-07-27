@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import type { Config, Monitor, Group, StatusPage, ServerConfig, LoggerConfig, NotificationsConfig, NotificationChannel } from "./types";
+import type { Config, Monitor, Group, StatusPage, ServerConfig, LoggerConfig, NotificationsConfig, NotificationChannel, SelfMonitoringConfig } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { Logger } from "./logger";
 
@@ -261,6 +261,45 @@ function validateServerConfig(config: unknown): ServerConfig {
 		} else {
 			result.port = cfg.port;
 		}
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	return result;
+}
+
+function validateSelfMonitoringConfig(config: unknown): SelfMonitoringConfig {
+	const errors: string[] = [];
+	const cfg = (config || {}) as Record<string, unknown>;
+
+	const result: SelfMonitoringConfig = {
+		enabled: false,
+		id: "self-monitor",
+		interval: 3,
+		backfillOnRecovery: false,
+		latencyStrategy: "last-known",
+	};
+
+	if (isBoolean(cfg.enabled)) {
+		result.enabled = cfg.enabled;
+	}
+
+	if (isString(cfg.id) && cfg.id.trim().length !== 0) {
+		result.id = cfg.id;
+	}
+
+	if (isNumber(cfg.interval) && cfg.interval >= 1) {
+		result.interval = cfg.interval;
+	}
+
+	if (isBoolean(cfg.backfillOnRecovery)) {
+		result.backfillOnRecovery = cfg.backfillOnRecovery;
+	}
+
+	if (isString(cfg.latencyStrategy) && ["last-known", "null"].includes(cfg.latencyStrategy)) {
+		result.latencyStrategy = cfg.latencyStrategy as "last-known" | "null";
 	}
 
 	if (errors.length > 0) {
@@ -784,6 +823,22 @@ function loadConfig(): Config {
 			} else throw error;
 		}
 
+		let selfMonitoring: SelfMonitoringConfig;
+		try {
+			selfMonitoring = validateSelfMonitoringConfig(parsed.selfMonitoring);
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				allErrors.push(...error.errors);
+				selfMonitoring = {
+					enabled: false,
+					id: "self-monitor",
+					interval: 3,
+					backfillOnRecovery: false,
+					latencyStrategy: "last-known",
+				};
+			} else throw error;
+		}
+
 		let notifications: NotificationsConfig;
 		try {
 			notifications = validateNotificationsConfig(parsed.notifications);
@@ -862,6 +917,7 @@ function loadConfig(): Config {
 			clickhouse,
 			server,
 			logger,
+			selfMonitoring,
 			notifications,
 			monitors,
 			groups,

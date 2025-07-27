@@ -61,7 +61,8 @@ export async function initClickHouse(): Promise<void> {
       CREATE TABLE IF NOT EXISTS pulses (
         monitor_id String,
         latency Nullable(Float32),
-        timestamp DateTime64(3)
+        timestamp DateTime64(3),
+				synthetic Boolean DEFAULT false
       ) ENGINE = MergeTree()
       ORDER BY (monitor_id, timestamp)
       PARTITION BY toYYYYMM(timestamp)
@@ -80,7 +81,7 @@ setInterval(async () => {
 	await Promise.all(monitors.map(updateMonitorStatus));
 }, BATCH_INTERVAL);
 
-export async function storePulse(monitorId: string, latency: number | null, timestamp: Date): Promise<void> {
+export async function storePulse(monitorId: string, latency: number | null, timestamp: Date, synthetic: boolean = false): Promise<void> {
 	try {
 		await clickhouse.insert({
 			table: "pulses",
@@ -89,6 +90,7 @@ export async function storePulse(monitorId: string, latency: number | null, time
 					monitor_id: monitorId,
 					latency,
 					timestamp: formatDateTimeISOCompact(timestamp, { includeMilliseconds: true }),
+					synthetic: synthetic,
 				},
 			],
 			format: "JSONEachRow",
@@ -96,6 +98,9 @@ export async function storePulse(monitorId: string, latency: number | null, time
 	} catch (err: any) {
 		Logger.error("Storing pulse into ClickHouse failed", { monitorId: monitorId, "error.message": err?.message });
 	}
+
+	// Don't process synthetic pulses through normal flow
+	if (synthetic) return;
 
 	updateQueue.add(monitorId);
 

@@ -30,6 +30,26 @@ port = 3000
 [logger]
 level = 4  # 0=silent, 7=verbose
 
+[selfMonitoring]
+# Enable self-monitoring and automatic backfill
+enabled = true
+
+# ID of the self-monitor
+id = "self-monitor"
+
+# Health check interval in seconds (default: 3)
+# Lower values detect outages faster but increase database load
+interval = 3
+
+# Backfill synthetic pulses for monitors that were healthy before downtime
+# This prevents false downtime reports when the monitoring system itself is down
+backfillOnRecovery = true
+
+# Strategy for synthetic pulse latency:
+# - "last-known": Use the last latency from before the downtime
+# - "null": Don't set latency for synthetic pulses
+latencyStrategy = "last-known"
+
 # Monitor Definition
 [[monitors]]
 id = "api-prod"

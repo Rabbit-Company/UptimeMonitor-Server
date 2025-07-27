@@ -87,6 +87,8 @@ export interface Config {
 	server: ServerConfig;
 	/** Logger configuration */
 	logger: LoggerConfig;
+	/** Self-monitoring and automatic backfill configuration */
+	selfMonitoring: SelfMonitoringConfig;
 	/** List of defined monitors */
 	monitors: Monitor[];
 	/** List of defined groups */
@@ -172,6 +174,19 @@ export interface SSEPulseEvent {
 	timestamp?: Date;
 }
 
+export interface SelfMonitoringConfig {
+	/** Enable self-monitoring and automatic backfill */
+	enabled: boolean;
+	/** ID of the self-monitor */
+	id: string;
+	/** Health check interval in seconds */
+	interval: number;
+	/** Backfill synthetic pulses for monitors that were healthy before downtime */
+	backfillOnRecovery: boolean;
+	/** Strategy for synthetic pulse latency */
+	latencyStrategy: "last-known" | "null";
+}
+
 /**
  * A single pulse record stored in the database.
  */
@@ -247,6 +262,12 @@ export interface WebhookConfig {
 	method?: "POST" | "PUT" | "PATCH";
 	headers?: Record<string, string>;
 	template?: string; // JSON template for custom payloads
+}
+
+export interface DowntimeRecord {
+	startTime: Date;
+	endTime: Date;
+	duration: number;
 }
 
 export interface NotificationsConfig {

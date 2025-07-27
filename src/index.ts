@@ -9,8 +9,11 @@ import { missingPulseDetector } from "./missing-pulse-detector";
 import { logger } from "@rabbit-company/web-middleware/logger";
 import { cors } from "@rabbit-company/web-middleware/cors";
 import { cache as webCache } from "@rabbit-company/web-middleware/cache";
+import { selfMonitor } from "./selfmonitor";
 
 await initClickHouse();
+
+await selfMonitor.start();
 
 // Initialize all monitors and groups status
 await Promise.all(cache.getAllMonitors().map((monitor) => updateMonitorStatus(monitor.id)));

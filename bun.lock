@@ -4,7 +4,7 @@
     "": {
       "name": "uptimemonitor-server",
       "dependencies": {
-        "@clickhouse/client": "^1.11.2",
+        "@clickhouse/client": "^1.12.0",
         "@rabbit-company/web": "^0.14.0",
         "@rabbit-company/web-middleware": "^0.14.0",
         "nodemailer": "^7.0.5",
@@ -19,9 +19,9 @@
     },
   },
   "packages": {
-    "@clickhouse/client": ["@clickhouse/client@1.11.2", "", { "dependencies": { "@clickhouse/client-common": "1.11.2" } }, "sha512-ZE7Q1qxsDNXCkGPf1zqmhpZpwAKxKT+1s4Z432J1Mb2Gm26Y4tG/sJoug81AfAJTt6s7taO2vzNBAKfSR3SStg=="],
+    "@clickhouse/client": ["@clickhouse/client@1.12.0", "", { "dependencies": { "@clickhouse/client-common": "1.12.0" } }, "sha512-vJUSX8THhTzlVn0WxPukVjOgNRaSoY02ubQkB0LpqNoHFxXuF5jQZZAYvGZWpBGbYQ/4gfPrqu8g4TX5UKeNxA=="],
 
-    "@clickhouse/client-common": ["@clickhouse/client-common@1.11.2", "", {}, "sha512-H4ECHqaipzMgiZKqpb1Z4N3Ofq+lVTCn8I59XsSynqrsfR4jWZD3PipXVvIzMpDmTMvrlJWrOwAdm0DMNiMQbA=="],
+    "@clickhouse/client-common": ["@clickhouse/client-common@1.12.0", "", {}, "sha512-cyI4n7u9jK30d9q1q0ceQ7IwJ/MtTs5HxoQfc8yHpN+ok5wqaU2jAtq5hpa1z7C7sS1pDy/ZOFmOzg1v1F683g=="],
 
     "@rabbit-company/logger": ["@rabbit-company/logger@5.5.0", "", { "peerDependencies": { "typescript": "^5.5.4" } }, "sha512-dkSwfRmzvQa/RsJzAMBvrOMqRYnCFFeaC77aF86ybW9/hNREng8/lLocQF8sjiuhs5F3Dr+WbQbkCWmDs0hVXQ=="],
 

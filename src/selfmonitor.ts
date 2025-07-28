@@ -275,14 +275,22 @@ export class SelfMonitor {
 					// If we found at least one pulse in the check window, consider monitor as healthy
 					if (data.length > 0 && data[0]) {
 						const lastPulse = data[0];
-						const latency = lastPulse.latency;
+						const latency = this.config.latencyStrategy === "last-known" ? lastPulse.latency : null;
 
 						// Generate synthetic pulses for the downtime period
 						const pulseInterval = monitor.interval * 1000;
-						const pulsesToGenerate = Math.floor(downtime.duration / pulseInterval);
+
+						const now = Date.now();
+						const currentIntervalStart = Math.floor(now / pulseInterval) * pulseInterval;
+
+						let backfillStartTime = downtime.startTime.getTime();
+						let backfillEndTime = Math.max(downtime.endTime.getTime(), currentIntervalStart + pulseInterval);
+
+						const firstPulseTime = Math.ceil(backfillStartTime / pulseInterval) * pulseInterval;
+						const pulsesToGenerate = Math.floor((backfillEndTime - firstPulseTime) / pulseInterval) + 1;
 
 						// Limit synthetic pulses per monitor to avoid overwhelming
-						const maxPulsesPerMonitor = 1000;
+						const maxPulsesPerMonitor = 10000;
 						const limitedPulses = Math.min(pulsesToGenerate, maxPulsesPerMonitor);
 
 						if (limitedPulses !== pulsesToGenerate) {
@@ -295,9 +303,14 @@ export class SelfMonitor {
 
 						// Batch create synthetic pulses
 						const syntheticPulses = [];
-						let currentTime = downtime.startTime.getTime() + pulseInterval;
+						let currentTime = firstPulseTime;
 
 						for (let i = 0; i < limitedPulses; i++) {
+							// Don't generate pulses too far in the future
+							if (currentTime > now + pulseInterval) {
+								break;
+							}
+
 							syntheticPulses.push({
 								monitor_id: monitor.id,
 								latency,
@@ -307,29 +320,60 @@ export class SelfMonitor {
 							currentTime += pulseInterval;
 						}
 
-						// Insert in batches to avoid query size limits
-						const batchSize = 100;
-						for (let i = 0; i < syntheticPulses.length; i += batchSize) {
-							const batch = syntheticPulses.slice(i, i + batchSize);
-							await clickhouse.insert({
-								table: "pulses",
-								values: batch,
-								format: "JSONEachRow",
+						const coversCurrentInterval = syntheticPulses.some((pulse) => {
+							const pulseTime = new Date(pulse.timestamp).getTime();
+							return pulseTime >= currentIntervalStart && pulseTime < currentIntervalStart + pulseInterval;
+						});
+
+						if (!coversCurrentInterval && currentIntervalStart >= downtime.startTime.getTime()) {
+							// Add a pulse for the current interval if not already covered
+							syntheticPulses.push({
+								monitor_id: monitor.id,
+								latency,
+								timestamp: formatDateTimeISOCompact(new Date(currentIntervalStart), { includeMilliseconds: true }),
+								synthetic: true,
+							});
+
+							Logger.debug("Added pulse for current interval", {
+								monitorId: monitor.id,
+								currentInterval: {
+									start: new Date(currentIntervalStart).toISOString(),
+									end: new Date(currentIntervalStart + pulseInterval).toISOString(),
+								},
 							});
 						}
 
-						totalSyntheticPulses += limitedPulses;
-						processedMonitors++;
+						if (syntheticPulses.length > 0) {
+							// Insert in batches to avoid query size limits
+							const batchSize = 100;
+							for (let i = 0; i < syntheticPulses.length; i += batchSize) {
+								const batch = syntheticPulses.slice(i, i + batchSize);
+								await clickhouse.insert({
+									table: "pulses",
+									values: batch,
+									format: "JSONEachRow",
+								});
+							}
 
-						Logger.info("Backfilled synthetic pulses for monitor", {
-							monitorId: monitor.id,
-							monitorName: monitor.name,
-							pulseCount: limitedPulses,
-							lastPulseTime: lastPulse.timestamp,
-							lastKnownLatency: lastPulse.latency,
-							syntheticLatency: latency,
-							latencyStrategy: this.config.latencyStrategy,
-						});
+							totalSyntheticPulses += syntheticPulses.length;
+							processedMonitors++;
+
+							Logger.info("Backfilled synthetic pulses for monitor", {
+								monitorId: monitor.id,
+								monitorName: monitor.name,
+								pulseCount: syntheticPulses.length,
+								lastPulseTime: lastPulse.timestamp,
+								lastKnownLatency: lastPulse.latency,
+								syntheticLatency: latency,
+								latencyStrategy: this.config.latencyStrategy,
+								//pulseTimes: syntheticPulses.map((p) => p.timestamp),
+								currentInterval: {
+									start: new Date(currentIntervalStart).toISOString(),
+									end: new Date(currentIntervalStart + pulseInterval).toISOString(),
+									covered: coversCurrentInterval || syntheticPulses.length > 0,
+								},
+							});
+						}
 					} else {
 						Logger.debug("Skipping backfill - no pulse found in check window", {
 							monitorId: monitor.id,

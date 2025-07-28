@@ -183,7 +183,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				SELECT
 					CASE
 						WHEN expected_intervals = 0 THEN 100
-						ELSE (actual_intervals * 100.0 / expected_intervals)
+						ELSE LEAST(100, (actual_intervals * 100.0 / expected_intervals))
 					END AS uptime
 				FROM expected, actual
 			`;

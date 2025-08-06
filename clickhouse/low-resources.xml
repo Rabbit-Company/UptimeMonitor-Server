@@ -1,5 +1,10 @@
 <!-- https://clickhouse.com/docs/en/operations/tips#using-less-than-16gb-of-ram -->
 <clickhouse>
+
+	<!-- Global memory limit - leave some for OS -->
+	<max_server_memory_usage>6442450944</max_server_memory_usage> <!-- 6GB -->
+	<max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio> <!-- 75% of 8GB = 6GB -->
+
 	<!-- https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings#mark_cache_size -->
 	<mark_cache_size>524288000</mark_cache_size>
 

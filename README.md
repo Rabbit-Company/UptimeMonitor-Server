@@ -110,9 +110,40 @@ pass = ""
 
 ### Manual Pulse Sending
 
+The pulse endpoint (`/v1/push/:token`) accepts the following optional query parameters:
+
+- **`latency`** - Response time in milliseconds (capped at 600000ms/10 minutes)
+- **`startTime`** - When the check started (ISO format or Unix timestamp)
+- **`endTime`** - When the check completed (ISO format or Unix timestamp)
+
+#### Timing Logic
+
+- If both `startTime` and `endTime` are provided, latency is calculated automatically
+- If `startTime` and `latency` are provided, `endTime` is calculated
+- If `endTime` and `latency` are provided, `startTime` is calculated
+- If only `latency` is provided, `endTime` is set to current time and `startTime` is calculated
+- If no parameters are provided, the pulse is recorded with the current timestamp
+
+#### Examples
+
 ```bash
-# Send a pulse with latency
-curl -X GET http://localhost:3000/v1/push/:token?latency=15.10
+# Simple pulse with no timing data
+curl -X GET http://localhost:3000/v1/push/:token
+
+# Send a pulse with latency (milliseconds)
+curl -X GET http://localhost:3000/v1/push/:token?latency=125.5
+
+# RECOMMENDED: Send all three parameters for maximum accuracy
+curl -X GET http://localhost:3000/v1/push/:token?startTime=2025-10-15T10:00:00Z&endTime=2025-10-15T10:00:01.500Z&latency=1500
+
+# Send a pulse with start and end times (latency calculated automatically)
+curl -X GET http://localhost:3000/v1/push/:token?startTime=2025-10-15T10:00:00Z&endTime=2025-10-15T10:00:01Z
+
+# Send a pulse with Unix timestamps
+curl -X GET http://localhost:3000/v1/push/:token?startTime=1736928000000&endTime=1736928001500
+
+# Send a pulse with start time and latency (end time calculated)
+curl -X GET http://localhost:3000/v1/push/:token?startTime=2025-10-15T10:00:00Z&latency=1500
 ```
 
 ### Automated Pulse Sending

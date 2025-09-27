@@ -22,4 +22,20 @@
 			<output_format_parallel_formatting>0</output_format_parallel_formatting>
 		</default>
 	</profile>
+
+	<!-- Disable all system logs -->
+	<text_log remove="true"/>
+	<query_log remove="true"/>
+	<query_thread_log remove="true"/>
+	<processors_profile_log remove="true"/>
+	<trace_log remove="true"/>
+	<metric_log remove="true"/>
+	<asynchronous_metric_log remove="true"/>
+	<part_log remove="true"/>
+	<query_metric_log remove="true"/>
+	<error_log remove="true"/>
+	<opentelemetry_span_log remove="true"/>
+	<session_log remove="true"/>
+	<transaction_log remove="true"/>
+	<zookeeper_log remove="true"/>
 </clickhouse>

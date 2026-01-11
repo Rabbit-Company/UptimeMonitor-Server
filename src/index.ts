@@ -90,7 +90,7 @@ app.get("/v1/push/:token", async (ctx) => {
 
 	const now = new Date();
 	if (endTime.getTime() > now.getTime() + 60000) return ctx.json({ error: "Timestamp too far in the future" }, 400);
-	if (startTime.getTime() < now.getTime() - 31536000000) return ctx.json({ error: "Timestamp too far in the past" }, 400);
+	if (startTime.getTime() < now.getTime() - 600000) return ctx.json({ error: "Timestamp too far in the past" }, 400);
 
 	await storePulse(monitor.id, latency, startTime);
 

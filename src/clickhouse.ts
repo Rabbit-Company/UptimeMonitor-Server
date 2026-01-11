@@ -100,13 +100,17 @@ export async function storePulse(monitorId: string, latency: number | null, time
 
 /**
  * Get raw pulses aggregated per-interval for a monitor (last ~24h due to TTL)
- * Computes uptime and latency stats in real-time per monitor interval
+ * Computes uptime and latency stats in real-time.
+ * Output interval is the larger of: monitor interval or 60 seconds (to reduce data volume)
+ * Uptime = (pulses received / expected pulses per output interval) * 100
  */
 export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[]> {
 	const monitor = cache.getMonitor(monitorId);
 	if (!monitor) return [];
 
-	const interval = monitor.interval;
+	const monitorInterval = monitor.interval;
+	const outputInterval = Math.max(monitorInterval, 60);
+	const expectedPulsesPerInterval = outputInterval / monitorInterval;
 
 	try {
 		// Get the timestamp of first pulse
@@ -131,18 +135,18 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 		}
 
 		// Calculate interval boundaries
-		const firstPulse = new Date(new Date(firstPulseData[0].first_pulse).getTime() + monitor.interval * 1000);
-		const lastPulse = new Date(Date.now() - monitor.interval * 1000);
+		const firstPulse = new Date(new Date(firstPulseData[0].first_pulse).getTime() + outputInterval * 1000);
+		const lastPulse = new Date(Date.now() - outputInterval * 1000);
 
 		if (firstPulse.getFullYear() < 2000) {
 			return []; // No pulses yet
 		}
 
 		// Align to interval boundaries
-		const startInterval = new Date(Math.floor(firstPulse.getTime() / (interval * 1000)) * interval * 1000);
-		const endInterval = new Date(Math.floor(lastPulse.getTime() / (interval * 1000)) * interval * 1000);
+		const startInterval = new Date(Math.floor(firstPulse.getTime() / (outputInterval * 1000)) * outputInterval * 1000);
+		const endInterval = new Date(Math.floor(lastPulse.getTime() / (outputInterval * 1000)) * outputInterval * 1000);
 
-		const intervalsToGenerate = Math.floor((endInterval.getTime() - startInterval.getTime()) / (interval * 1000)) + 1;
+		const intervalsToGenerate = Math.floor((endInterval.getTime() - startInterval.getTime()) / (outputInterval * 1000)) + 1;
 
 		if (intervalsToGenerate <= 0) {
 			return [];
@@ -150,34 +154,36 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 
 		const startIntervalFormatted = formatDateTimeISOCompact(startInterval);
 
-		// Generate all intervals and join with pulse stats (same pattern as hourly aggregation)
+		// Generate all intervals and join with pulse stats
+		// Count DISTINCT monitor intervals that have pulses, then calculate uptime percentage
 		const query = `
 			WITH
-				-- Generate all intervals
+				-- Generate all output intervals
 				all_intervals AS (
 					SELECT toStartOfInterval(
-						toDateTime('${startIntervalFormatted}') + INTERVAL number * ${interval} SECOND,
-						INTERVAL ${interval} SECOND
+						toDateTime('${startIntervalFormatted}') + INTERVAL number * ${outputInterval} SECOND,
+						INTERVAL ${outputInterval} SECOND
 					) AS interval_start
 					FROM numbers(0, ${intervalsToGenerate})
 				),
-				-- Aggregate pulse data per interval
+				-- Aggregate pulse data per output interval
+				-- Count distinct monitor intervals that received at least one pulse
 				pulse_stats AS (
 					SELECT
-						toStartOfInterval(timestamp, INTERVAL ${interval} SECOND) AS interval_start,
-						count() AS pulse_count,
+						toStartOfInterval(timestamp, INTERVAL ${outputInterval} SECOND) AS interval_start,
+						COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${monitorInterval} SECOND)) AS distinct_monitor_intervals,
 						min(latency) AS latency_min,
 						max(latency) AS latency_max,
 						avg(latency) AS latency_avg
 					FROM pulses
 					WHERE monitor_id = {monitorId:String}
 						AND timestamp >= toDateTime('${startIntervalFormatted}')
-						AND timestamp < toDateTime('${startIntervalFormatted}') + INTERVAL ${intervalsToGenerate * interval} SECOND
+						AND timestamp < toDateTime('${startIntervalFormatted}') + INTERVAL ${intervalsToGenerate * outputInterval} SECOND
 					GROUP BY interval_start
 				)
 			SELECT
 				formatDateTime(ai.interval_start, '%Y-%m-%dT%H:%i:%sZ') AS timestamp,
-				if(ps.pulse_count > 0, 100, 0) AS uptime,
+				COALESCE(LEAST(100, ps.distinct_monitor_intervals * 100.0 / ${expectedPulsesPerInterval}), 0) AS uptime,
 				ps.latency_min AS latency_min,
 				ps.latency_max AS latency_max,
 				ps.latency_avg AS latency_avg

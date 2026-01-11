@@ -111,20 +111,6 @@ export interface Pulse {
 }
 
 /**
- * Defines interval durations in string and second formats.
- */
-export interface IntervalConfig {
-	/** Interval label (e.g., '5 MINUTE', '6 HOUR') */
-	interval: string;
-	/** Interval in seconds */
-	intervalSec: number;
-	/** Aggregation range (e.g., '24 HOUR', '90 DAY') */
-	range: string;
-	/** Aggregation range in seconds */
-	rangeSec: number;
-}
-
-/**
  * Status data returned for monitors or groups.
  */
 export interface StatusData {
@@ -188,6 +174,55 @@ export interface SelfMonitoringConfig {
 }
 
 /**
+ * Raw pulse data aggregated per-interval (from pulses table, ~24h retention)
+ * Computed in real-time
+ */
+export interface PulseRaw {
+	/** Interval start timestamp (ISO format) */
+	timestamp: string;
+	/** Uptime percentage for this interval (0 or 100) */
+	uptime: number;
+	/** Minimum latency in this interval */
+	latency_min: number | null;
+	/** Maximum latency in this interval */
+	latency_max: number | null;
+	/** Average latency in this interval */
+	latency_avg: number | null;
+}
+
+/**
+ * Hourly aggregated data (from pulses_hourly table, ~90 day retention)
+ */
+export interface PulseHourly {
+	/** Hour timestamp (ISO format, e.g., "2025-01-08T14:00:00Z") */
+	timestamp: string;
+	/** Uptime percentage for this hour (0-100) */
+	uptime: number;
+	/** Minimum latency in this hour */
+	latency_min: number | null;
+	/** Maximum latency in this hour */
+	latency_max: number | null;
+	/** Average latency in this hour */
+	latency_avg: number | null;
+}
+
+/**
+ * Daily aggregated data (from pulses_daily table, kept forever)
+ */
+export interface PulseDaily {
+	/** Date timestamp (YYYY-MM-DD format) */
+	timestamp: string;
+	/** Uptime percentage for this day (0-100) */
+	uptime: number;
+	/** Minimum latency on this day */
+	latency_min: number | null;
+	/** Maximum latency on this day */
+	latency_max: number | null;
+	/** Average latency on this day */
+	latency_avg: number | null;
+}
+
+/**
  * A single pulse record stored in the database.
  */
 export interface PulseRecord {
@@ -206,22 +241,6 @@ export interface UptimeRecord {
 }
 
 /**
- * Historical metrics used for graphs or reports.
- */
-export interface HistoryRecord {
-	/** Timestamp of the record (UTC time) */
-	time: string;
-	/** Average latency during the period */
-	avg_latency: number | null;
-	/** Minimum latency recorded */
-	min_latency: number | null;
-	/** Maximum latency recorded */
-	max_latency: number | null;
-	/** Uptime percentage during the period */
-	uptime: number;
-}
-
-/**
  * Options for the pulse loss detector.
  */
 export interface MissingPulseDetectorOptions {
@@ -234,7 +253,7 @@ export interface EmailConfig {
 	smtp: {
 		host: string;
 		port: number;
-		secure: boolean; // true for 465, false for other ports
+		secure: boolean;
 		auth: {
 			user: string;
 			pass: string;
@@ -250,8 +269,8 @@ export interface DiscordConfig {
 	username?: string;
 	avatarUrl?: string;
 	mentions?: {
-		users?: string[]; // Discord user IDs
-		roles?: string[]; // Discord role IDs
+		users?: string[];
+		roles?: string[];
 		everyone?: boolean;
 	};
 }
@@ -261,7 +280,7 @@ export interface WebhookConfig {
 	url: string;
 	method?: "POST" | "PUT" | "PATCH";
 	headers?: Record<string, string>;
-	template?: string; // JSON template for custom payloads
+	template?: string;
 }
 
 export interface DowntimeRecord {
@@ -275,7 +294,6 @@ export interface NotificationsConfig {
 	channels: Record<string, NotificationChannel>;
 }
 
-// Notification channel definition with unique ID
 export interface NotificationChannel {
 	/** Unique identifier for this notification channel */
 	id: string;

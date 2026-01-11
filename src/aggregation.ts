@@ -1,0 +1,351 @@
+import { clickhouse } from "./clickhouse";
+import { cache } from "./cache";
+import { Logger } from "./logger";
+
+export class AggregationJob {
+	private intervalId: NodeJS.Timeout | null = null;
+	private readonly INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+	private isRunning: boolean = false;
+
+	start(): void {
+		if (this.intervalId) return;
+
+		Logger.info("Starting aggregation job (runs every 10 minutes)");
+
+		this.runAggregation();
+
+		this.intervalId = setInterval(() => {
+			this.runAggregation();
+		}, this.INTERVAL_MS);
+	}
+
+	stop(): void {
+		if (this.intervalId) {
+			clearInterval(this.intervalId);
+			this.intervalId = null;
+		}
+		Logger.info("Aggregation job stopped");
+	}
+
+	private async runAggregation(): Promise<void> {
+		if (this.isRunning) {
+			Logger.debug("Aggregation: Previous run still in progress, skipping");
+			return;
+		}
+
+		this.isRunning = true;
+
+		try {
+			Logger.debug("Aggregation: Running...");
+			await this.aggregateHourly();
+			await this.aggregateDaily();
+			Logger.debug("Aggregation: Completed");
+		} catch (error: any) {
+			Logger.error("Aggregation failed", { "error.message": error?.message });
+		} finally {
+			this.isRunning = false;
+		}
+	}
+
+	/**
+	 * Aggregate completed hours from pulses into pulses_hourly
+	 *
+	 * Uptime = (distinct intervals with ≥1 pulse / expected intervals) × 100
+	 * Each monitor has its own interval, so we aggregate per-monitor.
+	 *
+	 * Only NEW hours are aggregated - already aggregated hours are never re-processed.
+	 * This ensures data integrity (TTL can't affect already-aggregated data) and improves performance.
+	 *
+	 * Hours without any pulses are recorded as 0% uptime.
+	 */
+	private async aggregateHourly(): Promise<void> {
+		const monitors = cache.getAllMonitors();
+
+		for (const monitor of monitors) {
+			const expectedIntervalsPerHour = Math.floor(3600 / monitor.interval);
+
+			try {
+				// Find the last aggregated hour for this monitor
+				const lastAggregatedQuery = `
+					SELECT
+						timestamp AS last_hour
+					FROM pulses_hourly
+					WHERE monitor_id = {monitorId:String}
+					ORDER BY timestamp DESC
+					LIMIT 1;
+				`;
+				const lastAggregatedResult = await clickhouse.query({
+					query: lastAggregatedQuery,
+					query_params: { monitorId: monitor.id },
+					format: "JSONEachRow",
+				});
+				const lastAggregatedData = await lastAggregatedResult.json<{ last_hour: string | null }>();
+
+				let startHour: Date;
+
+				if (lastAggregatedData[0]?.last_hour) {
+					// Start from the hour after the last aggregated one
+					startHour = new Date(lastAggregatedData[0].last_hour);
+					startHour.setUTCHours(startHour.getUTCHours() + 1);
+				} else {
+					// No aggregated data yet - find first pulse
+					const firstPulseQuery = `
+						SELECT
+							timestamp AS first_pulse
+						FROM pulses
+						WHERE monitor_id = {monitorId:String}
+						ORDER BY timestamp ASC
+						LIMIT 1;
+					`;
+					const firstPulseResult = await clickhouse.query({
+						query: firstPulseQuery,
+						query_params: { monitorId: monitor.id },
+						format: "JSONEachRow",
+					});
+					const firstPulseData = await firstPulseResult.json<{ first_pulse: string | null }>();
+
+					if (!firstPulseData[0]?.first_pulse) {
+						continue; // No pulses yet for this monitor
+					}
+
+					startHour = new Date(firstPulseData[0].first_pulse);
+					startHour.setUTCMinutes(0, 0, 0);
+				}
+
+				// Sanity check: startHour should not be before year 2000
+				if (startHour.getFullYear() < 2000) {
+					Logger.warn("Skipping hourly aggregation - invalid start hour detected", {
+						monitorId: monitor.id,
+						startHour: startHour.toISOString(),
+					});
+					continue;
+				}
+
+				// Calculate hours to aggregate (from startHour to last completed hour)
+				const now = new Date();
+				const currentHourStart = new Date(now);
+				currentHourStart.setUTCMinutes(0, 0, 0);
+
+				const hoursToAggregate = Math.floor((currentHourStart.getTime() - startHour.getTime()) / (60 * 60 * 1000));
+
+				if (hoursToAggregate <= 0) {
+					continue; // Nothing new to aggregate
+				}
+
+				// Limit to prevent too many partitions error (max ~2160 hours = 90 days at a time)
+				const maxHoursPerBatch = 2000;
+				const batchedHours = Math.min(hoursToAggregate, maxHoursPerBatch);
+
+				if (hoursToAggregate > maxHoursPerBatch) {
+					Logger.info("Hourly aggregation: processing in batches", {
+						monitorId: monitor.id,
+						totalHours: hoursToAggregate,
+						thisBatch: batchedHours,
+					});
+				}
+
+				const startHourFormatted = startHour.toISOString().slice(0, 19).replace("T", " ");
+
+				// Only aggregate NEW hours (not already in pulses_hourly)
+				const query = `
+					INSERT INTO pulses_hourly (monitor_id, timestamp, uptime, latency_min, latency_max, latency_avg)
+					WITH
+						-- Generate only the new hours that need aggregating
+						all_hours AS (
+							SELECT toStartOfHour(toDateTime('${startHourFormatted}') + INTERVAL number HOUR) AS hour
+							FROM numbers(0, ${batchedHours})
+						),
+						-- Aggregate pulse data for these hours only
+						pulse_stats AS (
+							SELECT
+								toStartOfHour(timestamp) AS hour,
+								COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND)) AS distinct_intervals,
+								min(latency) AS latency_min,
+								max(latency) AS latency_max,
+								avg(latency) AS latency_avg
+							FROM pulses
+							WHERE monitor_id = {monitorId:String}
+								AND timestamp >= toDateTime('${startHourFormatted}')
+								AND timestamp < toDateTime('${startHourFormatted}') + INTERVAL ${batchedHours} HOUR
+							GROUP BY toStartOfHour(timestamp)
+						)
+					SELECT
+						{monitorId:String} AS monitor_id,
+						ah.hour AS timestamp,
+						COALESCE(LEAST(100, ps.distinct_intervals * 100.0 / ${expectedIntervalsPerHour}), 0) AS uptime,
+						ps.latency_min AS latency_min,
+						ps.latency_max AS latency_max,
+						ps.latency_avg AS latency_avg
+					FROM all_hours ah
+					LEFT JOIN pulse_stats ps ON ah.hour = ps.hour
+				`;
+
+				await clickhouse.exec({
+					query,
+					query_params: { monitorId: monitor.id },
+				});
+
+				Logger.debug("Hourly aggregation completed", {
+					monitorId: monitor.id,
+					hoursAggregated: batchedHours,
+					remaining: hoursToAggregate - batchedHours,
+				});
+			} catch (err: any) {
+				Logger.error("Hourly aggregation failed for monitor", {
+					monitorId: monitor.id,
+					"error.message": err?.message,
+				});
+			}
+		}
+	}
+
+	/**
+	 * Aggregate completed days from pulses_hourly into pulses_daily
+	 * Daily uptime = average of hourly uptimes (24 hours expected per day)
+	 *
+	 * Only NEW days are aggregated - already aggregated days are never re-processed.
+	 * This ensures data integrity and improves performance.
+	 *
+	 * Days without any hourly records are recorded as 0% uptime.
+	 */
+	private async aggregateDaily(): Promise<void> {
+		const monitors = cache.getAllMonitors();
+
+		for (const monitor of monitors) {
+			try {
+				// Find the last aggregated day for this monitor
+				const lastAggregatedQuery = `
+					SELECT
+						timestamp AS last_date
+					FROM pulses_daily
+					WHERE monitor_id = {monitorId:String}
+					ORDER BY timestamp DESC
+					LIMIT 1;
+				`;
+				const lastAggregatedResult = await clickhouse.query({
+					query: lastAggregatedQuery,
+					query_params: { monitorId: monitor.id },
+					format: "JSONEachRow",
+				});
+				const lastAggregatedData = await lastAggregatedResult.json<{ last_date: string | null }>();
+
+				let startDate: Date;
+
+				if (lastAggregatedData[0]?.last_date) {
+					// Start from the day after the last aggregated one
+					startDate = new Date(lastAggregatedData[0].last_date);
+					startDate.setUTCDate(startDate.getUTCDate() + 1);
+				} else {
+					// No aggregated data yet - find first hourly record
+					const firstHourQuery = `
+						SELECT
+							timestamp AS first_hour
+						FROM pulses_hourly
+						WHERE monitor_id = {monitorId:String}
+						ORDER BY timestamp ASC
+						LIMIT 1;
+					`;
+					const firstHourResult = await clickhouse.query({
+						query: firstHourQuery,
+						query_params: { monitorId: monitor.id },
+						format: "JSONEachRow",
+					});
+					const firstHourData = await firstHourResult.json<{ first_hour: string | null }>();
+
+					if (!firstHourData[0]?.first_hour) {
+						continue; // No hourly records yet for this monitor
+					}
+
+					startDate = new Date(firstHourData[0].first_hour);
+					startDate.setUTCHours(0, 0, 0, 0);
+				}
+
+				// Sanity check: startDate should not be before year 2000
+				if (startDate.getFullYear() < 2000) {
+					Logger.warn("Skipping daily aggregation - invalid start date detected", {
+						monitorId: monitor.id,
+						startDate: startDate.toISOString(),
+					});
+					continue;
+				}
+
+				// Calculate days to aggregate (from startDate to yesterday)
+				const now = new Date();
+				const today = new Date(now);
+				today.setUTCHours(0, 0, 0, 0);
+
+				const daysToAggregate = Math.floor((today.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+
+				if (daysToAggregate <= 0) {
+					continue; // Nothing new to aggregate
+				}
+
+				// Limit to prevent issues (max ~365 days at a time)
+				const maxDaysPerBatch = 365;
+				const batchedDays = Math.min(daysToAggregate, maxDaysPerBatch);
+
+				if (daysToAggregate > maxDaysPerBatch) {
+					Logger.info("Daily aggregation: processing in batches", {
+						monitorId: monitor.id,
+						totalDays: daysToAggregate,
+						thisBatch: batchedDays,
+					});
+				}
+
+				const startDateFormatted = startDate.toISOString().slice(0, 10);
+
+				// Only aggregate NEW days (not already in pulses_daily)
+				const query = `
+					INSERT INTO pulses_daily (monitor_id, timestamp, uptime, latency_min, latency_max, latency_avg)
+					WITH
+						-- Generate only the new days that need aggregating
+						all_days AS (
+							SELECT toDate('${startDateFormatted}') + INTERVAL number DAY AS date
+							FROM numbers(0, ${batchedDays})
+						),
+						-- Aggregate hourly data for these days only
+						daily_stats AS (
+							SELECT
+								toDate(timestamp) AS date,
+								avg(uptime) AS uptime,
+								min(latency_min) AS latency_min,
+								max(latency_max) AS latency_max,
+								avg(latency_avg) AS latency_avg
+							FROM pulses_hourly
+							WHERE monitor_id = {monitorId:String}
+								AND toDate(timestamp) >= toDate('${startDateFormatted}')
+								AND toDate(timestamp) < toDate('${startDateFormatted}') + INTERVAL ${batchedDays} DAY
+							GROUP BY toDate(timestamp)
+						)
+					SELECT
+						{monitorId:String} AS monitor_id,
+						ad.date AS timestamp,
+						COALESCE(ds.uptime, 0) AS uptime,
+						ds.latency_min AS latency_min,
+						ds.latency_max AS latency_max,
+						ds.latency_avg AS latency_avg
+					FROM all_days ad
+					LEFT JOIN daily_stats ds ON ad.date = ds.date
+				`;
+
+				await clickhouse.exec({
+					query,
+					query_params: { monitorId: monitor.id },
+				});
+
+				Logger.debug("Daily aggregation completed", {
+					monitorId: monitor.id,
+					daysAggregated: batchedDays,
+					remaining: daysToAggregate - batchedDays,
+				});
+			} catch (err: any) {
+				Logger.error("Daily aggregation failed for monitor", {
+					monitorId: monitor.id,
+					"error.message": err?.message,
+				});
+			}
+		}
+	}
+}
+
+export const aggregationJob = new AggregationJob();

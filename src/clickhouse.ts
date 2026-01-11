@@ -291,7 +291,28 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		const latestResult = await clickhouse.query({ query: latestQuery, query_params: { monitorId }, format: "JSONEachRow" });
 		const latestData = await latestResult.json<{ latency: number | null; last_check: string }>();
 
-		if (!latestData.length) return;
+		if (!latestData.length) {
+			const statusData: StatusData = {
+				id: monitorId,
+				type: "monitor",
+				name: monitor.name,
+				status: "down",
+				latency: 0,
+				lastCheck: new Date(0),
+				uptime1h: 0,
+				uptime24h: 0,
+				uptime7d: 0,
+				uptime30d: 0,
+				uptime90d: 0,
+				uptime365d: 0,
+			};
+			cache.setStatus(monitorId, statusData);
+
+			if (monitor.groupId) {
+				await updateGroupStatus(monitor.groupId);
+			}
+			return;
+		}
 
 		const lastCheckTime = new Date(latestData[0]!.last_check + "Z").getTime();
 		const timeSinceLastCheck = now - lastCheckTime;
@@ -310,8 +331,6 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			lastCheck: new Date(latestData[0]!.last_check + "Z"),
 			...uptimes,
 		};
-
-		console.log(statusData);
 
 		cache.setStatus(monitorId, statusData);
 

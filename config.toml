@@ -70,6 +70,17 @@ resendNotification = 3
 groupId = "production"
 notificationChannels = []
 
+# Custom metrics for database connections and query count
+[monitors.custom1]
+id = "connections"
+name = "Active Connections"
+unit = "connections"
+
+[monitors.custom2]
+id = "queries"
+name = "Queries/sec"
+unit = "qps"
+
 [[monitors]]
 id = "cdn-global"
 name = "Global CDN"
@@ -80,6 +91,12 @@ resendNotification = 3
 groupId = "infrastructure"
 notificationChannels = []
 
+# Custom metric for cache hit rate
+[monitors.custom1]
+id = "cache_hit_rate"
+name = "Cache Hit Rate"
+unit = "%"
+
 [[monitors]]
 id = "payment-gateway"
 name = "Payment Gateway"
@@ -89,6 +106,32 @@ maxRetries = 0
 resendNotification = 3
 groupId = "third-party"
 notificationChannels = []
+
+[[monitors]]
+id = "game-server"
+name = "Game Server"
+token = "tk_game_server_xyz999"
+interval = 10
+maxRetries = 0
+resendNotification = 3
+groupId = "production"
+notificationChannels = []
+
+# Custom metrics for game server
+[monitors.custom1]
+id = "players"
+name = "Player Count"
+unit = "players"
+
+[monitors.custom2]
+id = "tps"
+name = "Ticks Per Second"
+unit = "TPS"
+
+[monitors.custom3]
+id = "memory"
+name = "Memory Usage"
+unit = "MB"
 
 # Group definitions
 [[groups]]

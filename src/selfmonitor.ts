@@ -3,7 +3,7 @@ import { clickhouse, storePulse } from "./clickhouse";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { formatDateTimeISOCompact } from "./times";
-import type { DowntimeRecord, SelfMonitoringConfig } from "./types";
+import type { DowntimeRecord, SelfMonitoringConfig, CustomMetrics } from "./types";
 
 export class SelfMonitor {
 	private intervalId?: NodeJS.Timeout;
@@ -19,9 +19,6 @@ export class SelfMonitor {
 		this.config = config;
 	}
 
-	/**
-	 * Start self-monitoring
-	 */
 	async start(): Promise<void> {
 		if (!this.config.enabled || this.intervalId) return;
 
@@ -32,7 +29,6 @@ export class SelfMonitor {
 			latencyStrategy: this.config.latencyStrategy,
 		});
 
-		// Check for previous downtime on startup
 		await this.checkForPreviousDowntime();
 
 		await this.performHealthCheck();
@@ -41,9 +37,6 @@ export class SelfMonitor {
 		this.scheduleNextCheck();
 	}
 
-	/**
-	 * Schedule the next health check
-	 */
 	private scheduleNextCheck(): void {
 		if (!this.config.enabled || !this.nextScheduledTime) return;
 
@@ -57,19 +50,14 @@ export class SelfMonitor {
 		}
 
 		this.intervalId = setTimeout(async () => {
-			// Calculate next scheduled time before performing check
 			this.nextScheduledTime! += this.config.interval * 1000;
 
 			await this.performHealthCheck();
 
-			// Schedule next check
 			this.scheduleNextCheck();
 		}, delay);
 	}
 
-	/**
-	 * Stop self-monitoring
-	 */
 	stop(): void {
 		if (this.intervalId) {
 			clearInterval(this.intervalId);
@@ -82,14 +70,10 @@ export class SelfMonitor {
 		});
 	}
 
-	/**
-	 * Perform a health check
-	 */
 	private async performHealthCheck(): Promise<void> {
 		const checkStartTime = Date.now();
 
 		try {
-			// Simple SELECT 1 query to verify ClickHouse connectivity
 			const queryStartTime = Date.now();
 			await clickhouse.query({
 				query: "SELECT 1",
@@ -97,13 +81,10 @@ export class SelfMonitor {
 			});
 			const latency = Date.now() - queryStartTime;
 
-			// Use query start time for more accurate timestamp
 			this.lastCheckTime = new Date(queryStartTime);
 
-			// Store the pulse
 			await storePulse(this.config.id, latency, this.lastCheckTime);
 
-			// If we were down, handle recovery
 			if (!this.isHealthy) {
 				await this.handleRecovery();
 			}
@@ -111,10 +92,8 @@ export class SelfMonitor {
 			this.isHealthy = true;
 			this.consecutiveFailures = 0;
 
-			// Log if check took too long
 			const totalDuration = Date.now() - checkStartTime;
 			if (totalDuration > this.config.interval * 500) {
-				// More than 50% of interval
 				Logger.warn("Self-monitor health check took significant time", {
 					totalDuration: totalDuration + "ms",
 					queryLatency: latency + "ms",
@@ -129,7 +108,6 @@ export class SelfMonitor {
 				consecutiveFailures: this.consecutiveFailures,
 			});
 
-			// If we were healthy, record downtime start
 			if (this.isHealthy) {
 				this.downtimeStart = new Date();
 				this.isHealthy = false;
@@ -142,23 +120,22 @@ export class SelfMonitor {
 		}
 	}
 
-	/**
-	 * Check for previous downtime on startup
-	 */
 	private async checkForPreviousDowntime(): Promise<void> {
 		if (!this.config.backfillOnRecovery) return;
 
 		try {
-			// Get last healthy timestamp for self-monitor
 			const lastHealthyQuery = `
 				SELECT
 					formatDateTime(MAX(timestamp), '%Y-%m-%dT%H:%i:%sZ') AS last_healthy
 				FROM pulses
-				WHERE monitor_id = '${this.config.id}'
+				WHERE monitor_id = {monitorId:String}
 			`;
 
 			const result = await clickhouse.query({
 				query: lastHealthyQuery,
+				query_params: {
+					monitorId: this.config.id,
+				},
 				format: "JSONEachRow",
 			});
 
@@ -169,7 +146,6 @@ export class SelfMonitor {
 				const now = new Date();
 				const downtimeDuration = now.getTime() - lastHealthy.getTime();
 
-				// If downtime is significant (> 2 intervals), consider backfilling
 				const minDowntimeForBackfill = this.config.interval * 2000;
 
 				if (downtimeDuration > minDowntimeForBackfill) {
@@ -195,9 +171,6 @@ export class SelfMonitor {
 		}
 	}
 
-	/**
-	 * Handle recovery from downtime
-	 */
 	private async handleRecovery(): Promise<void> {
 		if (!this.downtimeStart || !this.config.backfillOnRecovery) return;
 
@@ -210,7 +183,6 @@ export class SelfMonitor {
 			duration: Math.round(downtimeDuration / 1000) + "s",
 		});
 
-		// Only backfill if downtime was significant
 		if (downtimeDuration > this.config.interval * 1000) {
 			await this.backfillPulses({
 				startTime: this.downtimeStart,
@@ -222,9 +194,6 @@ export class SelfMonitor {
 		this.downtimeStart = undefined;
 	}
 
-	/**
-	 * Backfill synthetic pulses for monitors that were likely up
-	 */
 	private async backfillPulses(downtime: DowntimeRecord): Promise<void> {
 		if (this.isBackfilling) {
 			Logger.warn("Backfill already in progress, skipping");
@@ -240,20 +209,20 @@ export class SelfMonitor {
 			let totalSyntheticPulses = 0;
 
 			for (const monitor of monitors) {
-				// Skip self-monitor to avoid recursion
 				if (monitor.id === this.config.id) continue;
 
-				// Check window: 2 intervals before downtime to ensure monitor was healthy
-				const checkWindowMs = monitor.interval * 2000; // 2 intervals in milliseconds
+				const checkWindowMs = monitor.interval * 2000;
 
-				// Query for the last pulse before downtime within the check window
 				const lastPulseQuery = `
 				SELECT
 					timestamp,
-					latency
+					latency,
+					custom1,
+					custom2,
+					custom3
 				FROM pulses
 				WHERE
-					monitor_id = '${monitor.id}'
+					monitor_id = {monitorId:String}
 					AND timestamp >= '${formatDateTimeISOCompact(new Date(downtime.startTime.getTime() - checkWindowMs))}'
 					AND timestamp < '${formatDateTimeISOCompact(downtime.startTime)}'
 					AND synthetic = false
@@ -264,12 +233,18 @@ export class SelfMonitor {
 				try {
 					const result = await clickhouse.query({
 						query: lastPulseQuery,
+						query_params: {
+							monitorId: monitor.id,
+						},
 						format: "JSONEachRow",
 					});
 
 					const data = await result.json<{
 						timestamp: string;
 						latency: number | null;
+						custom1: number | null;
+						custom2: number | null;
+						custom3: number | null;
 					}>();
 
 					// If we found at least one pulse in the check window, consider monitor as healthy
@@ -277,7 +252,20 @@ export class SelfMonitor {
 						const lastPulse = data[0];
 						const latency = this.config.latencyStrategy === "last-known" ? lastPulse.latency : null;
 
-						// Generate synthetic pulses for the downtime period
+						// Preserve custom metrics from last known pulse
+						const customMetrics: CustomMetrics =
+							this.config.latencyStrategy === "last-known"
+								? {
+										custom1: lastPulse.custom1,
+										custom2: lastPulse.custom2,
+										custom3: lastPulse.custom3,
+								  }
+								: {
+										custom1: null,
+										custom2: null,
+										custom3: null,
+								  };
+
 						const pulseInterval = monitor.interval * 1000;
 
 						const now = Date.now();
@@ -316,6 +304,9 @@ export class SelfMonitor {
 								latency,
 								timestamp: formatDateTimeISOCompact(new Date(currentTime), { includeMilliseconds: true }),
 								synthetic: true,
+								custom1: customMetrics.custom1,
+								custom2: customMetrics.custom2,
+								custom3: customMetrics.custom3,
 							});
 							currentTime += pulseInterval;
 						}
@@ -332,6 +323,9 @@ export class SelfMonitor {
 								latency,
 								timestamp: formatDateTimeISOCompact(new Date(currentIntervalStart), { includeMilliseconds: true }),
 								synthetic: true,
+								custom1: customMetrics.custom1,
+								custom2: customMetrics.custom2,
+								custom3: customMetrics.custom3,
 							});
 
 							Logger.debug("Added pulse for current interval", {
@@ -366,7 +360,6 @@ export class SelfMonitor {
 								lastKnownLatency: lastPulse.latency,
 								syntheticLatency: latency,
 								latencyStrategy: this.config.latencyStrategy,
-								//pulseTimes: syntheticPulses.map((p) => p.timestamp),
 								currentInterval: {
 									start: new Date(currentIntervalStart).toISOString(),
 									end: new Date(currentIntervalStart + pulseInterval).toISOString(),

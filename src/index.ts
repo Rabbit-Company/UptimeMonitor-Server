@@ -2,7 +2,7 @@ import { Web } from "@rabbit-company/web";
 import { Logger } from "./logger";
 import { config } from "./config";
 import { cache } from "./cache";
-import type { Monitor, StatusData, StatusPage } from "./types";
+import type { Monitor, StatusData, StatusPage, CustomMetrics } from "./types";
 import { getMonitorHistoryRaw, getMonitorHistoryHourly, getMonitorHistoryDaily, initClickHouse, storePulse, updateMonitorStatus } from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
 import { missingPulseDetector } from "./missing-pulse-detector";
@@ -56,6 +56,66 @@ app.get("/v1/push/:token", async (ctx) => {
 		latency = Math.min(latency, 600000);
 	}
 
+	const customMetrics: CustomMetrics = {
+		custom1: null,
+		custom2: null,
+		custom3: null,
+	};
+
+	if (monitor.custom1) {
+		const custom1Value = query.get(monitor.custom1.id) ?? query.get("custom1");
+		if (custom1Value !== null) {
+			const parsed = parseFloat(custom1Value);
+			if (!isNaN(parsed)) {
+				customMetrics.custom1 = parsed;
+			}
+		}
+	} else {
+		const custom1Value = query.get("custom1");
+		if (custom1Value !== null) {
+			const parsed = parseFloat(custom1Value);
+			if (!isNaN(parsed)) {
+				customMetrics.custom1 = parsed;
+			}
+		}
+	}
+
+	if (monitor.custom2) {
+		const custom2Value = query.get(monitor.custom2.id) ?? query.get("custom2");
+		if (custom2Value !== null) {
+			const parsed = parseFloat(custom2Value);
+			if (!isNaN(parsed)) {
+				customMetrics.custom2 = parsed;
+			}
+		}
+	} else {
+		const custom2Value = query.get("custom2");
+		if (custom2Value !== null) {
+			const parsed = parseFloat(custom2Value);
+			if (!isNaN(parsed)) {
+				customMetrics.custom2 = parsed;
+			}
+		}
+	}
+
+	if (monitor.custom3) {
+		const custom3Value = query.get(monitor.custom3.id) ?? query.get("custom3");
+		if (custom3Value !== null) {
+			const parsed = parseFloat(custom3Value);
+			if (!isNaN(parsed)) {
+				customMetrics.custom3 = parsed;
+			}
+		}
+	} else {
+		const custom3Value = query.get("custom3");
+		if (custom3Value !== null) {
+			const parsed = parseFloat(custom3Value);
+			if (!isNaN(parsed)) {
+				customMetrics.custom3 = parsed;
+			}
+		}
+	}
+
 	let startTime: Date | null = null;
 	const startTimeParam = query.get("startTime");
 	if (startTimeParam) {
@@ -92,7 +152,7 @@ app.get("/v1/push/:token", async (ctx) => {
 	if (endTime.getTime() > now.getTime() + 60000) return ctx.json({ error: "Timestamp too far in the future" }, 400);
 	if (startTime.getTime() < now.getTime() - 600000) return ctx.json({ error: "Timestamp too far in the past" }, 400);
 
-	await storePulse(monitor.id, latency, startTime);
+	await storePulse(monitor.id, latency, startTime, false, customMetrics);
 
 	return ctx.json({ success: true, monitorId: monitor.id });
 });
@@ -143,10 +203,22 @@ app.get("/v1/status/:slug/summary", async (ctx) => {
  */
 app.get("/v1/monitors/:id/history", webCache({ ttl: 30, generateETags: false }), async (ctx) => {
 	const monitorId = ctx.params["id"] || "";
-	if (!cache.getMonitor(monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+	const monitor = cache.getMonitor(monitorId);
+	if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
 
 	const data = await getMonitorHistoryRaw(monitorId);
-	return ctx.json({ monitorId, type: "raw", data });
+
+	const customMetrics: Record<string, any> = {};
+	if (monitor.custom1) customMetrics.custom1 = monitor.custom1;
+	if (monitor.custom2) customMetrics.custom2 = monitor.custom2;
+	if (monitor.custom3) customMetrics.custom3 = monitor.custom3;
+
+	return ctx.json({
+		monitorId,
+		type: "raw",
+		data,
+		...(Object.keys(customMetrics).length > 0 && { customMetrics }),
+	});
 });
 
 /**
@@ -155,10 +227,23 @@ app.get("/v1/monitors/:id/history", webCache({ ttl: 30, generateETags: false }),
  */
 app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 60, generateETags: false }), async (ctx) => {
 	const monitorId = ctx.params["id"] || "";
-	if (!cache.getMonitor(monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+	const monitor = cache.getMonitor(monitorId);
+	if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
 
 	const data = await getMonitorHistoryHourly(monitorId);
-	return ctx.json({ monitorId, type: "hourly", data });
+
+	// Include custom metric configuration in response
+	const customMetrics: Record<string, any> = {};
+	if (monitor.custom1) customMetrics.custom1 = monitor.custom1;
+	if (monitor.custom2) customMetrics.custom2 = monitor.custom2;
+	if (monitor.custom3) customMetrics.custom3 = monitor.custom3;
+
+	return ctx.json({
+		monitorId,
+		type: "hourly",
+		data,
+		...(Object.keys(customMetrics).length > 0 && { customMetrics }),
+	});
 });
 
 /**
@@ -167,10 +252,23 @@ app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 60, generateETags: fa
  */
 app.get("/v1/monitors/:id/history/daily", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
 	const monitorId = ctx.params["id"] || "";
-	if (!cache.getMonitor(monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+	const monitor = cache.getMonitor(monitorId);
+	if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
 
 	const data = await getMonitorHistoryDaily(monitorId);
-	return ctx.json({ monitorId, type: "daily", data });
+
+	// Include custom metric configuration in response
+	const customMetrics: Record<string, any> = {};
+	if (monitor.custom1) customMetrics.custom1 = monitor.custom1;
+	if (monitor.custom2) customMetrics.custom2 = monitor.custom2;
+	if (monitor.custom3) customMetrics.custom3 = monitor.custom3;
+
+	return ctx.json({
+		monitorId,
+		type: "daily",
+		data,
+		...(Object.keys(customMetrics).length > 0 && { customMetrics }),
+	});
 });
 
 app.listen({ hostname: "0.0.0.0", port: config.server?.port || 3000 });

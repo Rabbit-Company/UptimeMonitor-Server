@@ -9,6 +9,18 @@ export interface LoggerConfig {
 }
 
 /**
+ * Configuration for a custom metric that can be tracked alongside latency.
+ */
+export interface CustomMetricConfig {
+	/** Unique identifier for this metric (used in API requests) */
+	id: string;
+	/** Human-readable name for display */
+	name: string;
+	/** Optional unit of measurement (e.g., "players", "ms", "MB") */
+	unit?: string;
+}
+
+/**
  * Represents a monitor that checks uptime.
  */
 export interface Monitor {
@@ -28,6 +40,12 @@ export interface Monitor {
 	groupId?: string;
 	/** Notification channel IDs to use for this monitor */
 	notificationChannels?: string[];
+	/** Configuration for custom metric 1 */
+	custom1?: CustomMetricConfig;
+	/** Configuration for custom metric 2 */
+	custom2?: CustomMetricConfig;
+	/** Configuration for custom metric 3 */
+	custom3?: CustomMetricConfig;
 }
 
 /**
@@ -108,6 +126,22 @@ export interface Pulse {
 	latency: number | null;
 	/** Timestamp of when the pulse was received */
 	timestamp: Date;
+	/** Custom metric 1 value */
+	custom1: number | null;
+	/** Custom metric 2 value */
+	custom2: number | null;
+	/** Custom metric 3 value */
+	custom3: number | null;
+}
+
+/**
+ * Custom metric data returned in status responses.
+ */
+export interface CustomMetricData {
+	/** The metric configuration from the monitor */
+	config: CustomMetricConfig;
+	/** Current value of the metric (undefined if no data) */
+	value?: number;
 }
 
 /**
@@ -142,6 +176,12 @@ export interface StatusData {
 	uptime365d: number;
 	/** Children status data (for groups) */
 	children?: StatusData[];
+	/** Custom metric 1 data (for monitors) */
+	custom1?: CustomMetricData;
+	/** Custom metric 2 data (for monitors) */
+	custom2?: CustomMetricData;
+	/** Custom metric 3 data (for monitors) */
+	custom3?: CustomMetricData;
 }
 
 /**
@@ -158,6 +198,12 @@ export interface SSEPulseEvent {
 	latency?: number;
 	/** Timestamp of the event */
 	timestamp?: Date;
+	/** Custom metric 1 value */
+	custom1?: number | null;
+	/** Custom metric 2 value */
+	custom2?: number | null;
+	/** Custom metric 3 value */
+	custom3?: number | null;
 }
 
 export interface SelfMonitoringConfig {
@@ -183,11 +229,29 @@ export interface PulseRaw {
 	/** Uptime percentage for this interval (0 or 100) */
 	uptime: number;
 	/** Minimum latency in this interval */
-	latency_min: number | null;
+	latency_min?: number;
 	/** Maximum latency in this interval */
-	latency_max: number | null;
+	latency_max?: number;
 	/** Average latency in this interval */
-	latency_avg: number | null;
+	latency_avg?: number;
+	/** Minimum custom1 value in this interval */
+	custom1_min?: number;
+	/** Maximum custom1 value in this interval */
+	custom1_max?: number;
+	/** Average custom1 value in this interval */
+	custom1_avg?: number;
+	/** Minimum custom2 value in this interval */
+	custom2_min?: number;
+	/** Maximum custom2 value in this interval */
+	custom2_max?: number;
+	/** Average custom2 value in this interval */
+	custom2_avg?: number;
+	/** Minimum custom3 value in this interval */
+	custom3_min?: number;
+	/** Maximum custom3 value in this interval */
+	custom3_max?: number;
+	/** Average custom3 value in this interval */
+	custom3_avg?: number;
 }
 
 /**
@@ -199,11 +263,29 @@ export interface PulseHourly {
 	/** Uptime percentage for this hour (0-100) */
 	uptime: number;
 	/** Minimum latency in this hour */
-	latency_min: number | null;
+	latency_min?: number;
 	/** Maximum latency in this hour */
-	latency_max: number | null;
+	latency_max?: number;
 	/** Average latency in this hour */
-	latency_avg: number | null;
+	latency_avg?: number;
+	/** Minimum custom1 value in this hour */
+	custom1_min?: number;
+	/** Maximum custom1 value in this hour */
+	custom1_max?: number;
+	/** Average custom1 value in this hour */
+	custom1_avg?: number;
+	/** Minimum custom2 value in this hour */
+	custom2_min?: number;
+	/** Maximum custom2 value in this hour */
+	custom2_max?: number;
+	/** Average custom2 value in this hour */
+	custom2_avg?: number;
+	/** Minimum custom3 value in this hour */
+	custom3_min?: number;
+	/** Maximum custom3 value in this hour */
+	custom3_max?: number;
+	/** Average custom3 value in this hour */
+	custom3_avg?: number;
 }
 
 /**
@@ -215,11 +297,29 @@ export interface PulseDaily {
 	/** Uptime percentage for this day (0-100) */
 	uptime: number;
 	/** Minimum latency on this day */
-	latency_min: number | null;
+	latency_min?: number;
 	/** Maximum latency on this day */
-	latency_max: number | null;
+	latency_max?: number;
 	/** Average latency on this day */
-	latency_avg: number | null;
+	latency_avg?: number;
+	/** Minimum custom1 value on this day */
+	custom1_min?: number;
+	/** Maximum custom1 value on this day */
+	custom1_max?: number;
+	/** Average custom1 value on this day */
+	custom1_avg?: number;
+	/** Minimum custom2 value on this day */
+	custom2_min?: number;
+	/** Maximum custom2 value on this day */
+	custom2_max?: number;
+	/** Average custom2 value on this day */
+	custom2_avg?: number;
+	/** Minimum custom3 value on this day */
+	custom3_min?: number;
+	/** Maximum custom3 value on this day */
+	custom3_max?: number;
+	/** Average custom3 value on this day */
+	custom3_avg?: number;
 }
 
 /**
@@ -230,6 +330,12 @@ export interface PulseRecord {
 	latency: number;
 	/** Timestamp of the last check (UTC time) */
 	last_check: string;
+	/** Custom metric 1 value */
+	custom1: number | null;
+	/** Custom metric 2 value */
+	custom2: number | null;
+	/** Custom metric 3 value */
+	custom3: number | null;
 }
 
 /**
@@ -354,4 +460,13 @@ export interface DowntimeInfo {
 
 export interface NotificationProvider {
 	sendNotification(event: NotificationEvent): Promise<void>;
+}
+
+/**
+ * Custom metrics values for pulse storage and retrieval
+ */
+export interface CustomMetrics {
+	custom1: number | null;
+	custom2: number | null;
+	custom3: number | null;
 }

@@ -2,7 +2,7 @@ import { createClient } from "@clickhouse/client";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { EventEmitter } from "events";
-import type { PulseRaw, PulseHourly, PulseDaily, StatusData } from "./types";
+import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics } from "./types";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { NotificationManager } from "./notifications";
 import { cache } from "./cache";
@@ -23,6 +23,9 @@ export async function initClickHouse(): Promise<void> {
 					monitor_id LowCardinality(String),
 					timestamp DateTime64(3),
 					latency Nullable(Float32),
+					custom1 Nullable(Float32),
+					custom2 Nullable(Float32),
+					custom3 Nullable(Float32),
 					synthetic Boolean DEFAULT false
 				) ENGINE = MergeTree()
 				ORDER BY (monitor_id, timestamp)
@@ -41,7 +44,16 @@ export async function initClickHouse(): Promise<void> {
 					uptime Float32,
 					latency_min Nullable(Float32),
 					latency_max Nullable(Float32),
-					latency_avg Nullable(Float32)
+					latency_avg Nullable(Float32),
+					custom1_min Nullable(Float32),
+					custom1_max Nullable(Float32),
+					custom1_avg Nullable(Float32),
+					custom2_min Nullable(Float32),
+					custom2_max Nullable(Float32),
+					custom2_avg Nullable(Float32),
+					custom3_min Nullable(Float32),
+					custom3_max Nullable(Float32),
+					custom3_avg Nullable(Float32)
 				) ENGINE = MergeTree()
 				ORDER BY (monitor_id, timestamp)
 				PARTITION BY toYYYYMM(timestamp)
@@ -59,7 +71,16 @@ export async function initClickHouse(): Promise<void> {
 					uptime Float32,
 					latency_min Nullable(Float32),
 					latency_max Nullable(Float32),
-					latency_avg Nullable(Float32)
+					latency_avg Nullable(Float32),
+					custom1_min Nullable(Float32),
+					custom1_max Nullable(Float32),
+					custom1_avg Nullable(Float32),
+					custom2_min Nullable(Float32),
+					custom2_max Nullable(Float32),
+					custom2_avg Nullable(Float32),
+					custom3_min Nullable(Float32),
+					custom3_max Nullable(Float32),
+					custom3_avg Nullable(Float32)
 				) ENGINE = MergeTree()
 				ORDER BY (monitor_id, timestamp)
 				PARTITION BY toYear(timestamp)
@@ -80,11 +101,27 @@ setInterval(async () => {
 	await Promise.all(monitors.map(updateMonitorStatus));
 }, BATCH_INTERVAL);
 
-export async function storePulse(monitorId: string, latency: number | null, timestamp: Date, synthetic: boolean = false): Promise<void> {
+export async function storePulse(
+	monitorId: string,
+	latency: number | null,
+	timestamp: Date,
+	synthetic: boolean = false,
+	customMetrics: CustomMetrics = { custom1: null, custom2: null, custom3: null }
+): Promise<void> {
 	try {
 		await clickhouse.insert({
 			table: "pulses",
-			values: [{ monitor_id: monitorId, latency, timestamp: formatDateTimeISOCompact(timestamp, { includeMilliseconds: true }), synthetic }],
+			values: [
+				{
+					monitor_id: monitorId,
+					latency,
+					timestamp: formatDateTimeISOCompact(timestamp, { includeMilliseconds: true }),
+					synthetic,
+					custom1: customMetrics.custom1,
+					custom2: customMetrics.custom2,
+					custom3: customMetrics.custom3,
+				},
+			],
 			format: "JSONEachRow",
 		});
 	} catch (err: any) {
@@ -95,7 +132,7 @@ export async function storePulse(monitorId: string, latency: number | null, time
 
 	updateQueue.add(monitorId);
 	missingPulseDetector.resetMonitor(monitorId);
-	eventEmitter.emit("pulse", { monitorId, status: "up", latency, timestamp });
+	eventEmitter.emit("pulse", { monitorId, status: "up", latency, timestamp, ...customMetrics });
 }
 
 /**
@@ -174,7 +211,16 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 						COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${monitorInterval} SECOND)) AS distinct_monitor_intervals,
 						min(latency) AS latency_min,
 						max(latency) AS latency_max,
-						avg(latency) AS latency_avg
+						avg(latency) AS latency_avg,
+						min(custom1) AS custom1_min,
+						max(custom1) AS custom1_max,
+						avg(custom1) AS custom1_avg,
+						min(custom2) AS custom2_min,
+						max(custom2) AS custom2_max,
+						avg(custom2) AS custom2_avg,
+						min(custom3) AS custom3_min,
+						max(custom3) AS custom3_max,
+						avg(custom3) AS custom3_avg
 					FROM pulses
 					WHERE monitor_id = {monitorId:String}
 						AND timestamp >= toDateTime('${startIntervalFormatted}')
@@ -186,7 +232,16 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 				COALESCE(LEAST(100, ps.distinct_monitor_intervals * 100.0 / ${expectedPulsesPerInterval}), 0) AS uptime,
 				ps.latency_min AS latency_min,
 				ps.latency_max AS latency_max,
-				ps.latency_avg AS latency_avg
+				ps.latency_avg AS latency_avg,
+				ps.custom1_min AS custom1_min,
+				ps.custom1_max AS custom1_max,
+				ps.custom1_avg AS custom1_avg,
+				ps.custom2_min AS custom2_min,
+				ps.custom2_max AS custom2_max,
+				ps.custom2_avg AS custom2_avg,
+				ps.custom3_min AS custom3_min,
+				ps.custom3_max AS custom3_max,
+				ps.custom3_avg AS custom3_avg
 			FROM all_intervals ai
 			LEFT JOIN pulse_stats ps ON ai.interval_start = ps.interval_start
 			ORDER BY ai.interval_start ASC
@@ -197,7 +252,33 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 			query_params: { monitorId },
 			format: "JSONEachRow",
 		});
-		return result.json<PulseRaw>();
+		const data = await result.json<PulseRaw>();
+
+		// Remove null custom metric fields to reduce payload size
+		return data.map((row) => {
+			const cleaned: Record<string, any> = {
+				timestamp: row.timestamp,
+				uptime: row.uptime,
+			};
+
+			// Only include latency fields if they have values
+			if (row.latency_min !== null) cleaned.latency_min = row.latency_min;
+			if (row.latency_max !== null) cleaned.latency_max = row.latency_max;
+			if (row.latency_avg !== null) cleaned.latency_avg = row.latency_avg;
+
+			// Only include custom metric fields if they have values
+			if (row.custom1_min !== null) cleaned.custom1_min = row.custom1_min;
+			if (row.custom1_max !== null) cleaned.custom1_max = row.custom1_max;
+			if (row.custom1_avg !== null) cleaned.custom1_avg = row.custom1_avg;
+			if (row.custom2_min !== null) cleaned.custom2_min = row.custom2_min;
+			if (row.custom2_max !== null) cleaned.custom2_max = row.custom2_max;
+			if (row.custom2_avg !== null) cleaned.custom2_avg = row.custom2_avg;
+			if (row.custom3_min !== null) cleaned.custom3_min = row.custom3_min;
+			if (row.custom3_max !== null) cleaned.custom3_max = row.custom3_max;
+			if (row.custom3_avg !== null) cleaned.custom3_avg = row.custom3_avg;
+
+			return cleaned as PulseRaw;
+		});
 	} catch (err: any) {
 		Logger.error("getMonitorHistoryRaw failed", { monitorId, "error.message": err?.message });
 		return [];
@@ -214,7 +295,16 @@ export async function getMonitorHistoryHourly(monitorId: string): Promise<PulseH
 			uptime,
 			latency_min,
 			latency_max,
-			latency_avg
+			latency_avg,
+			custom1_min,
+			custom1_max,
+			custom1_avg,
+			custom2_min,
+			custom2_max,
+			custom2_avg,
+			custom3_min,
+			custom3_max,
+			custom3_avg
 		FROM pulses_hourly
 		WHERE monitor_id = {monitorId:String}
 		ORDER BY timestamp ASC
@@ -226,7 +316,33 @@ export async function getMonitorHistoryHourly(monitorId: string): Promise<PulseH
 			query_params: { monitorId },
 			format: "JSONEachRow",
 		});
-		return result.json<PulseHourly>();
+		const data = await result.json<PulseHourly>();
+
+		// Remove null custom metric fields to reduce payload size
+		return data.map((row) => {
+			const cleaned: Record<string, any> = {
+				timestamp: row.timestamp,
+				uptime: row.uptime,
+			};
+
+			// Only include latency fields if they have values
+			if (row.latency_min !== null) cleaned.latency_min = row.latency_min;
+			if (row.latency_max !== null) cleaned.latency_max = row.latency_max;
+			if (row.latency_avg !== null) cleaned.latency_avg = row.latency_avg;
+
+			// Only include custom metric fields if they have values
+			if (row.custom1_min !== null) cleaned.custom1_min = row.custom1_min;
+			if (row.custom1_max !== null) cleaned.custom1_max = row.custom1_max;
+			if (row.custom1_avg !== null) cleaned.custom1_avg = row.custom1_avg;
+			if (row.custom2_min !== null) cleaned.custom2_min = row.custom2_min;
+			if (row.custom2_max !== null) cleaned.custom2_max = row.custom2_max;
+			if (row.custom2_avg !== null) cleaned.custom2_avg = row.custom2_avg;
+			if (row.custom3_min !== null) cleaned.custom3_min = row.custom3_min;
+			if (row.custom3_max !== null) cleaned.custom3_max = row.custom3_max;
+			if (row.custom3_avg !== null) cleaned.custom3_avg = row.custom3_avg;
+
+			return cleaned as PulseHourly;
+		});
 	} catch (err: any) {
 		Logger.error("getMonitorHistoryHourly failed", { monitorId, "error.message": err?.message });
 		return [];
@@ -243,7 +359,16 @@ export async function getMonitorHistoryDaily(monitorId: string): Promise<PulseDa
 			uptime,
 			latency_min,
 			latency_max,
-			latency_avg
+			latency_avg,
+			custom1_min,
+			custom1_max,
+			custom1_avg,
+			custom2_min,
+			custom2_max,
+			custom2_avg,
+			custom3_min,
+			custom3_max,
+			custom3_avg
 		FROM pulses_daily
 		WHERE monitor_id = {monitorId:String}
 		ORDER BY timestamp ASC
@@ -255,7 +380,33 @@ export async function getMonitorHistoryDaily(monitorId: string): Promise<PulseDa
 			query_params: { monitorId },
 			format: "JSONEachRow",
 		});
-		return result.json<PulseDaily>();
+		const data = await result.json<PulseDaily>();
+
+		// Remove null custom metric fields to reduce payload size
+		return data.map((row) => {
+			const cleaned: Record<string, any> = {
+				timestamp: row.timestamp,
+				uptime: row.uptime,
+			};
+
+			// Only include latency fields if they have values
+			if (row.latency_min !== null) cleaned.latency_min = row.latency_min;
+			if (row.latency_max !== null) cleaned.latency_max = row.latency_max;
+			if (row.latency_avg !== null) cleaned.latency_avg = row.latency_avg;
+
+			// Only include custom metric fields if they have values
+			if (row.custom1_min !== null) cleaned.custom1_min = row.custom1_min;
+			if (row.custom1_max !== null) cleaned.custom1_max = row.custom1_max;
+			if (row.custom1_avg !== null) cleaned.custom1_avg = row.custom1_avg;
+			if (row.custom2_min !== null) cleaned.custom2_min = row.custom2_min;
+			if (row.custom2_max !== null) cleaned.custom2_max = row.custom2_max;
+			if (row.custom2_avg !== null) cleaned.custom2_avg = row.custom2_avg;
+			if (row.custom3_min !== null) cleaned.custom3_min = row.custom3_min;
+			if (row.custom3_max !== null) cleaned.custom3_max = row.custom3_max;
+			if (row.custom3_avg !== null) cleaned.custom3_avg = row.custom3_avg;
+
+			return cleaned as PulseDaily;
+		});
 	} catch (err: any) {
 		Logger.error("getMonitorHistoryDaily failed", { monitorId, "error.message": err?.message });
 		return [];
@@ -286,16 +437,27 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			if (data[0]?.first_pulse) firstPulse = new Date(data[0].first_pulse);
 		}
 
-		// Get latest pulse
+		// Get latest pulse with custom metrics
 		const latestQuery = `
-			SELECT latency, timestamp AS last_check
+			SELECT
+				timestamp AS last_check,
+				latency,
+				custom1,
+				custom2,
+				custom3
 			FROM pulses
 			WHERE monitor_id = {monitorId:String}
 			ORDER BY timestamp DESC
 			LIMIT 1
 		`;
 		const latestResult = await clickhouse.query({ query: latestQuery, query_params: { monitorId }, format: "JSONEachRow" });
-		const latestData = await latestResult.json<{ latency: number | null; last_check: string }>();
+		const latestData = await latestResult.json<{
+			last_check: string;
+			latency: number | null;
+			custom1: number | null;
+			custom2: number | null;
+			custom3: number | null;
+		}>();
 
 		if (!latestData.length) {
 			const statusData: StatusData = {
@@ -312,6 +474,17 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				uptime90d: 0,
 				uptime365d: 0,
 			};
+
+			if (monitor.custom1) {
+				statusData.custom1 = { config: monitor.custom1, value: undefined };
+			}
+			if (monitor.custom2) {
+				statusData.custom2 = { config: monitor.custom2, value: undefined };
+			}
+			if (monitor.custom3) {
+				statusData.custom3 = { config: monitor.custom3, value: undefined };
+			}
+
 			cache.setStatus(monitorId, statusData);
 
 			if (monitor.groupId) {
@@ -337,6 +510,16 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			lastCheck: new Date(latestData[0]!.last_check + "Z"),
 			...uptimes,
 		};
+
+		if (monitor.custom1) {
+			statusData.custom1 = { config: monitor.custom1, value: latestData[0]!.custom1 ?? undefined };
+		}
+		if (monitor.custom2) {
+			statusData.custom2 = { config: monitor.custom2, value: latestData[0]!.custom2 ?? undefined };
+		}
+		if (monitor.custom3) {
+			statusData.custom3 = { config: monitor.custom3, value: latestData[0]!.custom3 ?? undefined };
+		}
 
 		cache.setStatus(monitorId, statusData);
 

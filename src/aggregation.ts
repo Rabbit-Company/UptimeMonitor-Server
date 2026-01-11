@@ -105,14 +105,13 @@ export class AggregationJob {
 					const firstPulseData = await firstPulseResult.json<{ first_pulse: string | null }>();
 
 					if (!firstPulseData[0]?.first_pulse) {
-						continue; // No pulses yet for this monitor
+						continue;
 					}
 
 					startHour = new Date(firstPulseData[0].first_pulse);
 					startHour.setUTCMinutes(0, 0, 0);
 				}
 
-				// Sanity check: startHour should not be before year 2000
 				if (startHour.getFullYear() < 2000) {
 					Logger.warn("Skipping hourly aggregation - invalid start hour detected", {
 						monitorId: monitor.id,
@@ -129,10 +128,10 @@ export class AggregationJob {
 				const hoursToAggregate = Math.floor((currentHourStart.getTime() - startHour.getTime()) / (60 * 60 * 1000));
 
 				if (hoursToAggregate <= 0) {
-					continue; // Nothing new to aggregate
+					continue;
 				}
 
-				// Limit to prevent too many partitions error (max ~2160 hours = 90 days at a time)
+				// Limit to prevent too many partitions error
 				const maxHoursPerBatch = 2000;
 				const batchedHours = Math.min(hoursToAggregate, maxHoursPerBatch);
 
@@ -148,7 +147,13 @@ export class AggregationJob {
 
 				// Only aggregate NEW hours (not already in pulses_hourly)
 				const query = `
-					INSERT INTO pulses_hourly (monitor_id, timestamp, uptime, latency_min, latency_max, latency_avg)
+					INSERT INTO pulses_hourly (
+						monitor_id, timestamp, uptime,
+						latency_min, latency_max, latency_avg,
+						custom1_min, custom1_max, custom1_avg,
+						custom2_min, custom2_max, custom2_avg,
+						custom3_min, custom3_max, custom3_avg
+					)
 					WITH
 						-- Generate only the new hours that need aggregating
 						all_hours AS (
@@ -162,7 +167,16 @@ export class AggregationJob {
 								COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND)) AS distinct_intervals,
 								min(latency) AS latency_min,
 								max(latency) AS latency_max,
-								avg(latency) AS latency_avg
+								avg(latency) AS latency_avg,
+								min(custom1) AS custom1_min,
+								max(custom1) AS custom1_max,
+								avg(custom1) AS custom1_avg,
+								min(custom2) AS custom2_min,
+								max(custom2) AS custom2_max,
+								avg(custom2) AS custom2_avg,
+								min(custom3) AS custom3_min,
+								max(custom3) AS custom3_max,
+								avg(custom3) AS custom3_avg
 							FROM pulses
 							WHERE monitor_id = {monitorId:String}
 								AND timestamp >= toDateTime('${startHourFormatted}')
@@ -173,9 +187,10 @@ export class AggregationJob {
 						{monitorId:String} AS monitor_id,
 						ah.hour AS timestamp,
 						COALESCE(LEAST(100, ps.distinct_intervals * 100.0 / ${expectedIntervalsPerHour}), 0) AS uptime,
-						ps.latency_min AS latency_min,
-						ps.latency_max AS latency_max,
-						ps.latency_avg AS latency_avg
+						ps.latency_min, ps.latency_max, ps.latency_avg,
+						ps.custom1_min, ps.custom1_max, ps.custom1_avg,
+						ps.custom2_min, ps.custom2_max, ps.custom2_avg,
+						ps.custom3_min, ps.custom3_max, ps.custom3_avg
 					FROM all_hours ah
 					LEFT JOIN pulse_stats ps ON ah.hour = ps.hour
 				`;
@@ -253,14 +268,13 @@ export class AggregationJob {
 					const firstHourData = await firstHourResult.json<{ first_hour: string | null }>();
 
 					if (!firstHourData[0]?.first_hour) {
-						continue; // No hourly records yet for this monitor
+						continue;
 					}
 
 					startDate = new Date(firstHourData[0].first_hour);
 					startDate.setUTCHours(0, 0, 0, 0);
 				}
 
-				// Sanity check: startDate should not be before year 2000
 				if (startDate.getFullYear() < 2000) {
 					Logger.warn("Skipping daily aggregation - invalid start date detected", {
 						monitorId: monitor.id,
@@ -277,10 +291,9 @@ export class AggregationJob {
 				const daysToAggregate = Math.floor((today.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
 
 				if (daysToAggregate <= 0) {
-					continue; // Nothing new to aggregate
+					continue;
 				}
 
-				// Limit to prevent issues (max ~365 days at a time)
 				const maxDaysPerBatch = 365;
 				const batchedDays = Math.min(daysToAggregate, maxDaysPerBatch);
 
@@ -296,7 +309,13 @@ export class AggregationJob {
 
 				// Only aggregate NEW days (not already in pulses_daily)
 				const query = `
-					INSERT INTO pulses_daily (monitor_id, timestamp, uptime, latency_min, latency_max, latency_avg)
+					INSERT INTO pulses_daily (
+						monitor_id, timestamp, uptime,
+						latency_min, latency_max, latency_avg,
+						custom1_min, custom1_max, custom1_avg,
+						custom2_min, custom2_max, custom2_avg,
+						custom3_min, custom3_max, custom3_avg
+					)
 					WITH
 						-- Generate only the new days that need aggregating
 						all_days AS (
@@ -310,7 +329,16 @@ export class AggregationJob {
 								avg(uptime) AS uptime,
 								min(latency_min) AS latency_min,
 								max(latency_max) AS latency_max,
-								avg(latency_avg) AS latency_avg
+								avg(latency_avg) AS latency_avg,
+								min(custom1_min) AS custom1_min,
+								max(custom1_max) AS custom1_max,
+								avg(custom1_avg) AS custom1_avg,
+								min(custom2_min) AS custom2_min,
+								max(custom2_max) AS custom2_max,
+								avg(custom2_avg) AS custom2_avg,
+								min(custom3_min) AS custom3_min,
+								max(custom3_max) AS custom3_max,
+								avg(custom3_avg) AS custom3_avg
 							FROM pulses_hourly
 							WHERE monitor_id = {monitorId:String}
 								AND toDate(timestamp) >= toDate('${startDateFormatted}')
@@ -321,9 +349,10 @@ export class AggregationJob {
 						{monitorId:String} AS monitor_id,
 						ad.date AS timestamp,
 						COALESCE(ds.uptime, 0) AS uptime,
-						ds.latency_min AS latency_min,
-						ds.latency_max AS latency_max,
-						ds.latency_avg AS latency_avg
+						ds.latency_min, ds.latency_max, ds.latency_avg,
+						ds.custom1_min, ds.custom1_max, ds.custom1_avg,
+						ds.custom2_min, ds.custom2_max, ds.custom2_avg,
+						ds.custom3_min, ds.custom3_max, ds.custom3_avg
 					FROM all_days ad
 					LEFT JOIN daily_stats ds ON ad.date = ds.date
 				`;

@@ -2,7 +2,7 @@ import { createClient } from "@clickhouse/client";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { EventEmitter } from "events";
-import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics } from "./types";
+import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics, GroupHistoryRecord, Group } from "./types";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { NotificationManager } from "./notifications";
 import { cache } from "./cache";
@@ -719,4 +719,400 @@ function calculateGroupUptimes(
 		uptime90d: aggregate(uptimes[4]!),
 		uptime365d: aggregate(uptimes[5]!),
 	};
+}
+
+/**
+ * Get all direct descendant monitor IDs for a group (recursively includes nested groups)
+ */
+function getAllDescendantMonitorIds(groupId: string): string[] {
+	const { monitors, groups } = cache.getDirectChildren(groupId);
+	const monitorIds = monitors.map((m) => m.id);
+
+	// Recursively get monitors from child groups
+	for (const childGroup of groups) {
+		monitorIds.push(...getAllDescendantMonitorIds(childGroup.id));
+	}
+
+	return monitorIds;
+}
+
+/**
+ * Aggregate uptime values based on group strategy
+ */
+function aggregateUptimeByStrategy(uptimes: number[], strategy: Group["strategy"]): number {
+	if (uptimes.length === 0) return 0;
+
+	switch (strategy) {
+		case "any-up":
+			// Group is UP if at least one child is up
+			// Return the max uptime (if any child was up, we get that uptime)
+			return Math.max(...uptimes);
+		case "all-up":
+			// Group is UP only if all children are up
+			// Return the min uptime (all must be 100% for group to be 100%)
+			return Math.min(...uptimes);
+		case "percentage":
+		default:
+			// Average of all children
+			return uptimes.reduce((sum, u) => sum + u, 0) / uptimes.length;
+	}
+}
+
+/**
+ * Get raw history for a group computed from child monitors (last ~24h)
+ * Uses the group's strategy to aggregate child uptimes per time window
+ */
+export async function getGroupHistoryRaw(groupId: string): Promise<GroupHistoryRecord[]> {
+	const group = cache.getGroup(groupId);
+	if (!group) return [];
+
+	const monitorIds = getAllDescendantMonitorIds(groupId);
+	if (monitorIds.length === 0) return [];
+
+	// Use the group's interval or default to 60 seconds for output
+	const outputInterval = Math.max(group.interval, 60);
+
+	try {
+		// Get the earliest first pulse among all monitors
+		const firstPulseQuery = `
+			SELECT
+				timestamp AS first_pulse
+			FROM pulses
+			WHERE monitor_id IN ({monitorIds:Array(String)})
+			ORDER BY timestamp ASC
+			LIMIT 1;
+		`;
+
+		const firstPulseResult = await clickhouse.query({
+			query: firstPulseQuery,
+			query_params: { monitorIds },
+			format: "JSONEachRow",
+		});
+		const firstPulseData = await firstPulseResult.json<{ first_pulse: string | null }>();
+
+		if (!firstPulseData[0]?.first_pulse) {
+			return [];
+		}
+
+		const firstPulse = new Date(new Date(firstPulseData[0].first_pulse).getTime() + outputInterval * 1000);
+		const lastPulse = new Date(Date.now() - outputInterval * 1000);
+
+		if (firstPulse.getFullYear() < 2000) {
+			return [];
+		}
+
+		const startInterval = new Date(Math.floor(firstPulse.getTime() / (outputInterval * 1000)) * outputInterval * 1000);
+		const endInterval = new Date(Math.floor(lastPulse.getTime() / (outputInterval * 1000)) * outputInterval * 1000);
+
+		const intervalsToGenerate = Math.floor((endInterval.getTime() - startInterval.getTime()) / (outputInterval * 1000)) + 1;
+
+		if (intervalsToGenerate <= 0) {
+			return [];
+		}
+
+		const startIntervalFormatted = formatDateTimeISOCompact(startInterval);
+
+		// For each time window, we need to determine if each monitor was "up" (had at least 1 pulse)
+		// Then apply the group strategy to determine overall group uptime
+		const query = `
+			WITH
+				all_intervals AS (
+					SELECT toStartOfInterval(
+						toDateTime('${startIntervalFormatted}') + INTERVAL number * ${outputInterval} SECOND,
+						INTERVAL ${outputInterval} SECOND
+					) AS interval_start
+					FROM numbers(0, ${intervalsToGenerate})
+				),
+				-- For each monitor and interval, check if there was at least one pulse
+				monitor_intervals AS (
+					SELECT
+						monitor_id,
+						toStartOfInterval(timestamp, INTERVAL ${outputInterval} SECOND) AS interval_start,
+						1 AS had_pulse,
+						min(latency) AS latency_min,
+						max(latency) AS latency_max,
+						avg(latency) AS latency_avg
+					FROM pulses
+					WHERE monitor_id IN ({monitorIds:Array(String)})
+						AND timestamp >= toDateTime('${startIntervalFormatted}')
+						AND timestamp < toDateTime('${startIntervalFormatted}') + INTERVAL ${intervalsToGenerate * outputInterval} SECOND
+					GROUP BY monitor_id, interval_start
+				),
+				-- Cross join all monitors with all intervals to get expected combinations
+				all_monitor_intervals AS (
+					SELECT
+						ai.interval_start,
+						m.monitor_id
+					FROM all_intervals ai
+					CROSS JOIN (SELECT DISTINCT monitor_id FROM monitor_intervals) m
+				),
+				-- Join with actual data to find which monitors were up in each interval
+				interval_stats AS (
+					SELECT
+						ami.interval_start,
+						ami.monitor_id,
+						COALESCE(mi.had_pulse, 0) AS was_up,
+						mi.latency_min,
+						mi.latency_max,
+						mi.latency_avg
+					FROM all_monitor_intervals ami
+					LEFT JOIN monitor_intervals mi ON ami.interval_start = mi.interval_start AND ami.monitor_id = mi.monitor_id
+				),
+				-- Aggregate per interval
+				aggregated AS (
+					SELECT
+						interval_start,
+						-- Count monitors that were up vs total
+						SUM(was_up) AS monitors_up,
+						COUNT(*) AS total_monitors,
+						min(latency_min) AS latency_min,
+						max(latency_max) AS latency_max,
+						avg(latency_avg) AS latency_avg
+					FROM interval_stats
+					GROUP BY interval_start
+				)
+			SELECT
+				formatDateTime(ai.interval_start, '%Y-%m-%dT%H:%i:%sZ') AS timestamp,
+				COALESCE(a.monitors_up, 0) AS monitors_up,
+				COALESCE(a.total_monitors, ${monitorIds.length}) AS total_monitors,
+				a.latency_min,
+				a.latency_max,
+				a.latency_avg
+			FROM all_intervals ai
+			LEFT JOIN aggregated a ON ai.interval_start = a.interval_start
+			ORDER BY ai.interval_start ASC
+		`;
+
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorIds },
+			format: "JSONEachRow",
+		});
+
+		const data = await result.json<{
+			timestamp: string;
+			monitors_up: number;
+			total_monitors: number;
+			latency_min: number | null;
+			latency_max: number | null;
+			latency_avg: number | null;
+		}>();
+
+		// Apply group strategy to compute uptime
+		return data.map((row) => {
+			let uptime: number;
+			const upPercentage = row.total_monitors > 0 ? (row.monitors_up / row.total_monitors) * 100 : 0;
+
+			switch (group.strategy) {
+				case "any-up":
+					// Up if at least one monitor is up
+					uptime = row.monitors_up > 0 ? 100 : 0;
+					break;
+				case "all-up":
+					// Up only if all monitors are up
+					uptime = row.monitors_up === row.total_monitors && row.total_monitors > 0 ? 100 : 0;
+					break;
+				case "percentage":
+				default:
+					// Percentage of monitors that were up
+					uptime = upPercentage;
+			}
+
+			const record: GroupHistoryRecord = {
+				timestamp: row.timestamp,
+				uptime,
+			};
+			if (row.latency_min !== null) {
+				record.latency_min = row.latency_min;
+			}
+			if (row.latency_max !== null) {
+				record.latency_max = row.latency_max;
+			}
+			if (row.latency_avg !== null) {
+				record.latency_avg = row.latency_avg;
+			}
+			return record;
+		});
+	} catch (err: any) {
+		Logger.error("getGroupHistoryRaw failed", { groupId, "error.message": err?.message });
+		return [];
+	}
+}
+
+/**
+ * Get hourly history for a group computed from child monitors (last ~90 days)
+ */
+export async function getGroupHistoryHourly(groupId: string): Promise<GroupHistoryRecord[]> {
+	const group = cache.getGroup(groupId);
+	if (!group) return [];
+
+	const monitorIds = getAllDescendantMonitorIds(groupId);
+	if (monitorIds.length === 0) return [];
+
+	try {
+		// Get all hourly data for all child monitors
+		const query = `
+			SELECT
+				formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS timestamp,
+				monitor_id,
+				uptime,
+				latency_min,
+				latency_max,
+				latency_avg
+			FROM pulses_hourly
+			WHERE monitor_id IN ({monitorIds:Array(String)})
+			ORDER BY timestamp ASC
+		`;
+
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorIds },
+			format: "JSONEachRow",
+		});
+
+		const data = await result.json<{
+			timestamp: string;
+			monitor_id: string;
+			uptime: number;
+			latency_min: number | null;
+			latency_max: number | null;
+			latency_avg: number | null;
+		}>();
+
+		// Group by timestamp and aggregate
+		const byTimestamp = new Map<string, { uptimes: number[]; latencyMins: number[]; latencyMaxs: number[]; latencyAvgs: number[] }>();
+
+		for (const row of data) {
+			if (!byTimestamp.has(row.timestamp)) {
+				byTimestamp.set(row.timestamp, { uptimes: [], latencyMins: [], latencyMaxs: [], latencyAvgs: [] });
+			}
+			const bucket = byTimestamp.get(row.timestamp)!;
+			bucket.uptimes.push(row.uptime);
+			if (row.latency_min !== null) {
+				bucket.latencyMins.push(row.latency_min);
+			}
+			if (row.latency_max !== null) {
+				bucket.latencyMaxs.push(row.latency_max);
+			}
+			if (row.latency_avg !== null) {
+				bucket.latencyAvgs.push(row.latency_avg);
+			}
+		}
+
+		// Convert to array and apply group strategy
+		const records: GroupHistoryRecord[] = [];
+		const sortedTimestamps = Array.from(byTimestamp.keys()).sort();
+
+		for (const timestamp of sortedTimestamps) {
+			const bucket = byTimestamp.get(timestamp)!;
+			const uptime = aggregateUptimeByStrategy(bucket.uptimes, group.strategy);
+			const record: GroupHistoryRecord = { timestamp, uptime };
+
+			if (bucket.latencyMins.length > 0) {
+				record.latency_min = Math.min(...bucket.latencyMins);
+			}
+			if (bucket.latencyMaxs.length > 0) {
+				record.latency_max = Math.max(...bucket.latencyMaxs);
+			}
+			if (bucket.latencyAvgs.length > 0) {
+				record.latency_avg = bucket.latencyAvgs.reduce((a, b) => a + b, 0) / bucket.latencyAvgs.length;
+			}
+
+			records.push(record);
+		}
+
+		return records;
+	} catch (err: any) {
+		Logger.error("getGroupHistoryHourly failed", { groupId, "error.message": err?.message });
+		return [];
+	}
+}
+
+/**
+ * Get daily history for a group computed from child monitors (all time)
+ */
+export async function getGroupHistoryDaily(groupId: string): Promise<GroupHistoryRecord[]> {
+	const group = cache.getGroup(groupId);
+	if (!group) return [];
+
+	const monitorIds = getAllDescendantMonitorIds(groupId);
+	if (monitorIds.length === 0) return [];
+
+	try {
+		// Get all daily data for all child monitors
+		const query = `
+			SELECT
+				toString(timestamp) AS timestamp,
+				monitor_id,
+				uptime,
+				latency_min,
+				latency_max,
+				latency_avg
+			FROM pulses_daily
+			WHERE monitor_id IN ({monitorIds:Array(String)})
+			ORDER BY timestamp ASC
+		`;
+
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorIds },
+			format: "JSONEachRow",
+		});
+
+		const data = await result.json<{
+			timestamp: string;
+			monitor_id: string;
+			uptime: number;
+			latency_min: number | null;
+			latency_max: number | null;
+			latency_avg: number | null;
+		}>();
+
+		// Group by timestamp and aggregate
+		const byTimestamp = new Map<string, { uptimes: number[]; latencyMins: number[]; latencyMaxs: number[]; latencyAvgs: number[] }>();
+
+		for (const row of data) {
+			if (!byTimestamp.has(row.timestamp)) {
+				byTimestamp.set(row.timestamp, { uptimes: [], latencyMins: [], latencyMaxs: [], latencyAvgs: [] });
+			}
+			const bucket = byTimestamp.get(row.timestamp)!;
+			bucket.uptimes.push(row.uptime);
+			if (row.latency_min !== null) {
+				bucket.latencyMins.push(row.latency_min);
+			}
+			if (row.latency_max !== null) {
+				bucket.latencyMaxs.push(row.latency_max);
+			}
+			if (row.latency_avg !== null) {
+				bucket.latencyAvgs.push(row.latency_avg);
+			}
+		}
+
+		// Convert to array and apply group strategy
+		const records: GroupHistoryRecord[] = [];
+		const sortedTimestamps = Array.from(byTimestamp.keys()).sort();
+
+		for (const timestamp of sortedTimestamps) {
+			const bucket = byTimestamp.get(timestamp)!;
+			const uptime = aggregateUptimeByStrategy(bucket.uptimes, group.strategy);
+			const record: GroupHistoryRecord = { timestamp, uptime };
+
+			if (bucket.latencyMins.length > 0) {
+				record.latency_min = Math.min(...bucket.latencyMins);
+			}
+			if (bucket.latencyMaxs.length > 0) {
+				record.latency_max = Math.max(...bucket.latencyMaxs);
+			}
+			if (bucket.latencyAvgs.length > 0) {
+				record.latency_avg = bucket.latencyAvgs.reduce((a, b) => a + b, 0) / bucket.latencyAvgs.length;
+			}
+
+			records.push(record);
+		}
+
+		return records;
+	} catch (err: any) {
+		Logger.error("getGroupHistoryDaily failed", { groupId, "error.message": err?.message });
+		return [];
+	}
 }

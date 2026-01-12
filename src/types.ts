@@ -470,3 +470,20 @@ export interface CustomMetrics {
 	custom2: number | null;
 	custom3: number | null;
 }
+
+/**
+ * Group history data aggregated from child monitors/groups.
+ * Groups don't store their own pulses - their history is computed from children.
+ */
+export interface GroupHistoryRecord {
+	/** Timestamp (ISO format) */
+	timestamp: string;
+	/** Uptime percentage based on group strategy */
+	uptime: number;
+	/** Minimum latency across children */
+	latency_min?: number;
+	/** Maximum latency across children */
+	latency_max?: number;
+	/** Average latency across children */
+	latency_avg?: number;
+}

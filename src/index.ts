@@ -2,8 +2,18 @@ import { Web } from "@rabbit-company/web";
 import { Logger } from "./logger";
 import { config } from "./config";
 import { cache } from "./cache";
-import type { Monitor, StatusData, StatusPage, CustomMetrics } from "./types";
-import { getMonitorHistoryRaw, getMonitorHistoryHourly, getMonitorHistoryDaily, initClickHouse, storePulse, updateMonitorStatus } from "./clickhouse";
+import type { Monitor, StatusData, StatusPage, CustomMetrics, Group } from "./types";
+import {
+	getMonitorHistoryRaw,
+	getMonitorHistoryHourly,
+	getMonitorHistoryDaily,
+	getGroupHistoryRaw,
+	getGroupHistoryHourly,
+	getGroupHistoryDaily,
+	initClickHouse,
+	storePulse,
+	updateMonitorStatus,
+} from "./clickhouse";
 import { buildStatusTree } from "./statuspage";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { aggregationJob } from "./aggregation";
@@ -268,6 +278,67 @@ app.get("/v1/monitors/:id/history/daily", webCache({ ttl: 300, generateETags: fa
 		type: "daily",
 		data,
 		...(Object.keys(customMetrics).length > 0 && { customMetrics }),
+	});
+});
+
+/**
+ * GET /v1/groups/:id/history
+ * Returns raw history for a group (~24h due to TTL)
+ * Group uptime is computed from child monitors based on the group's strategy:
+ * - "any-up": Group is UP (100%) if at least one child monitor is up in that time window
+ * - "all-up": Group is UP (100%) only if all child monitors are up in that time window
+ * - "percentage": Group uptime is the percentage of child monitors that are up
+ */
+app.get("/v1/groups/:id/history", webCache({ ttl: 30, generateETags: false }), async (ctx) => {
+	const groupId = ctx.params["id"] || "";
+	const group: Group | undefined = cache.getGroup(groupId);
+	if (!group) return ctx.json({ error: "Group not found" }, 404);
+
+	const data = await getGroupHistoryRaw(groupId);
+
+	return ctx.json({
+		groupId,
+		type: "raw",
+		strategy: group.strategy,
+		data,
+	});
+});
+
+/**
+ * GET /v1/groups/:id/history/hourly
+ * Returns hourly history for a group (~90 days due to TTL)
+ */
+app.get("/v1/groups/:id/history/hourly", webCache({ ttl: 60, generateETags: false }), async (ctx) => {
+	const groupId = ctx.params["id"] || "";
+	const group: Group | undefined = cache.getGroup(groupId);
+	if (!group) return ctx.json({ error: "Group not found" }, 404);
+
+	const data = await getGroupHistoryHourly(groupId);
+
+	return ctx.json({
+		groupId,
+		type: "hourly",
+		strategy: group.strategy,
+		data,
+	});
+});
+
+/**
+ * GET /v1/groups/:id/history/daily
+ * Returns daily history for a group (all time)
+ */
+app.get("/v1/groups/:id/history/daily", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
+	const groupId = ctx.params["id"] || "";
+	const group: Group | undefined = cache.getGroup(groupId);
+	if (!group) return ctx.json({ error: "Group not found" }, 404);
+
+	const data = await getGroupHistoryDaily(groupId);
+
+	return ctx.json({
+		groupId,
+		type: "daily",
+		strategy: group.strategy,
+		data,
 	});
 });
 

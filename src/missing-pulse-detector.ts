@@ -1,5 +1,5 @@
 import { cache } from "./cache";
-import { eventEmitter } from "./clickhouse";
+import { eventEmitter, updateMonitorStatus } from "./clickhouse";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { NotificationManager } from "./notifications";
@@ -122,18 +122,9 @@ export class MissingPulseDetector {
 
 	/**
 	 * Get the maximum allowed interval for a monitor
-	 * Uses the smaller of: 50% buffer or 30 seconds
 	 */
 	private getMaxAllowedInterval(monitor: Monitor): number {
-		const baseInterval = monitor.interval * 1000;
-
-		// Calculate 50% buffer
-		const percentageBuffer = baseInterval * 0.5;
-
-		// Use whichever is smaller: 50% or 30 seconds
-		const gracePeriod = Math.min(percentageBuffer, 30000);
-
-		return baseInterval + gracePeriod;
+		return monitor.interval * 1000;
 	}
 
 	/**
@@ -195,6 +186,8 @@ export class MissingPulseDetector {
 		if (isFirstDown || !state.downStartTime) {
 			this.initializeDowntime(monitor, now);
 		}
+
+		await updateMonitorStatus(monitor.id);
 
 		if (this.shouldSendNotification(monitor, state)) {
 			const downtimeInfo = this.getDowntimeInfo(monitor.id, now);

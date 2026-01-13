@@ -1,6 +1,5 @@
 import { cache } from "./cache";
-import { config } from "./config";
-import type { Group, Monitor, StatusData } from "./types";
+import type { StatusData } from "./types";
 
 export function buildStatusTree(itemIds: string[]): StatusData[] {
 	const result: StatusData[] = [];

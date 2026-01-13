@@ -1,5 +1,16 @@
 import { readFileSync } from "fs";
-import type { Config, Monitor, Group, StatusPage, ServerConfig, LoggerConfig, NotificationsConfig, NotificationChannel, SelfMonitoringConfig } from "./types";
+import type {
+	Config,
+	Monitor,
+	Group,
+	StatusPage,
+	ServerConfig,
+	LoggerConfig,
+	NotificationsConfig,
+	NotificationChannel,
+	SelfMonitoringConfig,
+	CustomMetricConfig,
+} from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { Logger } from "./logger";
 
@@ -57,6 +68,48 @@ function validateLoggerConfig(config: unknown): LoggerConfig {
 	return result;
 }
 
+function validateCustomMetricConfig(metric: unknown, context: string): CustomMetricConfig | undefined {
+	if (metric === undefined) {
+		return undefined;
+	}
+
+	const errors: string[] = [];
+
+	if (!isObject(metric)) {
+		throw new ConfigValidationError([`${context} must be an object`]);
+	}
+
+	// Validate id
+	if (!isString(metric.id) || metric.id.trim().length === 0) {
+		errors.push(`${context}.id must be a non-empty string`);
+	}
+
+	// Validate name
+	if (!isString(metric.name) || metric.name.trim().length === 0) {
+		errors.push(`${context}.name must be a non-empty string`);
+	}
+
+	// Validate optional unit
+	if (metric.unit !== undefined && (!isString(metric.unit) || metric.unit.trim().length === 0)) {
+		errors.push(`${context}.unit must be a non-empty string if provided`);
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	const result: CustomMetricConfig = {
+		id: metric.id as string,
+		name: metric.name as string,
+	};
+
+	if (metric.unit) {
+		result.unit = metric.unit as string;
+	}
+
+	return result;
+}
+
 function validateMonitor(monitor: unknown, index: number): Monitor {
 	const errors: string[] = [];
 
@@ -105,7 +158,36 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 
 	const notificationChannels = validateNotificationChannels(monitor.notificationChannels, `monitors[${index}]`);
 
-	return {
+	// Validate custom metrics
+	let custom1: CustomMetricConfig | undefined;
+	let custom2: CustomMetricConfig | undefined;
+	let custom3: CustomMetricConfig | undefined;
+
+	try {
+		custom1 = validateCustomMetricConfig(monitor.custom1, `monitors[${index}].custom1`);
+	} catch (error) {
+		if (error instanceof ConfigValidationError) {
+			throw error;
+		}
+	}
+
+	try {
+		custom2 = validateCustomMetricConfig(monitor.custom2, `monitors[${index}].custom2`);
+	} catch (error) {
+		if (error instanceof ConfigValidationError) {
+			throw error;
+		}
+	}
+
+	try {
+		custom3 = validateCustomMetricConfig(monitor.custom3, `monitors[${index}].custom3`);
+	} catch (error) {
+		if (error instanceof ConfigValidationError) {
+			throw error;
+		}
+	}
+
+	const result: Monitor = {
 		id: monitor.id as string,
 		name: monitor.name as string,
 		token: monitor.token as string,
@@ -115,6 +197,12 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		groupId: monitor.groupId as string | undefined,
 		notificationChannels,
 	};
+
+	if (custom1) result.custom1 = custom1;
+	if (custom2) result.custom2 = custom2;
+	if (custom3) result.custom3 = custom3;
+
+	return result;
 }
 
 function validateGroup(group: unknown, index: number): Group {

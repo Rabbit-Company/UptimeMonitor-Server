@@ -2,86 +2,112 @@ import { createClient } from "@clickhouse/client";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { EventEmitter } from "events";
-import type { Group, HistoryRecord, IntervalConfig, Monitor, PulseRecord, StatusData, UptimeRecord } from "./types";
+import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics, GroupHistoryRecord, Group } from "./types";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { NotificationManager } from "./notifications";
 import { cache } from "./cache";
-import { formatDateTimeISOCompact, formatDateTimeISOString, GRACE_PERIOD, isInGracePeriod, STARTUP_TIME } from "./times";
+import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
 
 export const eventEmitter = new EventEmitter();
-
 export const updateQueue = new Set<string>();
 export const BATCH_INTERVAL = 5000; // 5 seconds
 
 export const clickhouse = createClient(config.clickhouse);
 
-const INTERVALS: Record<string, IntervalConfig> = {
-	"1h": {
-		interval: "1 MINUTE",
-		intervalSec: 60,
-		range: "1 HOUR",
-		rangeSec: 3600,
-	},
-	"24h": {
-		interval: "10 MINUTE",
-		intervalSec: 600,
-		range: "24 HOUR",
-		rangeSec: 86400,
-	},
-	"7d": {
-		interval: "1 HOUR",
-		intervalSec: 3600,
-		range: "7 DAY",
-		rangeSec: 604800,
-	},
-	"30d": {
-		interval: "1 DAY",
-		intervalSec: 86400,
-		range: "30 DAY",
-		rangeSec: 2592000,
-	},
-	"90d": {
-		interval: "1 DAY",
-		intervalSec: 86400,
-		range: "90 DAY",
-		rangeSec: 7776000,
-	},
-	"365d": {
-		interval: "1 DAY",
-		intervalSec: 86400,
-		range: "1 YEAR",
-		rangeSec: 31536000,
-	},
-};
-
 export async function initClickHouse(): Promise<void> {
 	try {
+		// Raw pulses - kept for 1 day
 		await clickhouse.exec({
 			query: `
-      CREATE TABLE IF NOT EXISTS pulses (
-        monitor_id String,
-        latency Nullable(Float32),
-        timestamp DateTime64(3),
-				synthetic Boolean DEFAULT false
-      ) ENGINE = MergeTree()
-      ORDER BY (monitor_id, timestamp)
-      PARTITION BY toYYYYMM(timestamp)
-			TTL toDateTime(timestamp) + INTERVAL 1 YEAR DELETE
-    `,
+				CREATE TABLE IF NOT EXISTS pulses (
+					monitor_id LowCardinality(String),
+					timestamp DateTime64(3),
+					latency Nullable(Float32),
+					custom1 Nullable(Float32),
+					custom2 Nullable(Float32),
+					custom3 Nullable(Float32),
+					synthetic Boolean DEFAULT false
+				) ENGINE = MergeTree()
+				ORDER BY (monitor_id, timestamp)
+				PARTITION BY toYYYYMMDD(timestamp)
+				TTL toDateTime(timestamp) + INTERVAL 1 DAY DELETE
+				SETTINGS index_granularity = 8192
+			`,
 		});
+
+		// Hourly aggregates - kept for 90 days
+		await clickhouse.exec({
+			query: `
+				CREATE TABLE IF NOT EXISTS pulses_hourly (
+					monitor_id LowCardinality(String),
+					timestamp DateTime('UTC'),
+					uptime Float32,
+					latency_min Nullable(Float32),
+					latency_max Nullable(Float32),
+					latency_avg Nullable(Float32),
+					custom1_min Nullable(Float32),
+					custom1_max Nullable(Float32),
+					custom1_avg Nullable(Float32),
+					custom2_min Nullable(Float32),
+					custom2_max Nullable(Float32),
+					custom2_avg Nullable(Float32),
+					custom3_min Nullable(Float32),
+					custom3_max Nullable(Float32),
+					custom3_avg Nullable(Float32)
+				) ENGINE = MergeTree()
+				ORDER BY (monitor_id, timestamp)
+				PARTITION BY toYYYYMM(timestamp)
+				TTL timestamp + INTERVAL 90 DAY DELETE
+				SETTINGS index_granularity = 8192
+			`,
+		});
+
+		// Daily aggregates - kept forever
+		await clickhouse.exec({
+			query: `
+				CREATE TABLE IF NOT EXISTS pulses_daily (
+					monitor_id LowCardinality(String),
+					timestamp Date,
+					uptime Float32,
+					latency_min Nullable(Float32),
+					latency_max Nullable(Float32),
+					latency_avg Nullable(Float32),
+					custom1_min Nullable(Float32),
+					custom1_max Nullable(Float32),
+					custom1_avg Nullable(Float32),
+					custom2_min Nullable(Float32),
+					custom2_max Nullable(Float32),
+					custom2_avg Nullable(Float32),
+					custom3_min Nullable(Float32),
+					custom3_max Nullable(Float32),
+					custom3_avg Nullable(Float32)
+				) ENGINE = MergeTree()
+				ORDER BY (monitor_id, timestamp)
+				PARTITION BY toYear(timestamp)
+				SETTINGS index_granularity = 8192
+			`,
+		});
+
+		Logger.info("ClickHouse tables initialized");
 	} catch (err: any) {
-		Logger.error("ClickHouse connection failed", { "error.message": err?.message });
+		Logger.error("ClickHouse initialization failed", { "error.message": err?.message });
 	}
 }
 
+// Batch update interval
 setInterval(async () => {
 	const monitors = [...updateQueue];
 	updateQueue.clear();
-
 	await Promise.all(monitors.map(updateMonitorStatus));
 }, BATCH_INTERVAL);
 
-export async function storePulse(monitorId: string, latency: number | null, timestamp: Date, synthetic: boolean = false): Promise<void> {
+export async function storePulse(
+	monitorId: string,
+	latency: number | null,
+	timestamp: Date,
+	synthetic: boolean = false,
+	customMetrics: CustomMetrics = { custom1: null, custom2: null, custom3: null }
+): Promise<void> {
 	try {
 		await clickhouse.insert({
 			table: "pulses",
@@ -90,229 +116,507 @@ export async function storePulse(monitorId: string, latency: number | null, time
 					monitor_id: monitorId,
 					latency,
 					timestamp: formatDateTimeISOCompact(timestamp, { includeMilliseconds: true }),
-					synthetic: synthetic,
+					synthetic,
+					custom1: customMetrics.custom1,
+					custom2: customMetrics.custom2,
+					custom3: customMetrics.custom3,
 				},
 			],
 			format: "JSONEachRow",
 		});
 	} catch (err: any) {
-		Logger.error("Storing pulse into ClickHouse failed", { monitorId: monitorId, "error.message": err?.message });
+		Logger.error("Storing pulse failed", { monitorId, "error.message": err?.message });
 	}
 
-	// Don't process synthetic pulses through normal flow
 	if (synthetic) return;
 
 	updateQueue.add(monitorId);
-
-	// Reset missed pulse counter when we receive a pulse
 	missingPulseDetector.resetMonitor(monitorId);
+	eventEmitter.emit("pulse", { monitorId, status: "up", latency, timestamp, ...customMetrics });
+}
 
-	// Emit event for real-time updates
-	eventEmitter.emit("pulse", { monitorId, status: "up", latency, timestamp });
+/**
+ * Get raw pulses aggregated per-interval for a monitor (last ~24h due to TTL)
+ * Computes uptime and latency stats in real-time.
+ * Output interval is the larger of: monitor interval or 60 seconds (to reduce data volume)
+ * Uptime = (pulses received / expected pulses per output interval) * 100
+ */
+export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[]> {
+	const monitor = cache.getMonitor(monitorId);
+	if (!monitor) return [];
+
+	const monitorInterval = monitor.interval;
+	const outputInterval = Math.max(monitorInterval, 60);
+	const expectedPulsesPerInterval = outputInterval / monitorInterval;
+
+	try {
+		// Get the timestamp of first pulse
+		const firstPulseQuery = `
+			SELECT
+				timestamp AS first_pulse
+			FROM pulses
+			WHERE monitor_id = {monitorId:String}
+			ORDER BY timestamp ASC
+			LIMIT 1;
+		`;
+
+		const firstPulseResult = await clickhouse.query({
+			query: firstPulseQuery,
+			query_params: { monitorId },
+			format: "JSONEachRow",
+		});
+		const firstPulseData = await firstPulseResult.json<{ first_pulse: string | null }>();
+
+		if (!firstPulseData[0]?.first_pulse) {
+			return []; // No pulses yet
+		}
+
+		// Calculate interval boundaries
+		const firstPulse = new Date(new Date(firstPulseData[0].first_pulse).getTime() + outputInterval * 1000);
+		const lastPulse = new Date(Date.now() - outputInterval * 1000);
+
+		if (firstPulse.getFullYear() < 2000) {
+			return []; // No pulses yet
+		}
+
+		// Align to interval boundaries
+		const startInterval = new Date(Math.floor(firstPulse.getTime() / (outputInterval * 1000)) * outputInterval * 1000);
+		const endInterval = new Date(Math.floor(lastPulse.getTime() / (outputInterval * 1000)) * outputInterval * 1000);
+
+		const intervalsToGenerate = Math.floor((endInterval.getTime() - startInterval.getTime()) / (outputInterval * 1000)) + 1;
+
+		if (intervalsToGenerate <= 0) {
+			return [];
+		}
+
+		const startIntervalFormatted = formatDateTimeISOCompact(startInterval);
+
+		// Generate all intervals and join with pulse stats
+		// Count DISTINCT monitor intervals that have pulses, then calculate uptime percentage
+		const query = `
+			WITH
+				-- Generate all output intervals
+				all_intervals AS (
+					SELECT toStartOfInterval(
+						toDateTime('${startIntervalFormatted}') + INTERVAL number * ${outputInterval} SECOND,
+						INTERVAL ${outputInterval} SECOND
+					) AS interval_start
+					FROM numbers(0, ${intervalsToGenerate})
+				),
+				-- Aggregate pulse data per output interval
+				-- Count distinct monitor intervals that received at least one pulse
+				pulse_stats AS (
+					SELECT
+						toStartOfInterval(timestamp, INTERVAL ${outputInterval} SECOND) AS interval_start,
+						COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${monitorInterval} SECOND)) AS distinct_monitor_intervals,
+						min(latency) AS latency_min,
+						max(latency) AS latency_max,
+						avg(latency) AS latency_avg,
+						min(custom1) AS custom1_min,
+						max(custom1) AS custom1_max,
+						avg(custom1) AS custom1_avg,
+						min(custom2) AS custom2_min,
+						max(custom2) AS custom2_max,
+						avg(custom2) AS custom2_avg,
+						min(custom3) AS custom3_min,
+						max(custom3) AS custom3_max,
+						avg(custom3) AS custom3_avg
+					FROM pulses
+					WHERE monitor_id = {monitorId:String}
+						AND timestamp >= toDateTime('${startIntervalFormatted}')
+						AND timestamp < toDateTime('${startIntervalFormatted}') + INTERVAL ${intervalsToGenerate * outputInterval} SECOND
+					GROUP BY interval_start
+				)
+			SELECT
+				formatDateTime(ai.interval_start, '%Y-%m-%dT%H:%i:%sZ') AS timestamp,
+				COALESCE(LEAST(100, ps.distinct_monitor_intervals * 100.0 / ${expectedPulsesPerInterval}), 0) AS uptime,
+				ps.latency_min AS latency_min,
+				ps.latency_max AS latency_max,
+				ps.latency_avg AS latency_avg,
+				ps.custom1_min AS custom1_min,
+				ps.custom1_max AS custom1_max,
+				ps.custom1_avg AS custom1_avg,
+				ps.custom2_min AS custom2_min,
+				ps.custom2_max AS custom2_max,
+				ps.custom2_avg AS custom2_avg,
+				ps.custom3_min AS custom3_min,
+				ps.custom3_max AS custom3_max,
+				ps.custom3_avg AS custom3_avg
+			FROM all_intervals ai
+			LEFT JOIN pulse_stats ps ON ai.interval_start = ps.interval_start
+			ORDER BY ai.interval_start ASC
+		`;
+
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorId },
+			format: "JSONEachRow",
+		});
+		const data = await result.json<PulseRaw>();
+
+		// Remove null custom metric fields to reduce payload size
+		return data.map((row) => {
+			const cleaned: Record<string, any> = {
+				timestamp: row.timestamp,
+				uptime: row.uptime,
+			};
+
+			// Only include latency fields if they have values
+			if (row.latency_min !== null) cleaned.latency_min = row.latency_min;
+			if (row.latency_max !== null) cleaned.latency_max = row.latency_max;
+			if (row.latency_avg !== null) cleaned.latency_avg = row.latency_avg;
+
+			// Only include custom metric fields if they have values
+			if (row.custom1_min !== null) cleaned.custom1_min = row.custom1_min;
+			if (row.custom1_max !== null) cleaned.custom1_max = row.custom1_max;
+			if (row.custom1_avg !== null) cleaned.custom1_avg = row.custom1_avg;
+			if (row.custom2_min !== null) cleaned.custom2_min = row.custom2_min;
+			if (row.custom2_max !== null) cleaned.custom2_max = row.custom2_max;
+			if (row.custom2_avg !== null) cleaned.custom2_avg = row.custom2_avg;
+			if (row.custom3_min !== null) cleaned.custom3_min = row.custom3_min;
+			if (row.custom3_max !== null) cleaned.custom3_max = row.custom3_max;
+			if (row.custom3_avg !== null) cleaned.custom3_avg = row.custom3_avg;
+
+			return cleaned as PulseRaw;
+		});
+	} catch (err: any) {
+		Logger.error("getMonitorHistoryRaw failed", { monitorId, "error.message": err?.message });
+		return [];
+	}
+}
+
+/**
+ * Get all hourly aggregates for a monitor (last ~90 days due to TTL)
+ */
+export async function getMonitorHistoryHourly(monitorId: string): Promise<PulseHourly[]> {
+	const query = `
+		SELECT
+			formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS timestamp,
+			uptime,
+			latency_min,
+			latency_max,
+			latency_avg,
+			custom1_min,
+			custom1_max,
+			custom1_avg,
+			custom2_min,
+			custom2_max,
+			custom2_avg,
+			custom3_min,
+			custom3_max,
+			custom3_avg
+		FROM pulses_hourly
+		WHERE monitor_id = {monitorId:String}
+		ORDER BY timestamp ASC
+	`;
+
+	try {
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorId },
+			format: "JSONEachRow",
+		});
+		const data = await result.json<PulseHourly>();
+
+		// Remove null custom metric fields to reduce payload size
+		return data.map((row) => {
+			const cleaned: Record<string, any> = {
+				timestamp: row.timestamp,
+				uptime: row.uptime,
+			};
+
+			// Only include latency fields if they have values
+			if (row.latency_min !== null) cleaned.latency_min = row.latency_min;
+			if (row.latency_max !== null) cleaned.latency_max = row.latency_max;
+			if (row.latency_avg !== null) cleaned.latency_avg = row.latency_avg;
+
+			// Only include custom metric fields if they have values
+			if (row.custom1_min !== null) cleaned.custom1_min = row.custom1_min;
+			if (row.custom1_max !== null) cleaned.custom1_max = row.custom1_max;
+			if (row.custom1_avg !== null) cleaned.custom1_avg = row.custom1_avg;
+			if (row.custom2_min !== null) cleaned.custom2_min = row.custom2_min;
+			if (row.custom2_max !== null) cleaned.custom2_max = row.custom2_max;
+			if (row.custom2_avg !== null) cleaned.custom2_avg = row.custom2_avg;
+			if (row.custom3_min !== null) cleaned.custom3_min = row.custom3_min;
+			if (row.custom3_max !== null) cleaned.custom3_max = row.custom3_max;
+			if (row.custom3_avg !== null) cleaned.custom3_avg = row.custom3_avg;
+
+			return cleaned as PulseHourly;
+		});
+	} catch (err: any) {
+		Logger.error("getMonitorHistoryHourly failed", { monitorId, "error.message": err?.message });
+		return [];
+	}
+}
+
+/**
+ * Get all daily aggregates for a monitor (all time)
+ */
+export async function getMonitorHistoryDaily(monitorId: string): Promise<PulseDaily[]> {
+	const query = `
+		SELECT
+			toString(timestamp) AS timestamp,
+			uptime,
+			latency_min,
+			latency_max,
+			latency_avg,
+			custom1_min,
+			custom1_max,
+			custom1_avg,
+			custom2_min,
+			custom2_max,
+			custom2_avg,
+			custom3_min,
+			custom3_max,
+			custom3_avg
+		FROM pulses_daily
+		WHERE monitor_id = {monitorId:String}
+		ORDER BY timestamp ASC
+	`;
+
+	try {
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorId },
+			format: "JSONEachRow",
+		});
+		const data = await result.json<PulseDaily>();
+
+		// Remove null custom metric fields to reduce payload size
+		return data.map((row) => {
+			const cleaned: Record<string, any> = {
+				timestamp: row.timestamp,
+				uptime: row.uptime,
+			};
+
+			// Only include latency fields if they have values
+			if (row.latency_min !== null) cleaned.latency_min = row.latency_min;
+			if (row.latency_max !== null) cleaned.latency_max = row.latency_max;
+			if (row.latency_avg !== null) cleaned.latency_avg = row.latency_avg;
+
+			// Only include custom metric fields if they have values
+			if (row.custom1_min !== null) cleaned.custom1_min = row.custom1_min;
+			if (row.custom1_max !== null) cleaned.custom1_max = row.custom1_max;
+			if (row.custom1_avg !== null) cleaned.custom1_avg = row.custom1_avg;
+			if (row.custom2_min !== null) cleaned.custom2_min = row.custom2_min;
+			if (row.custom2_max !== null) cleaned.custom2_max = row.custom2_max;
+			if (row.custom2_avg !== null) cleaned.custom2_avg = row.custom2_avg;
+			if (row.custom3_min !== null) cleaned.custom3_min = row.custom3_min;
+			if (row.custom3_max !== null) cleaned.custom3_max = row.custom3_max;
+			if (row.custom3_avg !== null) cleaned.custom3_avg = row.custom3_avg;
+
+			return cleaned as PulseDaily;
+		});
+	} catch (err: any) {
+		Logger.error("getMonitorHistoryDaily failed", { monitorId, "error.message": err?.message });
+		return [];
+	}
 }
 
 export async function updateMonitorStatus(monitorId: string): Promise<void> {
 	try {
-		const monitor: Monitor | undefined = cache.getMonitor(monitorId);
+		const monitor = cache.getMonitor(monitorId);
 		if (!monitor) return;
 
 		const now = Date.now();
 		const maxAllowedInterval = monitor.interval * 1000;
 		const prevStatus = cache.getStatus(monitorId);
 
+		// Get first pulse date
 		let firstPulse = prevStatus?.firstPulse;
 		if (!firstPulse) {
-			try {
-				const query = `
-					SELECT
-						formatDateTime(MIN(timestamp), '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
-    			FROM pulses
-    			WHERE monitor_id = '${monitorId}'
-				`;
-				const result = await clickhouse.query({ query, format: "JSONEachRow" });
-				const data = await result.json<{ first_pulse: string }>();
-				if (data[0]?.first_pulse) firstPulse = new Date(data[0].first_pulse);
-			} catch (err: any) {
-				Logger.error("Failed to get first pulse for monitor", {
-					monitorId: monitorId,
-					"error.message": err?.message,
-				});
-			}
+			const query = `
+				SELECT MIN(ts) AS first_pulse FROM (
+					SELECT MIN(timestamp) AS ts FROM pulses WHERE monitor_id = {monitorId:String}
+					UNION ALL
+					SELECT MIN(toDateTime(timestamp)) AS ts FROM pulses_daily WHERE monitor_id = {monitorId:String}
+				)
+			`;
+			const result = await clickhouse.query({ query, query_params: { monitorId }, format: "JSONEachRow" });
+			const data = await result.json<{ first_pulse: string | null }>();
+			if (data[0]?.first_pulse) firstPulse = new Date(data[0].first_pulse);
 		}
 
-		const generateUptimeQuery = (period: string, monitorId: string, interval: number, firstPulse: Date | undefined): string => {
-			const periodMap: Record<string, string> = {
-				"1h": "1 HOUR",
-				"24h": "24 HOUR",
-				"7d": "7 DAY",
-				"30d": "30 DAY",
-				"90d": "90 DAY",
-				"365d": "365 DAY",
-			};
-
-			const clickhousePeriod = periodMap[period]!;
-			const pulseDate = firstPulse ? formatDateTimeISOCompact(firstPulse) : "2001-10-15 00:00:00";
-
-			return `
-				WITH
-					-- Define the time range
-					time_range AS (
-						SELECT
-							GREATEST(
-								toDateTime('${pulseDate}'),
-								now() - INTERVAL ${clickhousePeriod}
-							) AS start_time,
-							now() AS end_time
-					),
-					-- Calculate expected intervals
-					expected AS (
-						SELECT
-							floor((end_time - start_time) / ${interval}) AS expected_intervals
-						FROM time_range
-					),
-					-- Count actual intervals with pulses
-					actual AS (
-						SELECT
-							COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) AS actual_intervals
-						FROM pulses, time_range
-						WHERE
-							monitor_id = '${monitorId}'
-							AND timestamp >= start_time
-							AND timestamp < end_time
-					)
-				SELECT
-					CASE
-						WHEN expected_intervals = 0 THEN 100
-						ELSE LEAST(100, (actual_intervals * 100.0 / expected_intervals))
-					END AS uptime
-				FROM expected, actual
-			`;
-		};
-
-		const queries = {
-			latest: `
-				SELECT latency, timestamp as last_check
-				FROM pulses
-				WHERE monitor_id = '${monitorId}'
-				ORDER BY timestamp DESC
-				LIMIT 1
-			`,
-			uptime1h: generateUptimeQuery("1h", monitorId, monitor.interval, firstPulse),
-			uptime24h: generateUptimeQuery("24h", monitorId, monitor.interval, firstPulse),
-			uptime7d: generateUptimeQuery("7d", monitorId, monitor.interval, firstPulse),
-			uptime30d: generateUptimeQuery("30d", monitorId, monitor.interval, firstPulse),
-			uptime90d: generateUptimeQuery("90d", monitorId, monitor.interval, firstPulse),
-			uptime365d: generateUptimeQuery("365d", monitorId, monitor.interval, firstPulse),
-		};
-
-		const [latest, uptime1h, uptime24h, uptime7d, uptime30d, uptime90d, uptime365d] = await Promise.all([
-			clickhouse.query({ query: queries.latest, format: "JSONEachRow" }),
-			clickhouse.query({ query: queries.uptime1h, format: "JSONEachRow" }),
-			clickhouse.query({ query: queries.uptime24h, format: "JSONEachRow" }),
-			clickhouse.query({ query: queries.uptime7d, format: "JSONEachRow" }),
-			clickhouse.query({ query: queries.uptime30d, format: "JSONEachRow" }),
-			clickhouse.query({ query: queries.uptime90d, format: "JSONEachRow" }),
-			clickhouse.query({ query: queries.uptime365d, format: "JSONEachRow" }),
-		]);
-
-		const latestData = await latest.json<PulseRecord>();
-		const uptime1hData = await uptime1h.json<UptimeRecord>();
-		const uptime24hData = await uptime24h.json<UptimeRecord>();
-		const uptime7dData = await uptime7d.json<UptimeRecord>();
-		const uptime30dData = await uptime30d.json<UptimeRecord>();
-		const uptime90dData = await uptime90d.json<UptimeRecord>();
-		const uptime365dData = await uptime365d.json<UptimeRecord>();
+		// Get latest pulse with custom metrics
+		const latestQuery = `
+			SELECT
+				timestamp AS last_check,
+				latency,
+				custom1,
+				custom2,
+				custom3
+			FROM pulses
+			WHERE monitor_id = {monitorId:String}
+			ORDER BY timestamp DESC
+			LIMIT 1
+		`;
+		const latestResult = await clickhouse.query({ query: latestQuery, query_params: { monitorId }, format: "JSONEachRow" });
+		const latestData = await latestResult.json<{
+			last_check: string;
+			latency: number | null;
+			custom1: number | null;
+			custom2: number | null;
+			custom3: number | null;
+		}>();
 
 		if (!latestData.length) {
-			Logger.debug("No pulse data found for monitor", {
-				monitorId,
-				monitorName: monitor.name,
-			});
+			const statusData: StatusData = {
+				id: monitorId,
+				type: "monitor",
+				name: monitor.name,
+				status: "down",
+				latency: 0,
+				lastCheck: new Date(0),
+				uptime1h: 0,
+				uptime24h: 0,
+				uptime7d: 0,
+				uptime30d: 0,
+				uptime90d: 0,
+				uptime365d: 0,
+			};
+
+			if (monitor.custom1) {
+				statusData.custom1 = { config: monitor.custom1, value: undefined };
+			}
+			if (monitor.custom2) {
+				statusData.custom2 = { config: monitor.custom2, value: undefined };
+			}
+			if (monitor.custom3) {
+				statusData.custom3 = { config: monitor.custom3, value: undefined };
+			}
+
+			cache.setStatus(monitorId, statusData);
+
+			if (monitor.groupId) {
+				await updateGroupStatus(monitor.groupId);
+			}
 			return;
 		}
 
 		const lastCheckTime = new Date(latestData[0]!.last_check + "Z").getTime();
 		const timeSinceLastCheck = now - lastCheckTime;
+		const status: "up" | "down" = timeSinceLastCheck <= maxAllowedInterval ? "up" : "down";
 
-		const statusString: "up" | "down" = timeSinceLastCheck <= maxAllowedInterval ? "up" : "down";
+		// Calculate uptimes
+		const uptimes = await calculateUptimes(monitorId, monitor.interval, firstPulse);
 
 		const statusData: StatusData = {
 			id: monitorId,
 			type: "monitor",
 			name: monitor.name,
-			status: statusString,
-			latency: latestData[0]!.latency,
-			firstPulse: firstPulse,
+			status,
+			latency: latestData[0]!.latency ?? 0,
+			firstPulse,
 			lastCheck: new Date(latestData[0]!.last_check + "Z"),
-			uptime1h: uptime1hData[0]?.uptime || 0,
-			uptime24h: uptime24hData[0]?.uptime || 0,
-			uptime7d: uptime7dData[0]?.uptime || 0,
-			uptime30d: uptime30dData[0]?.uptime || 0,
-			uptime90d: uptime90dData[0]?.uptime || 0,
-			uptime365d: uptime365dData[0]?.uptime || 0,
+			...uptimes,
 		};
+
+		if (monitor.custom1) {
+			statusData.custom1 = { config: monitor.custom1, value: latestData[0]!.custom1 ?? undefined };
+		}
+		if (monitor.custom2) {
+			statusData.custom2 = { config: monitor.custom2, value: latestData[0]!.custom2 ?? undefined };
+		}
+		if (monitor.custom3) {
+			statusData.custom3 = { config: monitor.custom3, value: latestData[0]!.custom3 ?? undefined };
+		}
 
 		cache.setStatus(monitorId, statusData);
 
-		// Update parent groups
 		if (monitor.groupId) {
 			await updateGroupStatus(monitor.groupId);
 		}
 	} catch (err: any) {
-		Logger.error("Updating monitor status failed", { monitorId: monitorId, "error.message": err?.message });
+		Logger.error("updateMonitorStatus failed", { monitorId, "error.message": err?.message });
+	}
+}
+
+async function calculateUptimes(
+	monitorId: string,
+	interval: number,
+	firstPulse: Date | undefined
+): Promise<{ uptime1h: number; uptime24h: number; uptime7d: number; uptime30d: number; uptime90d: number; uptime365d: number }> {
+	const pulseDate = firstPulse ? formatDateTimeISOCompact(firstPulse) : "2001-10-15 00:00:00";
+
+	// Uptime = (distinct intervals with at least 1 pulse / expected intervals) * 100
+	// We count DISTINCT intervals, so multiple pulses in same interval = 1 "up" interval
+	const uptimeQuery = (period: string) => `
+		WITH
+			time_range AS (
+				SELECT
+					GREATEST(toDateTime('${pulseDate}'), now() - INTERVAL ${period}) AS start_time,
+					now() AS end_time
+			),
+			expected AS (
+				SELECT floor((toUnixTimestamp(end_time) - toUnixTimestamp(start_time)) / ${interval}) AS cnt FROM time_range
+			),
+			actual AS (
+				SELECT COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) AS cnt
+				FROM pulses, time_range
+				WHERE monitor_id = {monitorId:String} AND timestamp >= start_time AND timestamp < end_time
+			)
+		SELECT CASE WHEN (SELECT cnt FROM expected) = 0 THEN 100 ELSE LEAST(100, (SELECT cnt FROM actual) * 100.0 / (SELECT cnt FROM expected)) END AS uptime
+	`;
+
+	try {
+		const [u1h, u24h, u7d, u30d, u90d, u365d] = await Promise.all([
+			clickhouse.query({ query: uptimeQuery("1 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: uptimeQuery("24 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: uptimeQuery("7 DAY"), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: uptimeQuery("30 DAY"), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: uptimeQuery("90 DAY"), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: uptimeQuery("365 DAY"), query_params: { monitorId }, format: "JSONEachRow" }),
+		]);
+
+		const parse = async (r: any) => ((await r.json()) as { uptime: number }[])[0]?.uptime ?? 0;
+
+		return {
+			uptime1h: await parse(u1h),
+			uptime24h: await parse(u24h),
+			uptime7d: await parse(u7d),
+			uptime30d: await parse(u30d),
+			uptime90d: await parse(u90d),
+			uptime365d: await parse(u365d),
+		};
+	} catch {
+		return { uptime1h: 0, uptime24h: 0, uptime7d: 0, uptime30d: 0, uptime90d: 0, uptime365d: 0 };
 	}
 }
 
 export async function updateGroupStatus(groupId: string): Promise<void> {
-	const group: Group | undefined = cache.getGroup(groupId);
+	const group = cache.getGroup(groupId);
 	if (!group) return;
 
-	// Get all children (monitors and subgroups)
 	const { monitors: childMonitors, groups: childGroups } = cache.getDirectChildren(groupId);
 
-	let totalUp = 0;
-	let totalDown = 0;
-	let totalUnknown = 0;
-	let totalLatency = 0;
-	let latencyCount = 0;
+	let totalUp = 0,
+		totalDown = 0,
+		totalUnknown = 0,
+		totalLatency = 0,
+		latencyCount = 0;
 
-	// Get direct children IDs (both monitors and groups)
-	const directChildIds = [...childMonitors.map((m) => m.id), ...childGroups.map((g) => g.id)];
-
-	// Process monitors
 	for (const monitor of childMonitors) {
-		const status = cache.getStatus(monitor.id);
-		if (status) {
-			if (status.status === "up") {
-				totalUp++;
-			} else if (status.status === "down") {
-				totalDown++;
-			}
-			if (status.latency) {
-				totalLatency += status.latency;
+		const s = cache.getStatus(monitor.id);
+		if (s) {
+			s.status === "up" ? totalUp++ : totalDown++;
+			if (s.latency) {
+				totalLatency += s.latency;
 				latencyCount++;
 			}
 		} else {
-			// No status yet - count as unknown
 			totalUnknown++;
 		}
 	}
 
-	// Process subgroups
 	for (const subgroup of childGroups) {
-		const status = cache.getStatus(subgroup.id);
-		if (status) {
-			if (status.status === "up") {
-				totalUp++;
-			} else if (status.status === "down" || status.status === "degraded") {
-				totalDown++;
-			}
-			if (status.latency) {
-				totalLatency += status.latency;
+		const s = cache.getStatus(subgroup.id);
+		if (s) {
+			s.status === "up" ? totalUp++ : totalDown++;
+			if (s.latency) {
+				totalLatency += s.latency;
 				latencyCount++;
 			}
 		} else {
-			// No status yet - count as unknown
 			totalUnknown++;
 		}
 	}
@@ -320,84 +624,30 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	const totalKnown = totalUp + totalDown;
 	const totalChildren = totalKnown + totalUnknown;
 
-	// Skip update if more than 50% of children have unknown status
-	if (totalChildren > 0 && totalUnknown > totalChildren / 2) {
-		Logger.debug("Skipping group status update - too many unknown children", {
-			groupId,
-			groupName: group.name,
-			totalUp,
-			totalDown,
-			totalUnknown,
-			totalChildren,
-		});
-		return;
-	}
+	if (totalChildren > 0 && totalUnknown > totalChildren / 2) return;
+	if (totalKnown === 0) return;
 
-	// If no known children, skip update
-	if (totalKnown === 0) {
-		Logger.debug("Skipping group status update - no known children", {
-			groupId,
-			groupName: group.name,
-			totalUnknown,
-		});
-		return;
-	}
-
-	const strategy = group.strategy || "percentage";
 	const avgLatency = latencyCount > 0 ? totalLatency / latencyCount : 0;
 	const upPercentage = totalKnown > 0 ? (totalUp / totalKnown) * 100 : 0;
 
-	const [uptime1h, uptime24h, uptime7d, uptime30d, uptime90d, uptime365d] = await Promise.all([
-		calculateGroupUptime(group, directChildIds, "1h"),
-		calculateGroupUptime(group, directChildIds, "24h"),
-		calculateGroupUptime(group, directChildIds, "7d"),
-		calculateGroupUptime(group, directChildIds, "30d"),
-		calculateGroupUptime(group, directChildIds, "90d"),
-		calculateGroupUptime(group, directChildIds, "365d"),
-	]);
-
 	let status: "up" | "down" | "degraded";
-
-	switch (strategy) {
+	switch (group.strategy) {
 		case "any-up":
-			// If ANY child is up, group is up
-			if (totalUp > 0) {
-				status = "up";
-			} else if (totalKnown === 0) {
-				return;
-			} else {
-				status = "down";
-			}
+			status = totalUp > 0 ? "up" : "down";
 			break;
-
 		case "all-up":
-			// ALL children must be up for group to be up
-			if (totalChildren === 0) {
-				return;
-			} else if (totalUp === totalKnown) {
-				status = "up";
-			} else {
-				status = "down";
-			}
+			status = totalUp === totalKnown ? "up" : "down";
 			break;
-
 		case "percentage":
 		default:
-			// Percentage-based logic
-			if (upPercentage === 100) {
-				status = "up";
-			} else if (upPercentage >= group.degradedThreshold) {
-				status = "degraded";
-			} else {
-				status = "down";
-			}
-			break;
+			status = upPercentage === 100 ? "up" : upPercentage >= group.degradedThreshold ? "degraded" : "down";
 	}
 
 	const previousStatus = cache.getStatus(groupId)?.status;
 
-	// Don't send notifications during startup grace period
-	const isStartup = !previousStatus && totalUnknown > 0;
+	// Calculate group uptimes from child uptimes
+	const childIds = [...childMonitors.map((m) => m.id), ...childGroups.map((g) => g.id)];
+	const uptimes = calculateGroupUptimes(childIds, group.strategy);
 
 	const groupStatus: StatusData = {
 		id: groupId,
@@ -406,541 +656,463 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		status,
 		latency: avgLatency,
 		lastCheck: new Date(),
-		uptime1h: Math.min(uptime1h, 100),
-		uptime24h: Math.min(uptime24h, 100),
-		uptime7d: Math.min(uptime7d, 100),
-		uptime30d: Math.min(uptime30d, 100),
-		uptime90d: Math.min(uptime90d, 100),
-		uptime365d: Math.min(uptime365d, 100),
+		...uptimes,
 	};
 
 	cache.setStatus(groupId, groupStatus);
 
-	// Log if we're skipping notifications during grace period
-	if (!previousStatus && isInGracePeriod()) {
-		Logger.info("Skipping group notifications during grace period", {
-			groupId,
-			groupName: group.name,
-			status,
-			gracePeriodRemaining: Math.round((GRACE_PERIOD - (Date.now() - STARTUP_TIME)) / 1000) + "s",
+	// Notifications
+	if (previousStatus && previousStatus !== status && !isInGracePeriod() && group.notificationChannels?.length) {
+		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
+		const eventType = status === "up" ? "recovered" : "down";
+
+		await notificationManager.sendNotification(group.notificationChannels, {
+			type: eventType,
+			monitorId: groupId,
+			monitorName: group.name,
+			timestamp: new Date(),
+			sourceType: "group",
+			groupInfo: { strategy: group.strategy, childrenUp: totalUp, totalChildren: totalKnown, upPercentage },
 		});
 	}
 
-	if (previousStatus && previousStatus !== status && !isInGracePeriod() && group.notificationChannels && group.notificationChannels.length > 0) {
-		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
-
-		if (status === "down" || status === "degraded") {
-			await notificationManager.sendNotification(group.notificationChannels, {
-				type: "down",
-				monitorId: groupId,
-				monitorName: group.name,
-				timestamp: new Date(),
-				sourceType: "group",
-				groupInfo: {
-					strategy: group.strategy,
-					childrenUp: totalUp,
-					totalChildren: totalKnown,
-					upPercentage,
-				},
-			});
-		} else if (status === "up" && (previousStatus === "down" || previousStatus === "degraded")) {
-			await notificationManager.sendNotification(group.notificationChannels, {
-				type: "recovered",
-				monitorId: groupId,
-				monitorName: group.name,
-				timestamp: new Date(),
-				sourceType: "group",
-				groupInfo: {
-					strategy: group.strategy,
-					childrenUp: totalUp,
-					totalChildren: totalKnown,
-					upPercentage,
-				},
-			});
-		}
-	}
-
-	// Update parent group if exists
 	if (group.parentId) {
 		await updateGroupStatus(group.parentId);
 	}
 }
 
-export async function calculateGroupUptime(group: Group, directChildIds: string[], period: string): Promise<number> {
-	if (directChildIds.length === 0) return 100; // Empty group is considered 100% up
+function calculateGroupUptimes(
+	childIds: string[],
+	strategy: "any-up" | "percentage" | "all-up"
+): { uptime1h: number; uptime24h: number; uptime7d: number; uptime30d: number; uptime90d: number; uptime365d: number } {
+	const uptimes: number[][] = [[], [], [], [], [], []];
 
-	const periodMap: Record<string, number> = {
-		"1h": 3600,
-		"24h": 86400,
-		"7d": 604800,
-		"30d": 2592000,
-		"90d": 7776000,
-		"365d": 31536000,
-	};
-
-	const periodSeconds = periodMap[period];
-	if (!periodSeconds) return 0;
-
-	const clickhousePeriod = {
-		"1h": "1 HOUR",
-		"24h": "24 HOUR",
-		"7d": "7 DAY",
-		"30d": "30 DAY",
-		"90d": "90 DAY",
-		"365d": "365 DAY",
-	}[period];
-
-	const strategy = group.strategy;
-
-	// Separate monitors and groups
-	const directMonitorIds = directChildIds.filter((id) => cache.hasMonitor(id));
-	const directGroupIds = directChildIds.filter((id) => cache.hasGroup(id));
-
-	// Collect uptimes from all direct children
-	const uptimes: number[] = [];
-
-	// Get uptimes from direct child groups (from cache)
-	for (const groupId of directGroupIds) {
-		const groupStatus = cache.getStatus(groupId);
-		if (groupStatus) {
-			const uptimeKey = `uptime${period.replace("d", "d").replace("h", "h")}` as keyof StatusData;
-			const uptime = groupStatus[uptimeKey];
-			if (typeof uptime === "number") {
-				uptimes.push(uptime);
-			}
-		} else {
-			uptimes.push(0); // No status means 0% uptime
+	for (const id of childIds) {
+		const s = cache.getStatus(id);
+		if (s) {
+			uptimes[0]!.push(s.uptime1h);
+			uptimes[1]!.push(s.uptime24h);
+			uptimes[2]!.push(s.uptime7d);
+			uptimes[3]!.push(s.uptime30d);
+			uptimes[4]!.push(s.uptime90d);
+			uptimes[5]!.push(s.uptime365d);
 		}
 	}
 
-	// Get uptimes from direct monitors (from database)
-	if (directMonitorIds.length > 0) {
-		let firstPulses: Record<string, Date> = {};
-		directMonitorIds.forEach((monitorId) => {
-			firstPulses[monitorId] = cache.getStatus(monitorId)?.firstPulse || new Date("2001-10-15 00:00:00");
-		});
-
-		// Calculate monitor uptimes based on the strategy
-		let monitorUptime: number = 0;
-		let query: string = "";
-
+	const aggregate = (arr: number[]) => {
+		if (arr.length === 0) return 100;
 		switch (strategy) {
 			case "any-up":
-				// For any-up with only monitors: at least one monitor must be up in each time interval
-				const monitorIntervalsAnyUp = directMonitorIds.map((id) => {
-					const monitor = cache.getMonitor(id);
-					return { id, interval: monitor?.interval || 30 };
-				});
-
-				const minInterval = Math.min(...monitorIntervalsAnyUp.map((m) => m.interval));
-
-				const earliestFirstPulse = directMonitorIds.reduce((earliest, id) => {
-					const fp = firstPulses[id];
-					return fp && (!earliest || fp < earliest) ? fp : earliest;
-				}, undefined as Date | undefined);
-
-				const rangeStart = earliestFirstPulse
-					? `GREATEST(toDateTime('${formatDateTimeISOCompact(earliestFirstPulse)}'), now() - INTERVAL ${clickhousePeriod})`
-					: `now() - INTERVAL ${clickhousePeriod}`;
-
-				const expectedWindows = Math.max(0, Math.floor(periodSeconds / minInterval));
-
-				query = `
-					WITH
-						time_range AS (
-							SELECT ${rangeStart} AS start_time, now() AS end_time
-						),
-						expected_intervals AS (
-							SELECT
-								floor((toUnixTimestamp(end_time) - toUnixTimestamp(start_time)) / ${minInterval}) AS value
-							FROM time_range
-						),
-						distinct_windows AS (
-							SELECT DISTINCT toStartOfInterval(timestamp, INTERVAL ${minInterval} SECOND) AS window_start
-							FROM pulses, time_range
-							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
-								AND timestamp >= start_time
-                AND timestamp <= end_time
-						),
-						actual_intervals AS (
-              SELECT COUNT() AS value FROM distinct_windows
-            )
-					SELECT
-						CASE
-							WHEN (SELECT value FROM expected_intervals) = 0 THEN 100
-							ELSE ((SELECT value FROM actual_intervals) * 100.0) / (SELECT value FROM expected_intervals)
-            END AS uptime
-				`;
-				break;
-
+				return Math.max(...arr);
 			case "all-up":
-				// For all-up with only monitors: ALL monitors must be up in each time interval
-				const monitorIntervalsAllUp = directMonitorIds.map((id) => {
-					const monitor = cache.getMonitor(id);
-					return { id, interval: monitor?.interval || 30 };
-				});
-
-				const minIntervalAllUp = Math.min(...monitorIntervalsAllUp.map((m) => m.interval));
-				const totalMonitors = directMonitorIds.length;
-
-				const latestFirstPulse = directMonitorIds.reduce((latest, id) => {
-					const fp = firstPulses[id];
-					return fp && (!latest || fp > latest) ? fp : latest;
-				}, undefined as Date | undefined);
-
-				const rangeStartAllUp = latestFirstPulse
-					? `GREATEST(toDateTime('${formatDateTimeISOCompact(latestFirstPulse)}'), now() - INTERVAL ${clickhousePeriod})`
-					: `now() - INTERVAL ${clickhousePeriod}`;
-
-				const expectedWindowsAllUp = Math.max(0, Math.floor(periodSeconds / minIntervalAllUp));
-
-				query = `
-					WITH
-						time_range AS (
-							SELECT ${rangeStartAllUp} AS start_time, now() AS end_time
-						),
-						expected_intervals AS (
-							SELECT
-								floor((toUnixTimestamp(end_time) - toUnixTimestamp(start_time)) / ${minIntervalAllUp}) AS value
-							FROM time_range
-						),
-						monitor_windows AS (
-							SELECT
-								monitor_id,
-								toStartOfInterval(timestamp, INTERVAL ${minIntervalAllUp} SECOND) AS window_start
-							FROM pulses, time_range
-							WHERE monitor_id IN (${directMonitorIds.map((id) => `'${id}'`).join(",")})
-								AND timestamp >= start_time
-                AND timestamp <= end_time
-						),
-						window_monitor_counts AS (
-							SELECT
-								window_start,
-								COUNT(DISTINCT monitor_id) as monitors_present
-							FROM monitor_windows
-							GROUP BY window_start
-						),
-						complete_windows AS (
-							SELECT window_start
-							FROM window_monitor_counts
-							WHERE monitors_present = ${totalMonitors}
-						),
-						actual_intervals AS (
-							SELECT COUNT() AS value FROM complete_windows
-            )
-					SELECT
-						CASE
-							WHEN (SELECT value FROM expected_intervals) = 0 THEN 100
-							ELSE ((SELECT value FROM actual_intervals) * 100.0) / (SELECT value FROM expected_intervals)
-            END AS uptime
-				`;
-				break;
-
-			case "percentage":
+				return Math.min(...arr);
 			default:
-				// For percentage with only monitors: calculate weighted average
-				const monitorQueries = directMonitorIds.map((id) => {
-					const monitor = cache.getMonitor(id);
-					const interval = monitor?.interval || 30;
-					const firstPulse = firstPulses[id];
-					const pulseDate = firstPulse ? formatDateTimeISOCompact(firstPulse) : "2001-10-15 00:00:00";
-
-					return `
-						WITH
-							time_range AS (
-								SELECT
-									GREATEST(
-										toDateTime('${pulseDate}'),
-										now() - INTERVAL ${clickhousePeriod}
-									) AS start_time,
-									now() AS end_time
-							),
-							expected AS (
-								SELECT
-									floor((end_time - start_time) / ${interval}) AS expected_intervals
-								FROM time_range
-							),
-							actual AS (
-								SELECT
-									COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) AS actual_intervals
-								FROM pulses, time_range
-								WHERE
-									monitor_id = '${id}'
-									AND timestamp >= start_time
-									AND timestamp <= end_time
-							)
-						SELECT
-							'${id}' as monitor_id,
-							${interval} as interval,
-							CASE
-								WHEN expected_intervals = 0 THEN 100
-								ELSE (actual_intervals * 100.0 / expected_intervals)
-							END as uptime
-						FROM expected, actual
-					`;
-				});
-
-				if (monitorQueries.length === 0) {
-					monitorUptime = 100;
-				} else {
-					query = `
-						WITH monitor_uptimes AS (
-							${monitorQueries.join(" UNION ALL ")}
-						)
-						SELECT
-							CASE
-								WHEN SUM(interval) = 0 THEN 100
-								ELSE SUM(uptime * interval) / SUM(interval)
-							END as uptime
-						FROM monitor_uptimes
-					`;
-				}
-				break;
+				return arr.reduce((a, b) => a + b, 0) / arr.length;
 		}
+	};
 
-		try {
-			const result = await clickhouse.query({ query, format: "JSONEachRow" });
-			const data = await result.json<{ uptime: number }>();
-			monitorUptime = data[0]?.uptime || 0;
-			uptimes.push(monitorUptime);
-		} catch (err: any) {
-			Logger.error("Failed to calculate monitor uptime", {
-				groupId: group.id,
-				period,
-				strategy,
-				"error.message": err?.message,
-			});
-			uptimes.push(0);
-		}
+	return {
+		uptime1h: aggregate(uptimes[0]!),
+		uptime24h: aggregate(uptimes[1]!),
+		uptime7d: aggregate(uptimes[2]!),
+		uptime30d: aggregate(uptimes[3]!),
+		uptime90d: aggregate(uptimes[4]!),
+		uptime365d: aggregate(uptimes[5]!),
+	};
+}
+
+/**
+ * Get all direct descendant monitor IDs for a group (recursively includes nested groups)
+ */
+function getAllDescendantMonitorIds(groupId: string): string[] {
+	const { monitors, groups } = cache.getDirectChildren(groupId);
+	const monitorIds = monitors.map((m) => m.id);
+
+	// Recursively get monitors from child groups
+	for (const childGroup of groups) {
+		monitorIds.push(...getAllDescendantMonitorIds(childGroup.id));
 	}
 
-	// Apply the group's strategy to all collected uptimes
-	if (uptimes.length === 0) return 100; // No children means 100% up
+	return monitorIds;
+}
+
+/**
+ * Aggregate uptime values based on group strategy
+ */
+function aggregateUptimeByStrategy(uptimes: number[], strategy: Group["strategy"]): number {
+	if (uptimes.length === 0) return 0;
 
 	switch (strategy) {
 		case "any-up":
+			// Group is UP if at least one child is up
+			// Return the max uptime (if any child was up, we get that uptime)
 			return Math.max(...uptimes);
 		case "all-up":
+			// Group is UP only if all children are up
+			// Return the min uptime (all must be 100% for group to be 100%)
 			return Math.min(...uptimes);
 		case "percentage":
 		default:
+			// Average of all children
 			return uptimes.reduce((sum, u) => sum + u, 0) / uptimes.length;
 	}
 }
 
-export async function getMonitorHistory(monitorId: string, period: string): Promise<HistoryRecord[]> {
-	const { interval, intervalSec, range, rangeSec }: IntervalConfig = INTERVALS[period] || INTERVALS["24h"]!;
-
-	const monitor: Monitor | undefined = cache.getMonitor(monitorId);
-	if (!monitor) return [];
-
-	const intervalsPerWindow = Math.floor(intervalSec / monitor.interval);
-
-	const rawQuery = `
-		WITH
-			-- Get all complete time windows in the period
-			time_windows AS (
-				SELECT window_start
-				FROM (
-					SELECT toStartOfInterval(
-						now() - INTERVAL ${rangeSec} SECOND + INTERVAL number * ${intervalSec} SECOND,
-						INTERVAL ${interval}
-					) AS window_start
-					FROM numbers(0, ${Math.ceil(rangeSec / intervalSec)})
-				)
-				WHERE
-					-- Ensure the window has started
-					window_start <= now()
-					-- Ensure the window has completed (full interval duration has passed)
-					AND window_start + INTERVAL ${intervalSec} SECOND <= now()
-			),
-			-- Get pulse data aggregated by monitor interval within each time window
-			pulse_data AS (
-				SELECT
-					toStartOfInterval(timestamp, INTERVAL ${interval}) AS window_start,
-					toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND) AS monitor_interval,
-					avg(latency) AS avg_latency,
-					min(latency) AS min_latency,
-					max(latency) AS max_latency
-				FROM pulses
-				WHERE
-					monitor_id = '${monitorId}'
-					AND timestamp > now() - INTERVAL ${range} - INTERVAL ${interval}
-					AND timestamp <= now()
-				GROUP BY window_start, monitor_interval
-			),
-			-- Aggregate by time window
-			window_aggregates AS (
-				SELECT
-					window_start,
-					avg(avg_latency) AS avg_latency,
-					min(min_latency) AS min_latency,
-					max(max_latency) AS max_latency,
-					COUNT(DISTINCT monitor_interval) AS intervals_with_pulses
-				FROM pulse_data
-				GROUP BY window_start
-			)
-		SELECT
-			formatDateTime(tw.window_start, '%Y-%m-%dT%H:%i:%sZ') AS time,
-			wa.avg_latency,
-			wa.min_latency,
-			wa.max_latency,
-			CASE
-				WHEN ${intervalsPerWindow} = 0 THEN 100
-				ELSE (COALESCE(wa.intervals_with_pulses, 0) * 100.0) / ${intervalsPerWindow}
-			END AS uptime
-		FROM time_windows tw
-		LEFT JOIN window_aggregates wa ON tw.window_start = wa.window_start
-		ORDER BY tw.window_start
-	`;
-
-	const rawResult = await clickhouse.query({ query: rawQuery, format: "JSONEachRow" });
-	const rawData = await rawResult.json<HistoryRecord>();
-
-	return rawData;
-}
-
-export async function getGroupHistory(groupId: string, period: string): Promise<HistoryRecord[]> {
-	const { interval, intervalSec, range, rangeSec }: IntervalConfig = INTERVALS[period] || INTERVALS["24h"]!;
-
-	const group: Group | undefined = cache.getGroup(groupId);
+/**
+ * Get raw history for a group computed from child monitors (last ~24h)
+ * Uses the group's strategy to aggregate child uptimes per time window
+ */
+export async function getGroupHistoryRaw(groupId: string): Promise<GroupHistoryRecord[]> {
+	const group = cache.getGroup(groupId);
 	if (!group) return [];
 
-	// Get direct children only (monitors and subgroups)
-	const { monitors: childMonitors, groups: childGroups } = cache.getDirectChildren(groupId);
+	const monitorIds = getAllDescendantMonitorIds(groupId);
+	if (monitorIds.length === 0) return [];
 
-	if (childMonitors.length === 0 && childGroups.length === 0) {
-		return [];
-	}
+	// Use the group's interval or default to 60 seconds for output
+	const outputInterval = Math.max(group.interval, 60);
 
-	// Get history data for all direct child monitors
-	const monitorHistoryPromises = childMonitors.map((monitor) => getMonitorHistory(monitor.id, period));
+	try {
+		// Get the earliest first pulse among all monitors
+		const firstPulseQuery = `
+			SELECT
+				timestamp AS first_pulse
+			FROM pulses
+			WHERE monitor_id IN ({monitorIds:Array(String)})
+			ORDER BY timestamp ASC
+			LIMIT 1;
+		`;
 
-	// Get history data for all direct child groups (recursive)
-	const groupHistoryPromises = childGroups.map((childGroup) => getGroupHistory(childGroup.id, period));
-
-	const allHistoryData = await Promise.all([...monitorHistoryPromises, ...groupHistoryPromises]);
-
-	const timeSeriesMap = new Map<
-		string,
-		{
-			avg_latency: number[];
-			min_latency: number[];
-			max_latency: number[];
-			uptimes: { value: number; isMonitor: boolean; monitorInterval?: number }[];
-		}
-	>();
-
-	// Process all history data and group by timestamp
-	allHistoryData.forEach((historyData, index) => {
-		const isMonitor = index < childMonitors.length;
-		const monitorInterval = isMonitor ? childMonitors[index]?.interval : undefined;
-
-		historyData.forEach((record) => {
-			if (!timeSeriesMap.has(record.time)) {
-				timeSeriesMap.set(record.time, { avg_latency: [], min_latency: [], max_latency: [], uptimes: [] });
-			}
-
-			const entry = timeSeriesMap.get(record.time)!;
-
-			if (record.avg_latency !== null) {
-				entry.avg_latency.push(record.avg_latency);
-			}
-
-			if (record.min_latency !== null) {
-				entry.min_latency.push(record.min_latency);
-			}
-
-			if (record.max_latency !== null) {
-				entry.max_latency.push(record.max_latency);
-			}
-
-			entry.uptimes.push({
-				value: record.uptime,
-				isMonitor,
-				monitorInterval,
-			});
+		const firstPulseResult = await clickhouse.query({
+			query: firstPulseQuery,
+			query_params: { monitorIds },
+			format: "JSONEachRow",
 		});
-	});
+		const firstPulseData = await firstPulseResult.json<{ first_pulse: string | null }>();
 
-	const aggregatedHistory: HistoryRecord[] = [];
+		if (!firstPulseData[0]?.first_pulse) {
+			return [];
+		}
 
-	// Generate complete time series
-	const now = new Date();
-	const startTime = new Date(now.getTime() - rangeSec * 1000);
+		const firstPulse = new Date(new Date(firstPulseData[0].first_pulse).getTime() + outputInterval * 1000);
+		const lastPulse = new Date(Date.now() - outputInterval * 1000);
 
-	for (
-		let time = new Date(Math.ceil(startTime.getTime() / (intervalSec * 1000)) * (intervalSec * 1000));
-		time <= now;
-		time = new Date(time.getTime() + intervalSec * 1000)
-	) {
-		const timeStr = formatDateTimeISOString(time);
-		const data = timeSeriesMap.get(timeStr);
+		if (firstPulse.getFullYear() < 2000) {
+			return [];
+		}
 
-		let minLatency: number | null = null;
-		let avgLatency: number | null = null;
-		let maxLatency: number | null = null;
-		let uptime: number = 0;
+		const startInterval = new Date(Math.floor(firstPulse.getTime() / (outputInterval * 1000)) * outputInterval * 1000);
+		const endInterval = new Date(Math.floor(lastPulse.getTime() / (outputInterval * 1000)) * outputInterval * 1000);
 
-		if (data) {
-			if (data.avg_latency.length > 0) {
-				avgLatency = data.avg_latency.reduce((sum, lat) => sum + lat, 0) / data.avg_latency.length;
-			}
+		const intervalsToGenerate = Math.floor((endInterval.getTime() - startInterval.getTime()) / (outputInterval * 1000)) + 1;
 
-			if (data.min_latency.length > 0) {
-				minLatency = data.min_latency.reduce((sum, lat) => sum + lat, 0) / data.min_latency.length;
-			}
+		if (intervalsToGenerate <= 0) {
+			return [];
+		}
 
-			if (data.max_latency.length > 0) {
-				maxLatency = data.max_latency.reduce((sum, lat) => sum + lat, 0) / data.max_latency.length;
-			}
+		const startIntervalFormatted = formatDateTimeISOCompact(startInterval);
 
-			// Calculate uptime based on strategy
+		// For each time window, we need to determine if each monitor was "up" (had at least 1 pulse)
+		// Then apply the group strategy to determine overall group uptime
+		const query = `
+			WITH
+				all_intervals AS (
+					SELECT toStartOfInterval(
+						toDateTime('${startIntervalFormatted}') + INTERVAL number * ${outputInterval} SECOND,
+						INTERVAL ${outputInterval} SECOND
+					) AS interval_start
+					FROM numbers(0, ${intervalsToGenerate})
+				),
+				-- For each monitor and interval, check if there was at least one pulse
+				monitor_intervals AS (
+					SELECT
+						monitor_id,
+						toStartOfInterval(timestamp, INTERVAL ${outputInterval} SECOND) AS interval_start,
+						1 AS had_pulse,
+						min(latency) AS latency_min,
+						max(latency) AS latency_max,
+						avg(latency) AS latency_avg
+					FROM pulses
+					WHERE monitor_id IN ({monitorIds:Array(String)})
+						AND timestamp >= toDateTime('${startIntervalFormatted}')
+						AND timestamp < toDateTime('${startIntervalFormatted}') + INTERVAL ${intervalsToGenerate * outputInterval} SECOND
+					GROUP BY monitor_id, interval_start
+				),
+				-- Cross join all monitors with all intervals to get expected combinations
+				all_monitor_intervals AS (
+					SELECT
+						ai.interval_start,
+						m.monitor_id
+					FROM all_intervals ai
+					CROSS JOIN (SELECT DISTINCT monitor_id FROM monitor_intervals) m
+				),
+				-- Join with actual data to find which monitors were up in each interval
+				interval_stats AS (
+					SELECT
+						ami.interval_start,
+						ami.monitor_id,
+						COALESCE(mi.had_pulse, 0) AS was_up,
+						mi.latency_min,
+						mi.latency_max,
+						mi.latency_avg
+					FROM all_monitor_intervals ami
+					LEFT JOIN monitor_intervals mi ON ami.interval_start = mi.interval_start AND ami.monitor_id = mi.monitor_id
+				),
+				-- Aggregate per interval
+				aggregated AS (
+					SELECT
+						interval_start,
+						-- Count monitors that were up vs total
+						SUM(was_up) AS monitors_up,
+						COUNT(*) AS total_monitors,
+						min(latency_min) AS latency_min,
+						max(latency_max) AS latency_max,
+						avg(latency_avg) AS latency_avg
+					FROM interval_stats
+					GROUP BY interval_start
+				)
+			SELECT
+				formatDateTime(ai.interval_start, '%Y-%m-%dT%H:%i:%sZ') AS timestamp,
+				COALESCE(a.monitors_up, 0) AS monitors_up,
+				COALESCE(a.total_monitors, ${monitorIds.length}) AS total_monitors,
+				a.latency_min,
+				a.latency_max,
+				a.latency_avg
+			FROM all_intervals ai
+			LEFT JOIN aggregated a ON ai.interval_start = a.interval_start
+			ORDER BY ai.interval_start ASC
+		`;
+
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorIds },
+			format: "JSONEachRow",
+		});
+
+		const data = await result.json<{
+			timestamp: string;
+			monitors_up: number;
+			total_monitors: number;
+			latency_min: number | null;
+			latency_max: number | null;
+			latency_avg: number | null;
+		}>();
+
+		// Apply group strategy to compute uptime
+		return data.map((row) => {
+			let uptime: number;
+			const upPercentage = row.total_monitors > 0 ? (row.monitors_up / row.total_monitors) * 100 : 0;
+
 			switch (group.strategy) {
 				case "any-up":
-					uptime = Math.max(...data.uptimes.flatMap((u) => u.value));
+					// Up if at least one monitor is up
+					uptime = row.monitors_up > 0 ? 100 : 0;
 					break;
-
 				case "all-up":
-					uptime = Math.min(...data.uptimes.flatMap((u) => u.value));
+					// Up only if all monitors are up
+					uptime = row.monitors_up === row.total_monitors && row.total_monitors > 0 ? 100 : 0;
 					break;
-
 				case "percentage":
 				default:
-					// For percentage: weighted average of child uptimes
-					if (data.uptimes.length === 0) {
-						uptime = 100;
-					} else {
-						// For monitors, weight by their expected intervals in this time window
-						let totalWeight = 0;
-						let weightedSum = 0;
+					// Percentage of monitors that were up
+					uptime = upPercentage;
+			}
 
-						data.uptimes.forEach((uptimeData) => {
-							let weight = 1;
+			const record: GroupHistoryRecord = {
+				timestamp: row.timestamp,
+				uptime,
+			};
+			if (row.latency_min !== null) {
+				record.latency_min = row.latency_min;
+			}
+			if (row.latency_max !== null) {
+				record.latency_max = row.latency_max;
+			}
+			if (row.latency_avg !== null) {
+				record.latency_avg = row.latency_avg;
+			}
+			return record;
+		});
+	} catch (err: any) {
+		Logger.error("getGroupHistoryRaw failed", { groupId, "error.message": err?.message });
+		return [];
+	}
+}
 
-							// If it's a monitor, weight by expected intervals
-							if (uptimeData.isMonitor && uptimeData.monitorInterval) {
-								weight = Math.floor(intervalSec / uptimeData.monitorInterval);
-							}
+/**
+ * Get hourly history for a group computed from child monitors (last ~90 days)
+ */
+export async function getGroupHistoryHourly(groupId: string): Promise<GroupHistoryRecord[]> {
+	const group = cache.getGroup(groupId);
+	if (!group) return [];
 
-							totalWeight += weight;
-							weightedSum += uptimeData.value * weight;
-						});
+	const monitorIds = getAllDescendantMonitorIds(groupId);
+	if (monitorIds.length === 0) return [];
 
-						uptime = totalWeight > 0 ? weightedSum / totalWeight : 0;
-					}
-					break;
+	try {
+		// Get all hourly data for all child monitors
+		const query = `
+			SELECT
+				formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS timestamp,
+				monitor_id,
+				uptime,
+				latency_min,
+				latency_max,
+				latency_avg
+			FROM pulses_hourly
+			WHERE monitor_id IN ({monitorIds:Array(String)})
+			ORDER BY timestamp ASC
+		`;
+
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorIds },
+			format: "JSONEachRow",
+		});
+
+		const data = await result.json<{
+			timestamp: string;
+			monitor_id: string;
+			uptime: number;
+			latency_min: number | null;
+			latency_max: number | null;
+			latency_avg: number | null;
+		}>();
+
+		// Group by timestamp and aggregate
+		const byTimestamp = new Map<string, { uptimes: number[]; latencyMins: number[]; latencyMaxs: number[]; latencyAvgs: number[] }>();
+
+		for (const row of data) {
+			if (!byTimestamp.has(row.timestamp)) {
+				byTimestamp.set(row.timestamp, { uptimes: [], latencyMins: [], latencyMaxs: [], latencyAvgs: [] });
+			}
+			const bucket = byTimestamp.get(row.timestamp)!;
+			bucket.uptimes.push(row.uptime);
+			if (row.latency_min !== null) {
+				bucket.latencyMins.push(row.latency_min);
+			}
+			if (row.latency_max !== null) {
+				bucket.latencyMaxs.push(row.latency_max);
+			}
+			if (row.latency_avg !== null) {
+				bucket.latencyAvgs.push(row.latency_avg);
 			}
 		}
 
-		aggregatedHistory.push({
-			time: timeStr,
-			avg_latency: avgLatency,
-			min_latency: minLatency,
-			max_latency: maxLatency,
-			uptime: Math.min(Math.max(uptime, 0), 100),
-		});
-	}
+		// Convert to array and apply group strategy
+		const records: GroupHistoryRecord[] = [];
+		const sortedTimestamps = Array.from(byTimestamp.keys()).sort();
 
-	return aggregatedHistory;
+		for (const timestamp of sortedTimestamps) {
+			const bucket = byTimestamp.get(timestamp)!;
+			const uptime = aggregateUptimeByStrategy(bucket.uptimes, group.strategy);
+			const record: GroupHistoryRecord = { timestamp, uptime };
+
+			if (bucket.latencyMins.length > 0) {
+				record.latency_min = Math.min(...bucket.latencyMins);
+			}
+			if (bucket.latencyMaxs.length > 0) {
+				record.latency_max = Math.max(...bucket.latencyMaxs);
+			}
+			if (bucket.latencyAvgs.length > 0) {
+				record.latency_avg = bucket.latencyAvgs.reduce((a, b) => a + b, 0) / bucket.latencyAvgs.length;
+			}
+
+			records.push(record);
+		}
+
+		return records;
+	} catch (err: any) {
+		Logger.error("getGroupHistoryHourly failed", { groupId, "error.message": err?.message });
+		return [];
+	}
+}
+
+/**
+ * Get daily history for a group computed from child monitors (all time)
+ */
+export async function getGroupHistoryDaily(groupId: string): Promise<GroupHistoryRecord[]> {
+	const group = cache.getGroup(groupId);
+	if (!group) return [];
+
+	const monitorIds = getAllDescendantMonitorIds(groupId);
+	if (monitorIds.length === 0) return [];
+
+	try {
+		// Get all daily data for all child monitors
+		const query = `
+			SELECT
+				toString(timestamp) AS timestamp,
+				monitor_id,
+				uptime,
+				latency_min,
+				latency_max,
+				latency_avg
+			FROM pulses_daily
+			WHERE monitor_id IN ({monitorIds:Array(String)})
+			ORDER BY timestamp ASC
+		`;
+
+		const result = await clickhouse.query({
+			query,
+			query_params: { monitorIds },
+			format: "JSONEachRow",
+		});
+
+		const data = await result.json<{
+			timestamp: string;
+			monitor_id: string;
+			uptime: number;
+			latency_min: number | null;
+			latency_max: number | null;
+			latency_avg: number | null;
+		}>();
+
+		// Group by timestamp and aggregate
+		const byTimestamp = new Map<string, { uptimes: number[]; latencyMins: number[]; latencyMaxs: number[]; latencyAvgs: number[] }>();
+
+		for (const row of data) {
+			if (!byTimestamp.has(row.timestamp)) {
+				byTimestamp.set(row.timestamp, { uptimes: [], latencyMins: [], latencyMaxs: [], latencyAvgs: [] });
+			}
+			const bucket = byTimestamp.get(row.timestamp)!;
+			bucket.uptimes.push(row.uptime);
+			if (row.latency_min !== null) {
+				bucket.latencyMins.push(row.latency_min);
+			}
+			if (row.latency_max !== null) {
+				bucket.latencyMaxs.push(row.latency_max);
+			}
+			if (row.latency_avg !== null) {
+				bucket.latencyAvgs.push(row.latency_avg);
+			}
+		}
+
+		// Convert to array and apply group strategy
+		const records: GroupHistoryRecord[] = [];
+		const sortedTimestamps = Array.from(byTimestamp.keys()).sort();
+
+		for (const timestamp of sortedTimestamps) {
+			const bucket = byTimestamp.get(timestamp)!;
+			const uptime = aggregateUptimeByStrategy(bucket.uptimes, group.strategy);
+			const record: GroupHistoryRecord = { timestamp, uptime };
+
+			if (bucket.latencyMins.length > 0) {
+				record.latency_min = Math.min(...bucket.latencyMins);
+			}
+			if (bucket.latencyMaxs.length > 0) {
+				record.latency_max = Math.max(...bucket.latencyMaxs);
+			}
+			if (bucket.latencyAvgs.length > 0) {
+				record.latency_avg = bucket.latencyAvgs.reduce((a, b) => a + b, 0) / bucket.latencyAvgs.length;
+			}
+
+			records.push(record);
+		}
+
+		return records;
+	} catch (err: any) {
+		Logger.error("getGroupHistoryDaily failed", { groupId, "error.message": err?.message });
+		return [];
+	}
 }

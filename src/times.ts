@@ -1,5 +1,5 @@
 export const STARTUP_TIME = Date.now();
-export const GRACE_PERIOD = 300000; // 5 minutes
+export const GRACE_PERIOD = 60000; // 1 minutes
 
 /**
  * Check if we're still in the startup grace period

@@ -1,16 +1,20 @@
-FROM oven/bun:1-alpine
+# ---------- Build stage ----------
+FROM oven/bun:1 AS builder
 
-RUN apk add curl
-
-USER bun
 WORKDIR /app
 
-COPY --chown=bun:bun ./package.json ./
-COPY --chown=bun:bun src/ ./src/
+COPY package.json ./
+RUN bun install
 
-RUN mkdir -p /app/config
+COPY src/ ./src/
+RUN mkdir -p config
 
-RUN bun i
+# ---------- Runtime stage ----------
+FROM oven/bun:1-distroless
+
+WORKDIR /app
+
+COPY --from=builder /app /app
 
 EXPOSE 3000/tcp
-ENTRYPOINT [ "bun", "run", "start" ]
+CMD ["src/index.ts"]

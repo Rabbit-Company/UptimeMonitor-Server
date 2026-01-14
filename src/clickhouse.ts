@@ -466,7 +466,6 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				name: monitor.name,
 				status: "down",
 				latency: 0,
-				lastCheck: new Date(0),
 				uptime1h: 0,
 				uptime24h: 0,
 				uptime7d: 0,
@@ -493,7 +492,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			return;
 		}
 
-		const lastCheckTime = new Date(latestData[0]!.last_check + "Z").getTime();
+		const lastCheckTime = new Date(latestData[0]!.last_check).getTime();
 		const timeSinceLastCheck = now - lastCheckTime;
 		const status: "up" | "down" = timeSinceLastCheck <= maxAllowedInterval ? "up" : "down";
 
@@ -507,7 +506,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			status,
 			latency: latestData[0]!.latency ?? 0,
 			firstPulse,
-			lastCheck: new Date(latestData[0]!.last_check + "Z"),
+			lastCheck: new Date(latestData[0]!.last_check),
 			...uptimes,
 		};
 

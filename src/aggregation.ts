@@ -231,7 +231,7 @@ export class AggregationJob {
 				// Find the last aggregated day for this monitor
 				const lastAggregatedQuery = `
 					SELECT
-						toString(timestamp) AS last_date,
+						toString(timestamp) AS last_date
 					FROM pulses_daily
 					WHERE monitor_id = {monitorId:String}
 					ORDER BY timestamp DESC

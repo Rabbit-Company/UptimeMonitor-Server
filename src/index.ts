@@ -24,16 +24,6 @@ import { selfMonitor } from "./selfmonitor";
 
 await initClickHouse();
 
-await selfMonitor.start();
-
-// Start aggregation job
-await aggregationJob.start();
-
-// Initialize all monitors status
-await Promise.all(cache.getAllMonitors().map((monitor) => updateMonitorStatus(monitor.id)));
-
-missingPulseDetector.start();
-
 const app = new Web();
 
 app.use(logger({ logger: Logger, preset: "minimal", logResponses: false }));
@@ -360,3 +350,9 @@ process.on("SIGINT", () => {
 	aggregationJob.stop();
 	process.exit(0);
 });
+
+selfMonitor.start().catch((err) => Logger.error("SelfMonitor error", err));
+aggregationJob.start().catch((err) => Logger.error("AggregationJob error", err));
+
+await Promise.all(cache.getAllMonitors().map((monitor) => updateMonitorStatus(monitor.id)));
+missingPulseDetector.start();

@@ -426,11 +426,31 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		let firstPulse = prevStatus?.firstPulse;
 		if (!firstPulse) {
 			const query = `
-				SELECT MIN(ts) AS first_pulse FROM (
-					SELECT MIN(timestamp) AS ts FROM pulses WHERE monitor_id = {monitorId:String}
+				SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
+				FROM
+				(
+					SELECT ts FROM
+					(
+						SELECT timestamp AS ts
+						FROM pulses
+						WHERE monitor_id = {monitorId:String}
+						ORDER BY timestamp ASC
+						LIMIT 1
+					)
+
 					UNION ALL
-					SELECT MIN(toDateTime(timestamp)) AS ts FROM pulses_daily WHERE monitor_id = {monitorId:String}
+
+					SELECT ts FROM
+					(
+						SELECT toDateTime(timestamp) AS ts
+						FROM pulses_daily
+						WHERE monitor_id = {monitorId:String}
+						ORDER BY timestamp ASC
+						LIMIT 1
+					)
 				)
+				ORDER BY ts ASC
+				LIMIT 1
 			`;
 			const result = await clickhouse.query({ query, query_params: { monitorId }, format: "JSONEachRow" });
 			const data = await result.json<{ first_pulse: string | null }>();

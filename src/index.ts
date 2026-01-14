@@ -27,7 +27,7 @@ await initClickHouse();
 await selfMonitor.start();
 
 // Start aggregation job
-aggregationJob.start();
+await aggregationJob.start();
 
 // Initialize all monitors status
 await Promise.all(cache.getAllMonitors().map((monitor) => updateMonitorStatus(monitor.id)));

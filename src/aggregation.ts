@@ -7,15 +7,15 @@ export class AggregationJob {
 	private readonly INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 	private isRunning: boolean = false;
 
-	start(): void {
+	async start(): Promise<void> {
 		if (this.intervalId) return;
 
 		Logger.info("Starting aggregation job (runs every 10 minutes)");
 
-		this.runAggregation();
+		await this.runAggregation();
 
-		this.intervalId = setInterval(() => {
-			this.runAggregation();
+		this.intervalId = setInterval(async () => {
+			await this.runAggregation();
 		}, this.INTERVAL_MS);
 	}
 

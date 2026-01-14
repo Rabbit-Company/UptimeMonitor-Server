@@ -68,7 +68,7 @@ export class AggregationJob {
 				// Find the last aggregated hour for this monitor
 				const lastAggregatedQuery = `
 					SELECT
-						timestamp AS last_hour
+						formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS last_hour
 					FROM pulses_hourly
 					WHERE monitor_id = {monitorId:String}
 					ORDER BY timestamp DESC
@@ -91,7 +91,7 @@ export class AggregationJob {
 					// No aggregated data yet - find first pulse
 					const firstPulseQuery = `
 						SELECT
-							timestamp AS first_pulse
+							formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
 						FROM pulses
 						WHERE monitor_id = {monitorId:String}
 						ORDER BY timestamp ASC
@@ -231,7 +231,7 @@ export class AggregationJob {
 				// Find the last aggregated day for this monitor
 				const lastAggregatedQuery = `
 					SELECT
-						timestamp AS last_date
+						toString(timestamp) AS last_date,
 					FROM pulses_daily
 					WHERE monitor_id = {monitorId:String}
 					ORDER BY timestamp DESC
@@ -254,7 +254,7 @@ export class AggregationJob {
 					// No aggregated data yet - find first hourly record
 					const firstHourQuery = `
 						SELECT
-							timestamp AS first_hour
+							formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS first_hour
 						FROM pulses_hourly
 						WHERE monitor_id = {monitorId:String}
 						ORDER BY timestamp ASC

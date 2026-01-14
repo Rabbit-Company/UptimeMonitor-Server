@@ -153,7 +153,7 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 		// Get the timestamp of first pulse
 		const firstPulseQuery = `
 			SELECT
-				timestamp AS first_pulse
+				formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
 			FROM pulses
 			WHERE monitor_id = {monitorId:String}
 			ORDER BY timestamp ASC
@@ -440,7 +440,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		// Get latest pulse with custom metrics
 		const latestQuery = `
 			SELECT
-				timestamp AS last_check,
+				formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%sZ') AS last_check,
 				latency,
 				custom1,
 				custom2,
@@ -776,7 +776,7 @@ export async function getGroupHistoryRaw(groupId: string): Promise<GroupHistoryR
 		// Get the earliest first pulse among all monitors
 		const firstPulseQuery = `
 			SELECT
-				timestamp AS first_pulse
+				formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
 			FROM pulses
 			WHERE monitor_id IN ({monitorIds:Array(String)})
 			ORDER BY timestamp ASC

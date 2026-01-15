@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { Logger } from "./logger";
+import { type IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
 
 // Validation error class
 class ConfigValidationError extends Error {
@@ -41,6 +42,12 @@ function isArray(value: unknown): value is unknown[] {
 
 function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const IP_EXTRACTION_PRESETS = ["direct", "cloudflare", "aws", "gcp", "azure", "vercel", "nginx", "development"] as const;
+
+function isIpExtractionPreset(value: unknown): value is IpExtractionPreset {
+	return typeof value === "string" && IP_EXTRACTION_PRESETS.includes(value as IpExtractionPreset);
 }
 
 // Validation functions
@@ -341,6 +348,7 @@ function validateServerConfig(config: unknown): ServerConfig {
 
 	const result: ServerConfig = {
 		port: 3000,
+		proxy: "direct",
 	};
 
 	if (cfg.port !== undefined) {
@@ -348,6 +356,14 @@ function validateServerConfig(config: unknown): ServerConfig {
 			errors.push("server.port must be a valid port number (1-65535)");
 		} else {
 			result.port = cfg.port;
+		}
+	}
+
+	if (cfg.proxy !== undefined) {
+		if (!isIpExtractionPreset(cfg.proxy)) {
+			errors.push(`server.proxy must be one of: ${IP_EXTRACTION_PRESETS.join(", ")}`);
+		} else {
+			result.proxy = cfg.proxy;
 		}
 	}
 
@@ -897,7 +913,7 @@ function loadConfig(): Config {
 		} catch (error) {
 			if (error instanceof ConfigValidationError) {
 				allErrors.push(...error.errors);
-				server = { port: 3000 };
+				server = { port: 3000, proxy: "direct" };
 			} else throw error;
 		}
 

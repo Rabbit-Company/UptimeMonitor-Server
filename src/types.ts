@@ -1,4 +1,5 @@
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
+import type { IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
 
 /**
  * Configuration options for the logger.
@@ -93,6 +94,8 @@ export interface StatusPage {
 export interface ServerConfig {
 	/** Port number the server will listen on */
 	port: number;
+	/** Type for available IP extraction presets */
+	proxy: IpExtractionPreset;
 }
 
 /**

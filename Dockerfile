@@ -7,14 +7,15 @@ COPY package.json ./
 RUN bun install
 
 COPY src/ ./src/
-RUN mkdir -p config
+
+RUN bun build src/index.ts --outfile uptime-monitor --target bun --compile --production
 
 # ---------- Runtime stage ----------
-FROM oven/bun:1-distroless
+FROM gcr.io/distroless/base-nossl-debian13
 
 WORKDIR /app
 
-COPY --from=builder /app /app
+COPY --from=builder /app/uptime-monitor /app/
 
 EXPOSE 3000/tcp
-CMD ["src/index.ts"]
+CMD ["/app/uptime-monitor"]

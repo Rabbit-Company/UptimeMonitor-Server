@@ -21,11 +21,13 @@ import { logger } from "@rabbit-company/web-middleware/logger";
 import { cors } from "@rabbit-company/web-middleware/cors";
 import { cache as webCache } from "@rabbit-company/web-middleware/cache";
 import { selfMonitor } from "./selfmonitor";
+import { ipExtract } from "@rabbit-company/web-middleware/ip-extract";
 
 await initClickHouse();
 
 const app = new Web();
 
+app.use(ipExtract(config.server.proxy));
 app.use(logger({ logger: Logger, preset: "minimal", logResponses: false }));
 app.use(cors());
 

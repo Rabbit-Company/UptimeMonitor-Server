@@ -6,6 +6,8 @@ export class AggregationJob {
 	private intervalId: NodeJS.Timeout | null = null;
 	private readonly INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 	private isRunning: boolean = false;
+	private readonly MAX_RUN_TIME_MS = 5 * 60 * 1000; // 5 minutes max runtime
+	private lastRunStartTime: number = 0;
 
 	async start(): Promise<void> {
 		if (this.intervalId) return;
@@ -14,8 +16,8 @@ export class AggregationJob {
 
 		await this.runAggregation();
 
-		this.intervalId = setInterval(async () => {
-			await this.runAggregation();
+		this.intervalId = setInterval(() => {
+			this.runAggregation();
 		}, this.INTERVAL_MS);
 	}
 
@@ -28,12 +30,25 @@ export class AggregationJob {
 	}
 
 	private async runAggregation(): Promise<void> {
+		// Check if previous run is stuck
 		if (this.isRunning) {
-			Logger.debug("Aggregation: Previous run still in progress, skipping");
-			return;
+			const currentTime = Date.now();
+			const runDuration = currentTime - this.lastRunStartTime;
+
+			if (runDuration > this.MAX_RUN_TIME_MS) {
+				Logger.warn("Aggregation: Previous run appears stuck, forcing reset", {
+					durationMs: runDuration,
+					maxAllowedMs: this.MAX_RUN_TIME_MS,
+				});
+				this.isRunning = false;
+			} else {
+				Logger.debug("Aggregation: Previous run still in progress, skipping");
+				return;
+			}
 		}
 
 		this.isRunning = true;
+		this.lastRunStartTime = Date.now();
 
 		try {
 			Logger.debug("Aggregation: Running...");
@@ -41,7 +56,13 @@ export class AggregationJob {
 			await this.aggregateDaily();
 			Logger.debug("Aggregation: Completed");
 		} catch (error: any) {
-			Logger.error("Aggregation failed", { "error.message": error?.message });
+			Logger.error("Aggregation failed", {
+				"error.message": error?.message,
+				"error.stack": error?.stack,
+			});
+
+			// Add a small delay before retrying on error
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 		} finally {
 			this.isRunning = false;
 		}
@@ -209,7 +230,9 @@ export class AggregationJob {
 				Logger.error("Hourly aggregation failed for monitor", {
 					monitorId: monitor.id,
 					"error.message": err?.message,
+					"error.stack": err?.stack,
 				});
+				// Continue with next monitor instead of stopping entire process
 			}
 		}
 	}
@@ -371,7 +394,9 @@ export class AggregationJob {
 				Logger.error("Daily aggregation failed for monitor", {
 					monitorId: monitor.id,
 					"error.message": err?.message,
+					"error.stack": err?.stack,
 				});
+				// Continue with next monitor instead of stopping entire process
 			}
 		}
 	}

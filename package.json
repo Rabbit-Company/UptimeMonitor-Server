@@ -1,7 +1,7 @@
 {
 	"name": "uptimemonitor-server",
 	"module": "src/index.ts",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"type": "module",
 	"private": true,
 	"scripts": {

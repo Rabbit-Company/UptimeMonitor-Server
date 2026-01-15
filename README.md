@@ -26,6 +26,8 @@ url = "http://uptime_user:uptime_password@localhost:8123/uptime_monitor"
 # Server Configuration
 [server]
 port = 3000
+# Available options: "direct" (no proxy), "cloudflare", "aws", "gcp", "azure", "vercel", "nginx", "development"
+proxy = "direct"
 
 # Logging Configuration
 [logger]

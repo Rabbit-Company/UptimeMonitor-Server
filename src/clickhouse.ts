@@ -1,14 +1,13 @@
 import { createClient } from "@clickhouse/client";
 import { config } from "./config";
 import { Logger } from "./logger";
-import { EventEmitter } from "events";
 import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics, GroupHistoryRecord, Group } from "./types";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { NotificationManager } from "./notifications";
 import { cache } from "./cache";
 import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
+import { server } from ".";
 
-export const eventEmitter = new EventEmitter();
 export const updateQueue = new Set<string>();
 export const BATCH_INTERVAL = 5000; // 5 seconds
 
@@ -132,7 +131,14 @@ export async function storePulse(
 
 	updateQueue.add(monitorId);
 	missingPulseDetector.resetMonitor(monitorId);
-	eventEmitter.emit("pulse", { monitorId, status: "up", latency, timestamp, ...customMetrics });
+
+	const slugs = cache.getStatusPageSlugsByMonitor(monitorId);
+	slugs.forEach((slug) => {
+		server.publish(
+			`slug-${slug}`,
+			JSON.stringify({ action: "pulse", data: { slug, monitorId, status: "up", latency, timestamp, ...customMetrics }, timestamp: new Date().toISOString() })
+		);
+	});
 }
 
 /**

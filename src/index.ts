@@ -33,7 +33,7 @@ app.use(cors());
 
 // Health endpoints
 app.get("/health", (ctx) => {
-	return ctx.json({ status: "ok", timestamp: new Date().toISOString() });
+	return ctx.json({ status: "ok", timestamp: new Date().toISOString(), pendingWebSockets: server.pendingWebSockets });
 });
 
 app.get("/v1/health/missing-pulse-detector", (ctx) => {
@@ -334,7 +334,177 @@ app.get("/v1/groups/:id/history/daily", webCache({ ttl: 300, generateETags: fals
 	});
 });
 
-app.listen({ hostname: "0.0.0.0", port: config.server?.port || 3000 });
+app.get("/ws", async (ctx) => {
+	if (ctx.req.headers.get("upgrade") === "websocket") {
+		return new Response(null, { status: 101 });
+	}
+	return ctx.text("Use WebSocket protocol to connect");
+});
+
+app.websocket({
+	idleTimeout: 120,
+	maxPayloadLength: 1024 * 1024, // 1 MB
+	open(ws) {
+		Logger.audit("WebSocket connection opened", { ip: ws.remoteAddress });
+		ws.send(
+			JSON.stringify({
+				action: "connected",
+				message: "WebSocket connection established",
+				timestamp: new Date().toISOString(),
+			})
+		);
+	},
+	message(ws, message) {
+		if (typeof message !== "string") {
+			ws.send(
+				JSON.stringify({
+					action: "error",
+					message: "Invalid message format: expected string",
+					timestamp: new Date().toISOString(),
+				})
+			);
+			return;
+		}
+		let data: any = {};
+		try {
+			data = JSON.parse(message);
+		} catch {
+			ws.send(
+				JSON.stringify({
+					action: "error",
+					message: "Invalid JSON payload",
+					timestamp: new Date().toISOString(),
+				})
+			);
+			return;
+		}
+
+		if (data?.action === "subscribe") {
+			if (typeof data?.slug !== "string") {
+				ws.send(
+					JSON.stringify({
+						action: "error",
+						message: "Missing or invalid 'slug' parameter",
+						timestamp: new Date().toISOString(),
+					})
+				);
+				return;
+			}
+			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(data.slug);
+			if (!statusPage) {
+				ws.send(
+					JSON.stringify({
+						action: "error",
+						message: "Status page not found",
+						slug: data.slug,
+						timestamp: new Date().toISOString(),
+					})
+				);
+				return;
+			}
+
+			const channel = `slug-${data.slug}`;
+			ws.subscribe(channel);
+
+			Logger.audit(`WebSocket subscribed to channel: ${channel}`, { ip: ws.remoteAddress });
+
+			ws.send(
+				JSON.stringify({
+					action: "subscribed",
+					slug: data.slug,
+					message: "Subscription successful",
+					timestamp: new Date().toISOString(),
+				})
+			);
+
+			return;
+		}
+
+		if (data?.action === "unsubscribe") {
+			if (typeof data.slug !== "string") {
+				ws.send(
+					JSON.stringify({
+						action: "error",
+						message: "Missing or invalid 'slug' parameter",
+						timestamp: new Date().toISOString(),
+					})
+				);
+				return;
+			}
+
+			const channel = `slug-${data.slug}`;
+
+			if (!ws.subscriptions.includes(channel)) {
+				ws.send(
+					JSON.stringify({
+						action: "unsubscribed",
+						slug: data.slug,
+						message: "Already unsubscribed",
+						timestamp: new Date().toISOString(),
+					})
+				);
+				return;
+			}
+
+			ws.unsubscribe(channel);
+
+			Logger.audit(`WebSocket unsubscribed from ${channel}`, { ip: ws.remoteAddress });
+
+			ws.send(
+				JSON.stringify({
+					action: "unsubscribed",
+					slug: data.slug,
+					message: "Unsubscription successful",
+					timestamp: new Date().toISOString(),
+				})
+			);
+			return;
+		}
+
+		if (data?.action === "list_subscriptions") {
+			const slugs: string[] = [];
+
+			ws.subscriptions.forEach((subscription) => {
+				if (subscription.startsWith("slug-")) {
+					slugs.push(subscription.replace("slug-", ""));
+				}
+			});
+
+			ws.send(
+				JSON.stringify({
+					action: "subscriptions",
+					type: "slug",
+					items: slugs,
+					timestamp: new Date().toISOString(),
+				})
+			);
+			return;
+		}
+
+		ws.send(
+			JSON.stringify({
+				action: "error",
+				message: "Unknown action",
+				timestamp: new Date().toISOString(),
+			})
+		);
+	},
+	close(ws, code, reason) {
+		Logger.audit(`WebSocket connection closed`, { ip: ws.remoteAddress, code, reason: reason || "none" });
+
+		ws.subscriptions.forEach((subscription) => {
+			ws.unsubscribe(subscription);
+		});
+	},
+	error(ws, error) {
+		Logger.error("WebSocket runtime error", {
+			ip: ws.remoteAddress,
+			error,
+		});
+	},
+});
+
+export const server = await app.listen({ hostname: "0.0.0.0", port: config.server?.port || 3000 });
 
 Logger.info(`Server running on port ${config.server?.port || 3000}`);
 

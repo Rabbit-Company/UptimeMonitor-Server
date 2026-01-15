@@ -15,6 +15,9 @@ class CacheManager {
 	private monitorsByGroup: Map<string, Monitor[]> = new Map();
 	private groupsByParent: Map<string, Group[]> = new Map();
 
+	// Reverse index caches
+	private statusPageSlugsByMonitor: Map<string, string[]> = new Map();
+
 	// Status cache
 	public statusCache: Map<string, StatusData> = new Map();
 
@@ -31,6 +34,7 @@ class CacheManager {
 		this.initializeStatusPages();
 		this.initializeNotificationChannels();
 		this.buildRelationships();
+		this.buildStatusPageMonitorIndex();
 
 		Logger.info("Cache initialized", {
 			monitors: this.monitors.size,
@@ -89,13 +93,13 @@ class CacheManager {
 	}
 
 	/**
-	 * Build relationship caches for faster lookups
+	 * Build relationship caches
 	 */
 	private buildRelationships(): void {
 		this.monitorsByGroup.clear();
 		this.groupsByParent.clear();
 
-		// Build monitors by group
+		// Monitors by group
 		for (const monitor of this.monitors.values()) {
 			if (monitor.groupId) {
 				const existing = this.monitorsByGroup.get(monitor.groupId) || [];
@@ -104,7 +108,7 @@ class CacheManager {
 			}
 		}
 
-		// Build groups by parent
+		// Groups by parent
 		for (const group of this.groups.values()) {
 			if (group.parentId) {
 				const existing = this.groupsByParent.get(group.parentId) || [];
@@ -115,99 +119,108 @@ class CacheManager {
 	}
 
 	/**
-	 * Get a monitor by ID
+	 * Recursively collect all monitor IDs in a group
 	 */
+	private collectMonitorsInGroup(groupId: string, result: Set<string>): void {
+		// Direct monitors
+		const monitors = this.monitorsByGroup.get(groupId) || [];
+		for (const monitor of monitors) {
+			result.add(monitor.id);
+		}
+
+		// Child groups
+		const childGroups = this.groupsByParent.get(groupId) || [];
+		for (const child of childGroups) {
+			this.collectMonitorsInGroup(child.id, result);
+		}
+	}
+
+	/**
+	 * Build reverse index: monitorId -> status page slugs
+	 */
+	private buildStatusPageMonitorIndex(): void {
+		this.statusPageSlugsByMonitor.clear();
+
+		for (const page of this.statusPages.values()) {
+			const monitorsOnPage = new Set<string>();
+
+			for (const itemId of page.items) {
+				// Direct monitor
+				if (this.monitors.has(itemId)) {
+					monitorsOnPage.add(itemId);
+					continue;
+				}
+
+				// Group (recursive)
+				if (this.groups.has(itemId)) {
+					this.collectMonitorsInGroup(itemId, monitorsOnPage);
+				}
+			}
+
+			for (const monitorId of monitorsOnPage) {
+				const existing = this.statusPageSlugsByMonitor.get(monitorId) || [];
+				existing.push(page.slug);
+				this.statusPageSlugsByMonitor.set(monitorId, existing);
+			}
+		}
+	}
+
 	getMonitor(id: string): Monitor | undefined {
 		return this.monitors.get(id);
 	}
 
-	/**
-	 * Get a monitor by token
-	 */
 	getMonitorByToken(token: string): Monitor | undefined {
 		return this.monitorsByToken.get(token);
 	}
 
-	/**
-	 * Get all monitors
-	 */
 	getAllMonitors(): Monitor[] {
 		return Array.from(this.monitors.values());
 	}
 
-	/**
-	 * Get monitors belonging to a specific group
-	 */
 	getMonitorsByGroup(groupId: string): Monitor[] {
 		return this.monitorsByGroup.get(groupId) || [];
 	}
 
-	/**
-	 * Get a group by ID
-	 */
 	getGroup(id: string): Group | undefined {
 		return this.groups.get(id);
 	}
 
-	/**
-	 * Get all groups
-	 */
 	getAllGroups(): Group[] {
 		return Array.from(this.groups.values());
 	}
 
-	/**
-	 * Get child groups of a parent group
-	 */
 	getChildGroups(parentId: string): Group[] {
 		return this.groupsByParent.get(parentId) || [];
 	}
 
-	/**
-	 * Get a status page by ID
-	 */
 	getStatusPage(id: string): StatusPage | undefined {
 		return this.statusPages.get(id);
 	}
 
-	/**
-	 * Get a status page by slug
-	 */
 	getStatusPageBySlug(slug: string): StatusPage | undefined {
 		return this.statusPagesBySlug.get(slug);
 	}
 
-	/**
-	 * Get all status pages
-	 */
 	getAllStatusPages(): StatusPage[] {
 		return Array.from(this.statusPages.values());
 	}
 
-	/**
-	 * Get a notification channel by ID
-	 */
 	getNotificationChannel(id: string): NotificationChannel | undefined {
 		return this.notificationChannels.get(id);
 	}
 
-	/**
-	 * Get all notification channels
-	 */
 	getAllNotificationChannels(): NotificationChannel[] {
 		return Array.from(this.notificationChannels.values());
 	}
 
-	/**
-	 * Get status data for a monitor or group
-	 */
+	getStatusPageSlugsByMonitor(monitorId: string): string[] {
+		return this.statusPageSlugsByMonitor.get(monitorId) || [];
+	}
+
 	getStatus(id: string): StatusData | undefined {
 		return this.statusCache.get(id);
 	}
 
-	/**
-	 * Set status data for a monitor or group
-	 */
 	setStatus(id: string, status: StatusData): void {
 		this.statusCache.set(id, status);
 	}
@@ -222,24 +235,15 @@ class CacheManager {
 		};
 	}
 
-	/**
-	 * Get all direct children IDs of a group
-	 */
 	getDirectChildIds(groupId: string): string[] {
 		const { monitors, groups } = this.getDirectChildren(groupId);
 		return [...monitors.map((m) => m.id), ...groups.map((g) => g.id)];
 	}
 
-	/**
-	 * Check if a monitor exists
-	 */
 	hasMonitor(id: string): boolean {
 		return this.monitors.has(id);
 	}
 
-	/**
-	 * Check if a group exists
-	 */
 	hasGroup(id: string): boolean {
 		return this.groups.has(id);
 	}
@@ -264,10 +268,10 @@ class CacheManager {
 			notificationChannels: this.notificationChannels.size,
 			monitorsByGroup: this.monitorsByGroup.size,
 			groupsByParent: this.groupsByParent.size,
+			statusPageMonitorIndex: this.statusPageSlugsByMonitor.size,
 			statusData: this.statusCache.size,
 		};
 	}
 }
 
-// Export singleton instance
 export const cache = new CacheManager();

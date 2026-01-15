@@ -1,5 +1,6 @@
+import { server } from ".";
 import { cache } from "./cache";
-import { eventEmitter, updateMonitorStatus } from "./clickhouse";
+import { updateMonitorStatus } from "./clickhouse";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { NotificationManager } from "./notifications";
@@ -277,7 +278,17 @@ export class MissingPulseDetector {
 			});
 		}
 
-		this.emitMonitorEvent("down", monitor, { downtime });
+		const slugs = cache.getStatusPageSlugsByMonitor(monitor.id);
+		slugs.forEach((slug) => {
+			server.publish(
+				`slug-${slug}`,
+				JSON.stringify({
+					action: "monitor-down",
+					data: { slug, monitorId: monitor.id, downtime },
+					timestamp: new Date().toISOString(),
+				})
+			);
+		});
 	}
 
 	/**
@@ -303,7 +314,17 @@ export class MissingPulseDetector {
 			});
 		}
 
-		this.emitMonitorEvent("still-down", monitor, { consecutiveDownCount, downtime: actualDowntime });
+		const slugs = cache.getStatusPageSlugsByMonitor(monitor.id);
+		slugs.forEach((slug) => {
+			server.publish(
+				`slug-${slug}`,
+				JSON.stringify({
+					action: "monitor-still-down",
+					data: { slug, monitorId: monitor.id, consecutiveDownCount, downtime: actualDowntime },
+					timestamp: new Date().toISOString(),
+				})
+			);
+		});
 	}
 
 	/**
@@ -311,19 +332,6 @@ export class MissingPulseDetector {
 	 */
 	private hasNotificationChannels(monitor: Monitor): boolean {
 		return !!(monitor.notificationChannels && monitor.notificationChannels.length > 0);
-	}
-
-	/**
-	 * Emit monitor notification event
-	 */
-	private emitMonitorEvent(type: string, monitor: Monitor, data: any): void {
-		eventEmitter.emit("monitor-notification", {
-			type,
-			monitorId: monitor.id,
-			monitorName: monitor.name,
-			timestamp: new Date(),
-			...data,
-		});
 	}
 
 	/**
@@ -448,11 +456,16 @@ export class MissingPulseDetector {
 			});
 		}
 
-		eventEmitter.emit("monitor-recovered", {
-			monitorId,
-			previousConsecutiveDownCount: state.consecutiveDownCount,
-			downtime: totalDowntime,
-			timestamp: new Date(),
+		const slugs = cache.getStatusPageSlugsByMonitor(monitorId);
+		slugs.forEach((slug) => {
+			server.publish(
+				`slug-${slug}`,
+				JSON.stringify({
+					action: "monitor-recovered",
+					data: { slug, monitorId, previousConsecutiveDownCount: state.consecutiveDownCount, downtime: totalDowntime },
+					timestamp: new Date().toISOString(),
+				})
+			);
 		});
 
 		this.clearMonitorState(monitorId);

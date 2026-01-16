@@ -129,6 +129,8 @@ export async function storePulse(
 
 	if (synthetic) return;
 
+	missingPulseDetector.recordPulse(monitorId, timestamp);
+
 	updateQueue.add(monitorId);
 	missingPulseDetector.resetMonitor(monitorId);
 

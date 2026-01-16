@@ -160,7 +160,7 @@ app.get("/v1/push/:token", async (ctx) => {
 });
 
 // Status page endpoints
-app.get("/v1/status/:slug", webCache({ ttl: 60, generateETags: false }), async (ctx) => {
+app.get("/v1/status/:slug", webCache({ ttl: 30, generateETags: false }), async (ctx) => {
 	const slug: string = ctx.params["slug"] || "";
 	const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
 	if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
@@ -174,7 +174,7 @@ app.get("/v1/status/:slug", webCache({ ttl: 60, generateETags: false }), async (
 	});
 });
 
-app.get("/v1/status/:slug/summary", async (ctx) => {
+app.get("/v1/status/:slug/summary", webCache({ ttl: 30, generateETags: false }), async (ctx) => {
 	const slug: string = ctx.params["slug"] || "";
 	const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
 	if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
@@ -227,7 +227,7 @@ app.get("/v1/monitors/:id/history", webCache({ ttl: 30, generateETags: false }),
  * GET /v1/monitors/:id/history/hourly
  * Returns all hourly aggregates (~90 days due to TTL)
  */
-app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 60, generateETags: false }), async (ctx) => {
+app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
 	const monitorId = ctx.params["id"] || "";
 	const monitor = cache.getMonitor(monitorId);
 	if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
@@ -252,7 +252,7 @@ app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 60, generateETags: fa
  * GET /v1/monitors/:id/history/daily
  * Returns all daily aggregates (all time)
  */
-app.get("/v1/monitors/:id/history/daily", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
+app.get("/v1/monitors/:id/history/daily", webCache({ ttl: 900, generateETags: false }), async (ctx) => {
 	const monitorId = ctx.params["id"] || "";
 	const monitor = cache.getMonitor(monitorId);
 	if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
@@ -300,7 +300,7 @@ app.get("/v1/groups/:id/history", webCache({ ttl: 30, generateETags: false }), a
  * GET /v1/groups/:id/history/hourly
  * Returns hourly history for a group (~90 days due to TTL)
  */
-app.get("/v1/groups/:id/history/hourly", webCache({ ttl: 60, generateETags: false }), async (ctx) => {
+app.get("/v1/groups/:id/history/hourly", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
 	const groupId = ctx.params["id"] || "";
 	const group: Group | undefined = cache.getGroup(groupId);
 	if (!group) return ctx.json({ error: "Group not found" }, 404);
@@ -319,7 +319,7 @@ app.get("/v1/groups/:id/history/hourly", webCache({ ttl: 60, generateETags: fals
  * GET /v1/groups/:id/history/daily
  * Returns daily history for a group (all time)
  */
-app.get("/v1/groups/:id/history/daily", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
+app.get("/v1/groups/:id/history/daily", webCache({ ttl: 900, generateETags: false }), async (ctx) => {
 	const groupId = ctx.params["id"] || "";
 	const group: Group | undefined = cache.getGroup(groupId);
 	if (!group) return ctx.json({ error: "Group not found" }, 404);

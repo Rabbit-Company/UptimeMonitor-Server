@@ -12,6 +12,7 @@ export class MissingPulseDetector {
 	private intervalId?: NodeJS.Timeout;
 	private readonly monitorStates = new Map<string, MonitorState>();
 	private readonly notificationManager: NotificationManager;
+	private readonly lastPulseTime = new Map<string, Date>();
 
 	constructor(options: MissingPulseDetectorOptions = {}) {
 		this.checkInterval = options.checkInterval || 30000;
@@ -75,15 +76,22 @@ export class MissingPulseDetector {
 	private async checkMonitor(monitor: Monitor, now: number): Promise<void> {
 		try {
 			const status = cache.getStatus(monitor.id);
+			const trackedPulseTime = this.lastPulseTime.get(monitor.id);
 
-			if (!status) {
-				this.handleNeverPulsedMonitor(monitor, now);
-				return;
+			// Use the most recent pulse time from either source
+			let lastCheck: number | undefined;
+
+			if (trackedPulseTime && status?.lastCheck) {
+				// Use whichever is more recent
+				lastCheck = Math.max(trackedPulseTime.getTime(), status.lastCheck.getTime());
+			} else if (trackedPulseTime) {
+				lastCheck = trackedPulseTime.getTime();
+			} else if (status?.lastCheck) {
+				lastCheck = status.lastCheck.getTime();
 			}
 
-			const lastCheck = status.lastCheck?.getTime();
 			if (!lastCheck) {
-				Logger.debug("No last check time for monitor", { monitorId: monitor.id });
+				this.handleNeverPulsedMonitor(monitor, now);
 				return;
 			}
 
@@ -201,7 +209,18 @@ export class MissingPulseDetector {
 	 */
 	private initializeDowntime(monitor: Monitor, now: number): void {
 		const status = cache.getStatus(monitor.id);
-		const lastSuccessfulPulse = status?.lastCheck?.getTime() || now;
+		const trackedPulseTime = this.lastPulseTime.get(monitor.id);
+
+		// Use the most recent pulse time from either source
+		let lastSuccessfulPulse = now;
+		if (trackedPulseTime && status?.lastCheck) {
+			lastSuccessfulPulse = Math.max(trackedPulseTime.getTime(), status.lastCheck.getTime());
+		} else if (trackedPulseTime) {
+			lastSuccessfulPulse = trackedPulseTime.getTime();
+		} else if (status?.lastCheck) {
+			lastSuccessfulPulse = status.lastCheck.getTime();
+		}
+
 		const downStartTime = lastSuccessfulPulse + this.getMaxAllowedInterval(monitor);
 
 		const state = this.getMonitorState(monitor.id);
@@ -212,6 +231,7 @@ export class MissingPulseDetector {
 			monitorName: monitor.name,
 			consecutiveMisses: state.missedCount,
 			lastCheckTime: status?.lastCheck,
+			trackedPulseTime: trackedPulseTime,
 			consecutiveDownCount: state.consecutiveDownCount,
 			downStartTime: new Date(downStartTime).toISOString(),
 		});
@@ -419,6 +439,14 @@ export class MissingPulseDetector {
 	}
 
 	/**
+	 * Record pulse time for a monitor
+	 * Called when a pulse is received to track the most recent pulse time
+	 */
+	recordPulse(monitorId: string, timestamp: Date): void {
+		this.lastPulseTime.set(monitorId, timestamp);
+	}
+
+	/**
 	 * Reset missed pulse count for a specific monitor
 	 * Called when a pulse is received
 	 */
@@ -490,5 +518,9 @@ export class MissingPulseDetector {
 	}
 }
 
-// Export singleton instance
-export const missingPulseDetector = new MissingPulseDetector();
+// Calculate the optimal check interval based on configured monitors
+// Use half of the shortest monitor interval, with a minimum of 5 seconds
+const shortestMonitorInterval = Math.min(...config.monitors.map((m) => m.interval));
+const calculatedCheckInterval = Math.max(5000, Math.floor((shortestMonitorInterval * 1000) / 2));
+
+export const missingPulseDetector = new MissingPulseDetector({ checkInterval: calculatedCheckInterval });

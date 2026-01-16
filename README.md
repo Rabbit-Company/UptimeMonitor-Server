@@ -12,6 +12,15 @@ A powerful, enterprise-grade uptime monitoring system with granular notification
 - ⚡ **High Performance** - Built with Bun and ClickHouse for maximum throughput
 - 🔒 **Production Ready** - Comprehensive validation, error handling, and monitoring
 
+## 🔗 Related Projects
+
+| Project                                                                                | Description                                             |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| [UptimeMonitor-StatusPage](https://github.com/Rabbit-Company/UptimeMonitor-StatusPage) | Self-hosted status page frontend with real-time updates |
+| [PulseMonitor](https://github.com/Rabbit-Company/PulseMonitor)                         | Automated pulse sending client                          |
+
+> **Note:** This repository contains only the backend server. To display a public status page, you'll also need to deploy [UptimeMonitor-StatusPage](https://github.com/Rabbit-Company/UptimeMonitor-StatusPage).
+
 ## 🚀 Quick Start
 
 ## 📋 Configuration

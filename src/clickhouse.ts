@@ -584,72 +584,20 @@ async function calculateUptimes(
 		SELECT CASE WHEN (SELECT cnt FROM expected) = 0 THEN 100 ELSE LEAST(100, (SELECT cnt FROM actual) * 100.0 / (SELECT cnt FROM expected)) END AS uptime
 	`;
 
-	// For 7d period: include today
-	const weekPeriodQuery = `
-		WITH
-			period_start AS (
-				SELECT GREATEST(toDate('${pulseDate}'), toDate(now() - INTERVAL 7 DAY)) AS start_date
-			),
-			today AS (
-				SELECT toDate(now()) AS current_date
-			),
-			daily_data AS (
-				SELECT timestamp AS day, uptime
-				FROM pulses_daily
-				WHERE monitor_id = {monitorId:String}
-					AND timestamp >= (SELECT start_date FROM period_start)
-					AND timestamp < (SELECT current_date FROM today)
-			),
-			today_stats AS (
-				SELECT
-					toDate(now()) AS day,
-					CASE
-						WHEN floor((toUnixTimestamp(now()) - toUnixTimestamp(toStartOfDay(now()))) / ${interval}) = 0 THEN 100
-						ELSE LEAST(100,
-							COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) * 100.0 /
-							floor((toUnixTimestamp(now()) - toUnixTimestamp(toStartOfDay(now()))) / ${interval})
-						)
-					END AS uptime
-				FROM pulses
-				WHERE monitor_id = {monitorId:String}
-					AND timestamp >= toStartOfDay(now())
-					AND timestamp < now()
-			),
-			all_days AS (
-				SELECT day, uptime FROM daily_data
-				UNION ALL
-				SELECT day, uptime FROM today_stats WHERE uptime IS NOT NULL
-			),
-			total_days AS (
-				SELECT toDate(now()) - (SELECT start_date FROM period_start) + 1 AS days_count
-			)
-		SELECT
-			CASE
-				WHEN (SELECT days_count FROM total_days) = 0 THEN 100
-				WHEN COUNT(*) = 0 THEN 0
-				ELSE SUM(uptime) / (SELECT days_count FROM total_days)
-			END AS uptime
-		FROM all_days
-	`;
-
-	// For longer periods (30d, 90d, 365d): exclude today for performance
-	// The impact is minimal (≤3.3% of the period)
-	const longPeriodQueryFast = (days: number) => `
+	// For longer periods: get historical daily data only (excludes today)
+	// We'll combine this with the 24h uptime in JavaScript
+	const historicalDailyQuery = (days: number) => `
 		WITH
 			period_start AS (
 				SELECT GREATEST(toDate('${pulseDate}'), toDate(now() - INTERVAL ${days} DAY)) AS start_date
 			),
 			today AS (
 				SELECT toDate(now()) AS current_date
-			),
-			total_days AS (
-				SELECT (SELECT current_date FROM today) - (SELECT start_date FROM period_start) AS days_count
 			)
 		SELECT
-			CASE
-				WHEN (SELECT days_count FROM total_days) = 0 THEN 100
-				ELSE COALESCE(AVG(uptime), 0)
-			END AS uptime
+			SUM(uptime) AS total_uptime,
+			COUNT(*) AS days_with_data,
+			(SELECT current_date FROM today) - (SELECT start_date FROM period_start) AS historical_days
 		FROM pulses_daily
 		WHERE monitor_id = {monitorId:String}
 			AND timestamp >= (SELECT start_date FROM period_start)
@@ -657,24 +605,52 @@ async function calculateUptimes(
 	`;
 
 	try {
-		const [u1h, u24h, u7d, u30d, u90d, u365d] = await Promise.all([
+		const [u1h, u24h, h7d, h30d, h90d, h365d] = await Promise.all([
 			clickhouse.query({ query: shortPeriodQuery("1 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
 			clickhouse.query({ query: shortPeriodQuery("24 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: weekPeriodQuery, query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: longPeriodQueryFast(30), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: longPeriodQueryFast(90), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: longPeriodQueryFast(365), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: historicalDailyQuery(7), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: historicalDailyQuery(30), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: historicalDailyQuery(90), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: historicalDailyQuery(365), query_params: { monitorId }, format: "JSONEachRow" }),
 		]);
 
-		const parse = async (r: any) => ((await r.json()) as { uptime: number }[])[0]?.uptime ?? 0;
+		const parseShort = async (r: any) => ((await r.json()) as { uptime: number }[])[0]?.uptime ?? 0;
+		const parseHistorical = async (r: any) => {
+			const data = (await r.json()) as { total_uptime: number | null; days_with_data: number; historical_days: number }[];
+			return data[0] ?? { total_uptime: null, days_with_data: 0, historical_days: 0 };
+		};
+
+		const uptime1h = await parseShort(u1h);
+		const uptime24h = await parseShort(u24h);
+
+		const hist7d = await parseHistorical(h7d);
+		const hist30d = await parseHistorical(h30d);
+		const hist90d = await parseHistorical(h90d);
+		const hist365d = await parseHistorical(h365d);
+
+		const combineWithToday = (hist: { total_uptime: number | null; days_with_data: number; historical_days: number }): number => {
+			// If no historical data and no today data expected, return 100%
+			if (hist.historical_days <= 0 && hist.days_with_data === 0) {
+				return uptime24h;
+			}
+
+			// Only average over days that have data + today
+			const daysToAverage = hist.days_with_data + 1; // +1 for today
+
+			if (hist.total_uptime === null || hist.days_with_data === 0) {
+				return uptime24h;
+			}
+
+			return (hist.total_uptime + uptime24h) / daysToAverage;
+		};
 
 		return {
-			uptime1h: await parse(u1h),
-			uptime24h: await parse(u24h),
-			uptime7d: await parse(u7d),
-			uptime30d: await parse(u30d),
-			uptime90d: await parse(u90d),
-			uptime365d: await parse(u365d),
+			uptime1h,
+			uptime24h,
+			uptime7d: combineWithToday(hist7d),
+			uptime30d: combineWithToday(hist30d),
+			uptime90d: combineWithToday(hist90d),
+			uptime365d: combineWithToday(hist365d),
 		};
 	} catch (err: any) {
 		Logger.error("calculateUptimes failed", { monitorId, "error.message": err?.message });

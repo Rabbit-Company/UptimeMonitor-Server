@@ -105,7 +105,7 @@ export async function storePulse(
 	latency: number | null,
 	timestamp: Date,
 	synthetic: boolean = false,
-	customMetrics: CustomMetrics = { custom1: null, custom2: null, custom3: null }
+	customMetrics: CustomMetrics = { custom1: null, custom2: null, custom3: null },
 ): Promise<void> {
 	try {
 		await clickhouse.insert({
@@ -138,7 +138,7 @@ export async function storePulse(
 	slugs.forEach((slug) => {
 		server.publish(
 			`slug-${slug}`,
-			JSON.stringify({ action: "pulse", data: { slug, monitorId, status: "up", latency, timestamp, ...customMetrics }, timestamp: new Date().toISOString() })
+			JSON.stringify({ action: "pulse", data: { slug, monitorId, status: "up", latency, timestamp, ...customMetrics }, timestamp: new Date().toISOString() }),
 		);
 	});
 }
@@ -561,13 +561,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 async function calculateUptimes(
 	monitorId: string,
 	interval: number,
-	firstPulse: Date | undefined
+	firstPulse: Date | undefined,
 ): Promise<{ uptime1h: number; uptime24h: number; uptime7d: number; uptime30d: number; uptime90d: number; uptime365d: number }> {
 	const pulseDate = firstPulse ? formatDateTimeISOCompact(firstPulse) : "2001-10-15 00:00:00";
 
-	// Uptime = (distinct intervals with at least 1 pulse / expected intervals) * 100
-	// We count DISTINCT intervals, so multiple pulses in same interval = 1 "up" interval
-	const uptimeQuery = (period: string) => `
+	// For short periods (1h, 24h), use pulses table directly
+	const shortPeriodQuery = (period: string) => `
 		WITH
 			time_range AS (
 				SELECT
@@ -585,14 +584,86 @@ async function calculateUptimes(
 		SELECT CASE WHEN (SELECT cnt FROM expected) = 0 THEN 100 ELSE LEAST(100, (SELECT cnt FROM actual) * 100.0 / (SELECT cnt FROM expected)) END AS uptime
 	`;
 
+	// For 7d period: include today
+	const weekPeriodQuery = `
+		WITH
+			period_start AS (
+				SELECT GREATEST(toDate('${pulseDate}'), toDate(now() - INTERVAL 7 DAY)) AS start_date
+			),
+			today AS (
+				SELECT toDate(now()) AS current_date
+			),
+			daily_data AS (
+				SELECT timestamp AS day, uptime
+				FROM pulses_daily
+				WHERE monitor_id = {monitorId:String}
+					AND timestamp >= (SELECT start_date FROM period_start)
+					AND timestamp < (SELECT current_date FROM today)
+			),
+			today_stats AS (
+				SELECT
+					toDate(now()) AS day,
+					CASE
+						WHEN floor((toUnixTimestamp(now()) - toUnixTimestamp(toStartOfDay(now()))) / ${interval}) = 0 THEN 100
+						ELSE LEAST(100,
+							COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) * 100.0 /
+							floor((toUnixTimestamp(now()) - toUnixTimestamp(toStartOfDay(now()))) / ${interval})
+						)
+					END AS uptime
+				FROM pulses
+				WHERE monitor_id = {monitorId:String}
+					AND timestamp >= toStartOfDay(now())
+					AND timestamp < now()
+			),
+			all_days AS (
+				SELECT day, uptime FROM daily_data
+				UNION ALL
+				SELECT day, uptime FROM today_stats WHERE uptime IS NOT NULL
+			),
+			total_days AS (
+				SELECT toDate(now()) - (SELECT start_date FROM period_start) + 1 AS days_count
+			)
+		SELECT
+			CASE
+				WHEN (SELECT days_count FROM total_days) = 0 THEN 100
+				WHEN COUNT(*) = 0 THEN 0
+				ELSE SUM(uptime) / (SELECT days_count FROM total_days)
+			END AS uptime
+		FROM all_days
+	`;
+
+	// For longer periods (30d, 90d, 365d): exclude today for performance
+	// The impact is minimal (≤3.3% of the period)
+	const longPeriodQueryFast = (days: number) => `
+		WITH
+			period_start AS (
+				SELECT GREATEST(toDate('${pulseDate}'), toDate(now() - INTERVAL ${days} DAY)) AS start_date
+			),
+			today AS (
+				SELECT toDate(now()) AS current_date
+			),
+			total_days AS (
+				SELECT (SELECT current_date FROM today) - (SELECT start_date FROM period_start) AS days_count
+			)
+		SELECT
+			CASE
+				WHEN (SELECT days_count FROM total_days) = 0 THEN 100
+				ELSE COALESCE(AVG(uptime), 0)
+			END AS uptime
+		FROM pulses_daily
+		WHERE monitor_id = {monitorId:String}
+			AND timestamp >= (SELECT start_date FROM period_start)
+			AND timestamp < (SELECT current_date FROM today)
+	`;
+
 	try {
 		const [u1h, u24h, u7d, u30d, u90d, u365d] = await Promise.all([
-			clickhouse.query({ query: uptimeQuery("1 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: uptimeQuery("24 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: uptimeQuery("7 DAY"), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: uptimeQuery("30 DAY"), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: uptimeQuery("90 DAY"), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: uptimeQuery("365 DAY"), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: shortPeriodQuery("1 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: shortPeriodQuery("24 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: weekPeriodQuery, query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: longPeriodQueryFast(30), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: longPeriodQueryFast(90), query_params: { monitorId }, format: "JSONEachRow" }),
+			clickhouse.query({ query: longPeriodQueryFast(365), query_params: { monitorId }, format: "JSONEachRow" }),
 		]);
 
 		const parse = async (r: any) => ((await r.json()) as { uptime: number }[])[0]?.uptime ?? 0;
@@ -605,7 +676,8 @@ async function calculateUptimes(
 			uptime90d: await parse(u90d),
 			uptime365d: await parse(u365d),
 		};
-	} catch {
+	} catch (err: any) {
+		Logger.error("calculateUptimes failed", { monitorId, "error.message": err?.message });
 		return { uptime1h: 0, uptime24h: 0, uptime7d: 0, uptime30d: 0, uptime90d: 0, uptime365d: 0 };
 	}
 }
@@ -710,7 +782,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 
 function calculateGroupUptimes(
 	childIds: string[],
-	strategy: "any-up" | "percentage" | "all-up"
+	strategy: "any-up" | "percentage" | "all-up",
 ): { uptime1h: number; uptime24h: number; uptime7d: number; uptime30d: number; uptime90d: number; uptime365d: number } {
 	const uptimes: number[][] = [[], [], [], [], [], []];
 

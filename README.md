@@ -43,7 +43,6 @@ A powerful, enterprise-grade uptime monitoring system with granular notification
    ```
 
    This will start:
-
    - **Uptime Monitor** on port `3000`
    - **ClickHouse** database (internal, not exposed)
 
@@ -79,6 +78,11 @@ proxy = "direct"
 [logger]
 level = 4  # 0=silent, 7=verbose
 
+[missingPulseDetector]
+# Check interval in seconds for detecting missing pulses (default: 5)
+# Lower values detect outages faster but increase CPU usage
+interval = 5
+
 [selfMonitoring]
 # Enable self-monitoring and automatic backfill
 enabled = true
@@ -106,7 +110,7 @@ name = "Production API"
 token = "secure-random-token"
 interval = 60  # Expect pulse every 60 seconds
 maxRetries = 3
-resendNotification = 5
+resendNotification = 12
 notificationChannels = ["critical"]
 
 # Monitor with Custom Metrics
@@ -116,7 +120,7 @@ name = "Game Server"
 token = "tk_game_server_xyz999"
 interval = 10
 maxRetries = 0
-resendNotification = 3
+resendNotification = 12
 groupId = "production"
 notificationChannels = []
 
@@ -240,7 +244,7 @@ name = "Game Server"
 token = "tk_game_server_xyz999"
 interval = 10
 maxRetries = 0
-resendNotification = 3
+resendNotification = 12
 
 [monitors.custom1]
 id = "players"        # Query parameter name

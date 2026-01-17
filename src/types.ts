@@ -110,6 +110,8 @@ export interface Config {
 	logger: LoggerConfig;
 	/** Self-monitoring and automatic backfill configuration */
 	selfMonitoring: SelfMonitoringConfig;
+	/** Missing pulse detector configuration */
+	missingPulseDetector: MissingPulseDetectorConfig;
 	/** List of defined monitors */
 	monitors: Monitor[];
 	/** List of defined groups */
@@ -220,6 +222,11 @@ export interface SelfMonitoringConfig {
 	backfillOnRecovery: boolean;
 	/** Strategy for synthetic pulse latency */
 	latencyStrategy: "last-known" | "null";
+}
+
+export interface MissingPulseDetectorConfig {
+	/** Check interval in seconds (default: 5) */
+	interval: number;
 }
 
 /**

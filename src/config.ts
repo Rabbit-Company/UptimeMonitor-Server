@@ -9,6 +9,7 @@ import type {
 	NotificationsConfig,
 	NotificationChannel,
 	SelfMonitoringConfig,
+	MissingPulseDetectorConfig,
 	CustomMetricConfig,
 } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
@@ -404,6 +405,29 @@ function validateSelfMonitoringConfig(config: unknown): SelfMonitoringConfig {
 
 	if (isString(cfg.latencyStrategy) && ["last-known", "null"].includes(cfg.latencyStrategy)) {
 		result.latencyStrategy = cfg.latencyStrategy as "last-known" | "null";
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	return result;
+}
+
+function validateMissingPulseDetectorConfig(config: unknown): MissingPulseDetectorConfig {
+	const errors: string[] = [];
+	const cfg = (config || {}) as Record<string, unknown>;
+
+	const result: MissingPulseDetectorConfig = {
+		interval: 5,
+	};
+
+	if (cfg.interval !== undefined) {
+		if (!isNumber(cfg.interval) || cfg.interval < 1) {
+			errors.push("missingPulseDetector.interval must be a number >= 1");
+		} else {
+			result.interval = cfg.interval;
+		}
 	}
 
 	if (errors.length > 0) {
@@ -943,6 +967,16 @@ function loadConfig(): Config {
 			} else throw error;
 		}
 
+		let missingPulseDetector: MissingPulseDetectorConfig;
+		try {
+			missingPulseDetector = validateMissingPulseDetectorConfig(parsed.missingPulseDetector);
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				allErrors.push(...error.errors);
+				missingPulseDetector = { interval: 5 };
+			} else throw error;
+		}
+
 		let notifications: NotificationsConfig;
 		try {
 			notifications = validateNotificationsConfig(parsed.notifications);
@@ -1022,6 +1056,7 @@ function loadConfig(): Config {
 			server,
 			logger,
 			selfMonitoring,
+			missingPulseDetector,
 			notifications,
 			monitors,
 			groups,
@@ -1041,6 +1076,7 @@ function loadConfig(): Config {
 			groups: config.groups.length,
 			statusPages: config.statusPages.length,
 			notificationChannels: Object.keys(config.notifications?.channels || {}).length,
+			missingPulseDetectorInterval: config.missingPulseDetector.interval + "s",
 		});
 
 		return config;

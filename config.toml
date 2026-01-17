@@ -11,6 +11,11 @@ proxy = "direct"
 [logger]
 level = 7
 
+[missingPulseDetector]
+# Check interval in seconds for detecting missing pulses (default: 5)
+# Lower values detect outages faster but increase CPU usage
+interval = 5
+
 [selfMonitoring]
 # Enable self-monitoring and automatic backfill
 enabled = true
@@ -38,7 +43,7 @@ name = "Production API"
 token = "tk_prod_api_abc123"
 interval = 30 # Expects pulse every 30s
 maxRetries = 0 # Zero tolerance - mark down immediately
-resendNotification = 3 # Resend notification every 3 down checks
+resendNotification = 12 # Resend notification every 12 down checks
 groupId = "production"
 notificationChannels = ["critical"]
 
@@ -48,7 +53,7 @@ name = "Staging API"
 token = "tk_staging_api_def456"
 interval = 60
 maxRetries = 0
-resendNotification = 3
+resendNotification = 12
 groupId = "staging"
 notificationChannels = []
 
@@ -58,7 +63,7 @@ name = "Production Website"
 token = "tk_prod_web_ghi789"
 interval = 30
 maxRetries = 0
-resendNotification = 3
+resendNotification = 12
 groupId = "production"
 notificationChannels = []
 
@@ -68,7 +73,7 @@ name = "Production Database"
 token = "tk_prod_db_jkl012"
 interval = 60
 maxRetries = 0
-resendNotification = 3
+resendNotification = 12
 groupId = "production"
 notificationChannels = []
 
@@ -89,7 +94,7 @@ name = "Global CDN"
 token = "tk_cdn_mno345"
 interval = 120
 maxRetries = 0
-resendNotification = 3
+resendNotification = 12
 groupId = "infrastructure"
 notificationChannels = []
 
@@ -105,7 +110,7 @@ name = "Payment Gateway"
 token = "tk_payment_pqr678"
 interval = 30
 maxRetries = 0
-resendNotification = 3
+resendNotification = 12
 groupId = "third-party"
 notificationChannels = []
 
@@ -115,7 +120,7 @@ name = "Game Server"
 token = "tk_game_server_xyz999"
 interval = 10
 maxRetries = 0
-resendNotification = 3
+resendNotification = 12
 groupId = "production"
 notificationChannels = []
 

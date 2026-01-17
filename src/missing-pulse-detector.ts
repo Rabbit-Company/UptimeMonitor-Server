@@ -15,7 +15,7 @@ export class MissingPulseDetector {
 	private readonly lastPulseTime = new Map<string, Date>();
 
 	constructor(options: MissingPulseDetectorOptions = {}) {
-		this.checkInterval = options.checkInterval || 30000;
+		this.checkInterval = options.checkInterval || 5000;
 		this.notificationManager = new NotificationManager(config.notifications || { channels: {} });
 	}
 
@@ -306,7 +306,7 @@ export class MissingPulseDetector {
 					action: "monitor-down",
 					data: { slug, monitorId: monitor.id, downtime },
 					timestamp: new Date().toISOString(),
-				})
+				}),
 			);
 		});
 	}
@@ -342,7 +342,7 @@ export class MissingPulseDetector {
 					action: "monitor-still-down",
 					data: { slug, monitorId: monitor.id, consecutiveDownCount, downtime: actualDowntime },
 					timestamp: new Date().toISOString(),
-				})
+				}),
 			);
 		});
 	}
@@ -492,7 +492,7 @@ export class MissingPulseDetector {
 					action: "monitor-recovered",
 					data: { slug, monitorId, previousConsecutiveDownCount: state.consecutiveDownCount, downtime: totalDowntime },
 					timestamp: new Date().toISOString(),
-				})
+				}),
 			);
 		});
 
@@ -518,9 +518,8 @@ export class MissingPulseDetector {
 	}
 }
 
-// Calculate the optimal check interval based on configured monitors
-// Use half of the shortest monitor interval, with a minimum of 5 seconds
-const shortestMonitorInterval = Math.min(...config.monitors.map((m) => m.interval));
-const calculatedCheckInterval = Math.max(5000, Math.floor((shortestMonitorInterval * 1000) / 2));
+// Use the configured interval from config (in seconds), convert to milliseconds
+// Default is 5 seconds if not configured
+const checkIntervalMs = (config.missingPulseDetector?.interval ?? 5) * 1000;
 
-export const missingPulseDetector = new MissingPulseDetector({ checkInterval: calculatedCheckInterval });
+export const missingPulseDetector = new MissingPulseDetector({ checkInterval: checkIntervalMs });

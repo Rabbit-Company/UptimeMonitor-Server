@@ -23,6 +23,43 @@ A powerful, enterprise-grade uptime monitoring system with granular notification
 
 ## 🚀 Quick Start
 
+### Docker Compose (Recommended)
+
+1. **Clone the repository and navigate to the project directory:**
+
+   ```bash
+   git clone https://github.com/Rabbit-Company/UptimeMonitor-Server.git
+   cd UptimeMonitor-Server
+   ```
+
+2. **Edit your configuration file:**
+
+   Edit `config.toml` with your monitors, notification channels, and other settings (see [Configuration](#-configuration) below).
+
+3. **Start the services:**
+
+   ```bash
+   docker compose up -d
+   ```
+
+   This will start:
+
+   - **Uptime Monitor** on port `3000`
+   - **ClickHouse** database (internal, not exposed)
+
+4. **Verify the deployment:**
+
+   ```bash
+   # Check service status
+   docker compose ps
+
+   # View logs
+   docker compose logs -f uptimemonitor
+
+   # Test the health endpoint
+   curl http://localhost:3000/health
+   ```
+
 ## 📋 Configuration
 
 ### Basic Configuration (config.toml)

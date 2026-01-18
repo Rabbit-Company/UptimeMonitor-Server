@@ -1,6 +1,6 @@
 import { Web } from "@rabbit-company/web";
 import { Logger } from "./logger";
-import { config } from "./config";
+import { config, reloadConfig } from "./config";
 import { cache } from "./cache";
 import type { Monitor, StatusData, StatusPage, CustomMetrics, Group } from "./types";
 import {
@@ -38,6 +38,61 @@ app.get("/health", (ctx) => {
 
 app.get("/v1/health/missing-pulse-detector", (ctx) => {
 	return ctx.json(missingPulseDetector.getStatus());
+});
+
+// Configuration reload endpoint
+app.get("/v1/reload/:token", async (ctx) => {
+	const token: string = ctx.params["token"] || "";
+
+	if (token !== config.server.reloadToken) {
+		return ctx.json({ error: "Invalid token" }, 401);
+	}
+
+	try {
+		// Reload configuration
+		const newConfig = reloadConfig();
+
+		// Reload cache with new configuration
+		cache.reload();
+
+		// Update notification configuration in missing pulse detector
+		missingPulseDetector.updateNotificationConfig(newConfig.notifications || { channels: {} });
+
+		// Update all monitor statuses
+		await Promise.all(cache.getAllMonitors().map((m) => updateMonitorStatus(m.id)));
+
+		Logger.info("Configuration reloaded successfully via API", {
+			monitors: newConfig.monitors.length,
+			groups: newConfig.groups.length,
+			statusPages: newConfig.statusPages.length,
+			notificationChannels: Object.keys(newConfig.notifications?.channels || {}).length,
+		});
+
+		return ctx.json({
+			success: true,
+			message: "Configuration reloaded successfully",
+			stats: {
+				monitors: newConfig.monitors.length,
+				groups: newConfig.groups.length,
+				statusPages: newConfig.statusPages.length,
+				notificationChannels: Object.keys(newConfig.notifications?.channels || {}).length,
+			},
+			timestamp: new Date().toISOString(),
+		});
+	} catch (error) {
+		Logger.error("Configuration reload failed", {
+			error: error instanceof Error ? error.message : "Unknown error",
+		});
+
+		return ctx.json(
+			{
+				success: false,
+				error: error instanceof Error ? error.message : "Configuration reload failed",
+				timestamp: new Date().toISOString(),
+			},
+			500,
+		);
+	}
 });
 
 // Push endpoint
@@ -351,7 +406,7 @@ app.websocket({
 				action: "connected",
 				message: "WebSocket connection established",
 				timestamp: new Date().toISOString(),
-			})
+			}),
 		);
 	},
 	message(ws, message) {
@@ -361,7 +416,7 @@ app.websocket({
 					action: "error",
 					message: "Invalid message format: expected string",
 					timestamp: new Date().toISOString(),
-				})
+				}),
 			);
 			return;
 		}
@@ -374,7 +429,7 @@ app.websocket({
 					action: "error",
 					message: "Invalid JSON payload",
 					timestamp: new Date().toISOString(),
-				})
+				}),
 			);
 			return;
 		}
@@ -386,7 +441,7 @@ app.websocket({
 						action: "error",
 						message: "Missing or invalid 'slug' parameter",
 						timestamp: new Date().toISOString(),
-					})
+					}),
 				);
 				return;
 			}
@@ -398,7 +453,7 @@ app.websocket({
 						message: "Status page not found",
 						slug: data.slug,
 						timestamp: new Date().toISOString(),
-					})
+					}),
 				);
 				return;
 			}
@@ -414,7 +469,7 @@ app.websocket({
 					slug: data.slug,
 					message: "Subscription successful",
 					timestamp: new Date().toISOString(),
-				})
+				}),
 			);
 
 			return;
@@ -427,7 +482,7 @@ app.websocket({
 						action: "error",
 						message: "Missing or invalid 'slug' parameter",
 						timestamp: new Date().toISOString(),
-					})
+					}),
 				);
 				return;
 			}
@@ -441,7 +496,7 @@ app.websocket({
 						slug: data.slug,
 						message: "Already unsubscribed",
 						timestamp: new Date().toISOString(),
-					})
+					}),
 				);
 				return;
 			}
@@ -456,7 +511,7 @@ app.websocket({
 					slug: data.slug,
 					message: "Unsubscription successful",
 					timestamp: new Date().toISOString(),
-				})
+				}),
 			);
 			return;
 		}
@@ -476,7 +531,7 @@ app.websocket({
 					type: "slug",
 					items: slugs,
 					timestamp: new Date().toISOString(),
-				})
+				}),
 			);
 			return;
 		}
@@ -486,7 +541,7 @@ app.websocket({
 				action: "error",
 				message: "Unknown action",
 				timestamp: new Date().toISOString(),
-			})
+			}),
 		);
 	},
 	close(ws, code, reason) {
@@ -507,6 +562,9 @@ app.websocket({
 export const server = await app.listen({ hostname: "0.0.0.0", port: config.server?.port || 3000 });
 
 Logger.info(`Server running on port ${config.server?.port || 3000}`);
+Logger.info(`Configuration reload endpoint: /v1/reload/:token`, {
+	reloadToken: config.server.reloadToken,
+});
 
 // Graceful shutdown
 process.on("SIGTERM", () => {

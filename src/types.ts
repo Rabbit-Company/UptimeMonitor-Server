@@ -96,6 +96,8 @@ export interface ServerConfig {
 	port: number;
 	/** Type for available IP extraction presets */
 	proxy: IpExtractionPreset;
+	/** Token for reloading configuration via API (auto-generated if not provided) */
+	reloadToken: string;
 }
 
 /**

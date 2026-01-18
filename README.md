@@ -73,6 +73,8 @@ url = "http://uptime_user:uptime_password@localhost:8123/uptime_monitor"
 port = 3000
 # Available options: "direct" (no proxy), "cloudflare", "aws", "gcp", "azure", "vercel", "nginx", "development"
 proxy = "direct"
+# Optional: Set your own reload token. If not provided, one will be auto-generated at startup.
+#reloadToken = ""
 
 # Logging Configuration
 [logger]

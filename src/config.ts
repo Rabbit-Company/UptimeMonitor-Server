@@ -16,6 +16,8 @@ import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/
 import { Logger } from "./logger";
 import { type IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
 
+export const defaultReloadToken = generateSecureToken();
+
 // Validation error class
 class ConfigValidationError extends Error {
 	constructor(public errors: string[]) {
@@ -343,6 +345,15 @@ function validateClickHouseConfig(config: unknown): NodeClickHouseClientConfigOp
 	return result;
 }
 
+/**
+ * Generate a secure random token
+ */
+function generateSecureToken(length: number = 50): string {
+	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	const randomBytes = crypto.getRandomValues(new Uint8Array(length));
+	return Array.from(randomBytes, (byte) => chars[byte % chars.length]).join("");
+}
+
 function validateServerConfig(config: unknown): ServerConfig {
 	const errors: string[] = [];
 	const cfg = (config || {}) as Record<string, unknown>;
@@ -350,6 +361,7 @@ function validateServerConfig(config: unknown): ServerConfig {
 	const result: ServerConfig = {
 		port: 3000,
 		proxy: "direct",
+		reloadToken: defaultReloadToken,
 	};
 
 	if (cfg.port !== undefined) {
@@ -365,6 +377,14 @@ function validateServerConfig(config: unknown): ServerConfig {
 			errors.push(`server.proxy must be one of: ${IP_EXTRACTION_PRESETS.join(", ")}`);
 		} else {
 			result.proxy = cfg.proxy;
+		}
+	}
+
+	if (cfg.reloadToken !== undefined) {
+		if (!isString(cfg.reloadToken) || cfg.reloadToken.trim().length === 0) {
+			errors.push("server.reloadToken must be a non-empty string if provided");
+		} else {
+			result.reloadToken = cfg.reloadToken;
 		}
 	}
 
@@ -937,7 +957,7 @@ function loadConfig(): Config {
 		} catch (error) {
 			if (error instanceof ConfigValidationError) {
 				allErrors.push(...error.errors);
-				server = { port: 3000, proxy: "direct" };
+				server = { port: 3000, proxy: "direct", reloadToken: defaultReloadToken };
 			} else throw error;
 		}
 
@@ -1097,11 +1117,11 @@ function loadConfig(): Config {
 	}
 }
 
-// Export the validated configuration
-export const config: Config = loadConfig();
+export let config: Config = loadConfig();
 
-// Re-export for hot reloading support
 export function reloadConfig(): Config {
 	Logger.info("🔄 Reloading configuration...");
-	return loadConfig();
+	const newConfig = loadConfig();
+	config = newConfig;
+	return newConfig;
 }

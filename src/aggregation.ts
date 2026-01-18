@@ -78,6 +78,9 @@ export class AggregationJob {
 	 * This ensures data integrity (TTL can't affect already-aggregated data) and improves performance.
 	 *
 	 * Hours without any pulses are recorded as 0% uptime.
+	 *
+	 * For the first hour (when the monitor started mid-hour), expected intervals are calculated
+	 * based on when the first pulse actually arrived, not from the start of the hour.
 	 */
 	private async aggregateHourly(): Promise<void> {
 		const monitors = cache.getAllMonitors();
@@ -166,8 +169,82 @@ export class AggregationJob {
 
 				const startHourFormatted = startHour.toISOString().slice(0, 19).replace("T", " ");
 
+				// Check if this is the first aggregation for this monitor (no existing hourly data)
+				const isFirstAggregation = !lastAggregatedData[0]?.last_hour;
+
 				// Only aggregate NEW hours (not already in pulses_hourly)
-				const query = `
+				// For the first hour (only when isFirstAggregation), we need to calculate expected intervals
+				// based on when the monitor actually started, not from the start of the hour
+				const query = isFirstAggregation
+					? `
+					INSERT INTO pulses_hourly (
+						monitor_id, timestamp, uptime,
+						latency_min, latency_max, latency_avg,
+						custom1_min, custom1_max, custom1_avg,
+						custom2_min, custom2_max, custom2_avg,
+						custom3_min, custom3_max, custom3_avg
+					)
+					WITH
+						-- Generate only the new hours that need aggregating
+						all_hours AS (
+							SELECT toStartOfHour(toDateTime('${startHourFormatted}') + INTERVAL number HOUR) AS hour
+							FROM numbers(0, ${batchedHours})
+						),
+						-- Get the first pulse timestamp for calculating partial hour expected intervals
+						first_pulse AS (
+							SELECT timestamp AS first_pulse_time
+							FROM pulses
+							WHERE monitor_id = {monitorId:String}
+							ORDER BY timestamp ASC
+							LIMIT 1
+						),
+						-- Aggregate pulse data for these hours only
+						pulse_stats AS (
+							SELECT
+								toStartOfHour(timestamp) AS hour,
+								COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${monitor.interval} SECOND)) AS distinct_intervals,
+								min(latency) AS latency_min,
+								max(latency) AS latency_max,
+								avg(latency) AS latency_avg,
+								min(custom1) AS custom1_min,
+								max(custom1) AS custom1_max,
+								avg(custom1) AS custom1_avg,
+								min(custom2) AS custom2_min,
+								max(custom2) AS custom2_max,
+								avg(custom2) AS custom2_avg,
+								min(custom3) AS custom3_min,
+								max(custom3) AS custom3_max,
+								avg(custom3) AS custom3_avg
+							FROM pulses
+							WHERE monitor_id = {monitorId:String}
+								AND timestamp >= toDateTime('${startHourFormatted}')
+								AND timestamp < toDateTime('${startHourFormatted}') + INTERVAL ${batchedHours} HOUR
+							GROUP BY toStartOfHour(timestamp)
+						)
+					SELECT
+						{monitorId:String} AS monitor_id,
+						ah.hour AS timestamp,
+						COALESCE(
+							LEAST(100,
+								ps.distinct_intervals * 100.0 /
+								-- For the first hour (where first pulse is in this hour), calculate expected intervals
+								-- based on remaining seconds in the hour from when the first pulse arrived
+								CASE
+									WHEN toStartOfHour((SELECT first_pulse_time FROM first_pulse)) = ah.hour
+									THEN GREATEST(1, floor((3600 - toSecond((SELECT first_pulse_time FROM first_pulse)) - toMinute((SELECT first_pulse_time FROM first_pulse)) * 60) / ${monitor.interval}))
+									ELSE ${expectedIntervalsPerHour}
+								END
+							),
+							0
+						) AS uptime,
+						ps.latency_min, ps.latency_max, ps.latency_avg,
+						ps.custom1_min, ps.custom1_max, ps.custom1_avg,
+						ps.custom2_min, ps.custom2_max, ps.custom2_avg,
+						ps.custom3_min, ps.custom3_max, ps.custom3_avg
+					FROM all_hours ah
+					LEFT JOIN pulse_stats ps ON ah.hour = ps.hour
+				`
+					: `
 					INSERT INTO pulses_hourly (
 						monitor_id, timestamp, uptime,
 						latency_min, latency_max, latency_avg,

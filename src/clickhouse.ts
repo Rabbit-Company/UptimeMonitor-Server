@@ -135,10 +135,21 @@ export async function storePulse(
 	missingPulseDetector.resetMonitor(monitorId);
 
 	const slugs = cache.getStatusPageSlugsByMonitor(monitorId);
+
+	const nonNullCustomMetrics = {
+		...(customMetrics.custom1 !== null && { custom1: customMetrics.custom1 }),
+		...(customMetrics.custom2 !== null && { custom2: customMetrics.custom2 }),
+		...(customMetrics.custom3 !== null && { custom3: customMetrics.custom3 }),
+	};
+
 	slugs.forEach((slug) => {
 		server.publish(
 			`slug-${slug}`,
-			JSON.stringify({ action: "pulse", data: { slug, monitorId, status: "up", latency, timestamp, ...customMetrics }, timestamp: new Date().toISOString() }),
+			JSON.stringify({
+				action: "pulse",
+				data: { slug, monitorId, status: "up", latency, timestamp, ...nonNullCustomMetrics },
+				timestamp: new Date().toISOString(),
+			}),
 		);
 	});
 }

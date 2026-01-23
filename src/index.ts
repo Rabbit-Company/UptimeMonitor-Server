@@ -2,7 +2,7 @@ import { Web } from "@rabbit-company/web";
 import { Logger } from "./logger";
 import { config, reloadConfig } from "./config";
 import { cache } from "./cache";
-import type { Monitor, StatusData, StatusPage, CustomMetrics, Group } from "./types";
+import type { StatusData, StatusPage, CustomMetrics, Group, Monitor } from "./types";
 import {
 	getMonitorHistoryRaw,
 	getMonitorHistoryHourly,
@@ -22,6 +22,7 @@ import { cors } from "@rabbit-company/web-middleware/cors";
 import { cache as webCache } from "@rabbit-company/web-middleware/cache";
 import { selfMonitor } from "./selfmonitor";
 import { ipExtract } from "@rabbit-company/web-middleware/ip-extract";
+import { handlePulseMonitorSubscription, notifyAllPulseMonitorClients } from "./pulsemonitor";
 
 await initClickHouse();
 
@@ -61,10 +62,14 @@ app.get("/v1/reload/:token", async (ctx) => {
 		// Update all monitor statuses
 		await Promise.all(cache.getAllMonitors().map((m) => updateMonitorStatus(m.id)));
 
+		// Notify all PulseMonitor clients about the configuration change
+		notifyAllPulseMonitorClients(server);
+
 		Logger.info("Configuration reloaded successfully via API", {
 			monitors: newConfig.monitors.length,
 			groups: newConfig.groups.length,
 			statusPages: newConfig.statusPages.length,
+			pulseMonitors: newConfig.pulseMonitors.length,
 			notificationChannels: Object.keys(newConfig.notifications?.channels || {}).length,
 		});
 
@@ -75,6 +80,7 @@ app.get("/v1/reload/:token", async (ctx) => {
 				monitors: newConfig.monitors.length,
 				groups: newConfig.groups.length,
 				statusPages: newConfig.statusPages.length,
+				pulseMonitors: newConfig.pulseMonitors.length,
 				notificationChannels: Object.keys(newConfig.notifications?.channels || {}).length,
 			},
 			timestamp: new Date().toISOString(),
@@ -280,7 +286,7 @@ app.get("/v1/monitors/:id/history", webCache({ ttl: 30, generateETags: false }),
 
 /**
  * GET /v1/monitors/:id/history/hourly
- * Returns all hourly aggregates (~90 days due to TTL)
+ * Returns hourly aggregated data (~90 days due to TTL)
  */
 app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
 	const monitorId = ctx.params["id"] || "";
@@ -289,7 +295,6 @@ app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 300, generateETags: f
 
 	const data = await getMonitorHistoryHourly(monitorId);
 
-	// Include custom metric configuration in response
 	const customMetrics: Record<string, any> = {};
 	if (monitor.custom1) customMetrics.custom1 = monitor.custom1;
 	if (monitor.custom2) customMetrics.custom2 = monitor.custom2;
@@ -305,7 +310,7 @@ app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 300, generateETags: f
 
 /**
  * GET /v1/monitors/:id/history/daily
- * Returns all daily aggregates (all time)
+ * Returns daily aggregated data (all time)
  */
 app.get("/v1/monitors/:id/history/daily", webCache({ ttl: 900, generateETags: false }), async (ctx) => {
 	const monitorId = ctx.params["id"] || "";
@@ -434,17 +439,38 @@ app.websocket({
 			return;
 		}
 
-		if (data?.action === "subscribe") {
-			if (typeof data?.slug !== "string") {
+		// Handle PulseMonitor subscription
+		if (data?.action === "subscribe" && typeof data?.token === "string") {
+			const result = handlePulseMonitorSubscription(ws, data.token);
+
+			if (!result.success) {
 				ws.send(
 					JSON.stringify({
 						action: "error",
-						message: "Missing or invalid 'slug' parameter",
+						message: result.error,
 						timestamp: new Date().toISOString(),
 					}),
 				);
 				return;
 			}
+
+			ws.send(
+				JSON.stringify({
+					action: "subscribed",
+					pulseMonitorId: result.pulseMonitor.id,
+					pulseMonitorName: result.pulseMonitor.name,
+					data: {
+						monitors: result.configs,
+					},
+					timestamp: new Date().toISOString(),
+				}),
+			);
+
+			return;
+		}
+
+		// Handle status page subscription (existing functionality)
+		if (data?.action === "subscribe" && typeof data?.slug === "string") {
 			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(data.slug);
 			if (!statusPage) {
 				ws.send(
@@ -565,6 +591,12 @@ Logger.info(`Server running on port ${config.server?.port || 3000}`);
 Logger.info(`Configuration reload endpoint: /v1/reload/:token`, {
 	reloadToken: config.server.reloadToken,
 });
+if (config.pulseMonitors.length > 0) {
+	Logger.info(`PulseMonitor WebSocket endpoint: /ws`, {
+		pulseMonitorCount: config.pulseMonitors.length,
+		pulseMonitorIds: config.pulseMonitors.map((pm) => pm.id),
+	});
+}
 
 // Graceful shutdown
 process.on("SIGTERM", () => {

@@ -22,6 +22,174 @@ export interface CustomMetricConfig {
 }
 
 /**
+ * HTTP pulse monitoring configuration
+ */
+export interface PulseHttpConfig {
+	/** HTTP method (GET, POST, HEAD) */
+	method?: string;
+	/** URL to monitor */
+	url: string;
+	/** Request timeout in seconds */
+	timeout?: number;
+	/** Optional headers */
+	headers?: Array<Record<string, string>>;
+}
+
+/**
+ * WebSocket pulse monitoring configuration
+ */
+export interface PulseWsConfig {
+	/** WebSocket URL */
+	url: string;
+	/** Connection timeout in seconds */
+	timeout?: number;
+}
+
+/**
+ * TCP pulse monitoring configuration
+ */
+export interface PulseTcpConfig {
+	/** Host to connect to */
+	host: string;
+	/** Port number */
+	port: number;
+	/** Connection timeout in seconds */
+	timeout?: number;
+}
+
+/**
+ * UDP pulse monitoring configuration
+ */
+export interface PulseUdpConfig {
+	/** Host to send to */
+	host: string;
+	/** Port number */
+	port: number;
+	/** Timeout in seconds */
+	timeout?: number;
+	/** Payload to send */
+	payload?: string;
+	/** Whether to expect a response */
+	expectResponse?: boolean;
+}
+
+/**
+ * ICMP (ping) pulse monitoring configuration
+ */
+export interface PulseIcmpConfig {
+	/** Host to ping */
+	host: string;
+	/** Timeout in seconds */
+	timeout?: number;
+}
+
+/**
+ * SMTP pulse monitoring configuration
+ */
+export interface PulseSmtpConfig {
+	/** SMTP URL (e.g., smtps://user:pass@hostname:port) */
+	url: string;
+}
+
+/**
+ * IMAP pulse monitoring configuration
+ */
+export interface PulseImapConfig {
+	/** IMAP server hostname */
+	server: string;
+	/** Port number */
+	port: number;
+	/** Username */
+	username: string;
+	/** Password */
+	password: string;
+}
+
+/**
+ * MySQL pulse monitoring configuration
+ */
+export interface PulseMysqlConfig {
+	/** MySQL connection URL */
+	url: string;
+	/** Connection timeout in seconds */
+	timeout?: number;
+}
+
+/**
+ * MSSQL pulse monitoring configuration
+ */
+export interface PulseMssqlConfig {
+	/** MSSQL JDBC connection URL */
+	url: string;
+	/** Connection timeout in seconds */
+	timeout?: number;
+}
+
+/**
+ * PostgreSQL pulse monitoring configuration
+ */
+export interface PulsePostgresqlConfig {
+	/** PostgreSQL connection URL */
+	url: string;
+	/** Connection timeout in seconds */
+	timeout?: number;
+	/** Whether to use TLS */
+	useTls?: boolean;
+}
+
+/**
+ * Redis pulse monitoring configuration
+ */
+export interface PulseRedisConfig {
+	/** Redis connection URL */
+	url: string;
+	/** Connection timeout in seconds */
+	timeout?: number;
+}
+
+/**
+ * Pulse monitoring configuration - defines what PulseMonitor should check
+ * Only one type should be configured per monitor
+ */
+export interface PulseConfig {
+	/** HTTP monitoring */
+	http?: PulseHttpConfig;
+	/** WebSocket monitoring */
+	ws?: PulseWsConfig;
+	/** TCP monitoring */
+	tcp?: PulseTcpConfig;
+	/** UDP monitoring */
+	udp?: PulseUdpConfig;
+	/** ICMP (ping) monitoring */
+	icmp?: PulseIcmpConfig;
+	/** SMTP monitoring */
+	smtp?: PulseSmtpConfig;
+	/** IMAP monitoring */
+	imap?: PulseImapConfig;
+	/** MySQL monitoring */
+	mysql?: PulseMysqlConfig;
+	/** MSSQL monitoring */
+	mssql?: PulseMssqlConfig;
+	/** PostgreSQL monitoring */
+	postgresql?: PulsePostgresqlConfig;
+	/** Redis monitoring */
+	redis?: PulseRedisConfig;
+}
+
+/**
+ * Represents a PulseMonitor instance that can be deployed to different regions.
+ * PulseMonitors connect via WebSocket and receive configuration for monitors they should target.
+ */
+export interface PulseMonitor {
+	/** Unique PulseMonitor ID (e.g., "US-WEST-1", "EU-CENTRAL-1") */
+	id: string;
+	/** Human-readable name for this PulseMonitor instance */
+	name: string;
+	/** Authentication token for WebSocket connection */
+	token: string;
+}
+
+/**
  * Represents a monitor that checks uptime.
  */
 export interface Monitor {
@@ -47,6 +215,10 @@ export interface Monitor {
 	custom2?: CustomMetricConfig;
 	/** Configuration for custom metric 3 */
 	custom3?: CustomMetricConfig;
+	/** Optional pulse monitoring configuration for PulseMonitor */
+	pulse?: PulseConfig;
+	/** Array of PulseMonitor IDs that should target this monitor */
+	pulseMonitors?: string[];
 }
 
 /**
@@ -114,6 +286,8 @@ export interface Config {
 	selfMonitoring: SelfMonitoringConfig;
 	/** Missing pulse detector configuration */
 	missingPulseDetector: MissingPulseDetectorConfig;
+	/** List of PulseMonitor instances */
+	pulseMonitors: PulseMonitor[];
 	/** List of defined monitors */
 	monitors: Monitor[];
 	/** List of defined groups */

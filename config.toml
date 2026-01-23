@@ -38,6 +38,24 @@ backfillOnRecovery = true
 # - "null": Don't set latency for synthetic pulses
 latencyStrategy = "last-known"
 
+# PulseMonitor instances configuration (https://github.com/Rabbit-Company/PulseMonitor)
+# Define all PulseMonitor instances that can be deployed to different regions
+# Each PulseMonitor connects via WebSocket using its token to receive monitor configurations
+[[PulseMonitors]]
+id = "US-WEST-1"
+name = "US West 1 (Oregon)"
+token = "tk_pulse_monitor_us_west_1"
+
+[[PulseMonitors]]
+id = "US-EAST-1"
+name = "US East 1 (Virginia)"
+token = "tk_pulse_monitor_us_east_1"
+
+[[PulseMonitors]]
+id = "EU-CENTRAL-1"
+name = "EU Central 1 (Frankfurt)"
+token = "tk_pulse_monitor_eu_central_1"
+
 # Monitor definitions
 [[monitors]]
 id = "api-prod"
@@ -48,6 +66,15 @@ maxRetries = 0 # Zero tolerance - mark down immediately
 resendNotification = 12 # Resend notification every 12 down checks
 groupId = "production"
 notificationChannels = ["critical"]
+# This monitor will be checked by PulseMonitors in US-WEST-1 and EU-CENTRAL-1
+pulseMonitors = ["US-WEST-1", "EU-CENTRAL-1"]
+
+# Pulse configuration - defines how PulseMonitor should check this service
+# All available configuration parameters are defined in https://github.com/Rabbit-Company/PulseMonitor
+[monitors.pulse.http]
+method = "GET"
+url = "https://rabbit-company.com"
+timeout = 10
 
 [[monitors]]
 id = "api-staging"

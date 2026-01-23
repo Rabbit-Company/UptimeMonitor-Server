@@ -64,11 +64,11 @@ A powerful, enterprise-grade uptime monitoring system with granular notification
 ### Basic Configuration (config.toml)
 
 ```toml
-# Database Configuration
-[clickhouse]
-url = "http://uptime_user:uptime_password@localhost:8123/uptime_monitor"
+# Uptime Monitor Configuration
 
-# Server Configuration
+[clickhouse]
+url = "http://uptime_user:uptime_password@clickhouse:8123/uptime_monitor"
+
 [server]
 port = 3000
 # Available options: "direct" (no proxy), "cloudflare", "aws", "gcp", "azure", "vercel", "nginx", "development"
@@ -76,9 +76,8 @@ proxy = "direct"
 # Optional: Set your own reload token. If not provided, one will be auto-generated at startup.
 #reloadToken = ""
 
-# Logging Configuration
 [logger]
-level = 4  # 0=silent, 7=verbose
+level = 7
 
 [missingPulseDetector]
 # Check interval in seconds for detecting missing pulses (default: 5)
@@ -105,17 +104,111 @@ backfillOnRecovery = true
 # - "null": Don't set latency for synthetic pulses
 latencyStrategy = "last-known"
 
-# Monitor Definition
+# PulseMonitor instances configuration (https://github.com/Rabbit-Company/PulseMonitor)
+# Define all PulseMonitor instances that can be deployed to different regions
+# Each PulseMonitor connects via WebSocket using its token to receive monitor configurations
+[[PulseMonitors]]
+id = "US-WEST-1"
+name = "US West 1 (Oregon)"
+token = "tk_pulse_monitor_us_west_1"
+
+[[PulseMonitors]]
+id = "US-EAST-1"
+name = "US East 1 (Virginia)"
+token = "tk_pulse_monitor_us_east_1"
+
+[[PulseMonitors]]
+id = "EU-CENTRAL-1"
+name = "EU Central 1 (Frankfurt)"
+token = "tk_pulse_monitor_eu_central_1"
+
+# Monitor definitions
 [[monitors]]
 id = "api-prod"
 name = "Production API"
-token = "secure-random-token"
-interval = 60  # Expect pulse every 60 seconds
-maxRetries = 3
-resendNotification = 12
+token = "tk_prod_api_abc123"
+interval = 30 # Expects pulse every 30s
+maxRetries = 0 # Zero tolerance - mark down immediately
+resendNotification = 12 # Resend notification every 12 down checks
+groupId = "production"
 notificationChannels = ["critical"]
+# This monitor will be checked by PulseMonitors in US-WEST-1 and EU-CENTRAL-1
+pulseMonitors = ["US-WEST-1", "EU-CENTRAL-1"]
 
-# Monitor with Custom Metrics
+# Pulse configuration - defines how PulseMonitor should check this service
+# All available configuration parameters are defined in https://github.com/Rabbit-Company/PulseMonitor
+[monitors.pulse.http]
+method = "GET"
+url = "https://api.example.com/health"
+timeout = 10
+
+[[monitors]]
+id = "api-staging"
+name = "Staging API"
+token = "tk_staging_api_def456"
+interval = 60
+maxRetries = 0
+resendNotification = 12
+groupId = "staging"
+notificationChannels = []
+
+[[monitors]]
+id = "web-prod"
+name = "Production Website"
+token = "tk_prod_web_ghi789"
+interval = 30
+maxRetries = 0
+resendNotification = 12
+groupId = "production"
+notificationChannels = []
+
+[[monitors]]
+id = "db-prod"
+name = "Production Database"
+token = "tk_prod_db_jkl012"
+interval = 60
+maxRetries = 0
+resendNotification = 12
+groupId = "production"
+notificationChannels = []
+
+# Custom metrics for database connections and query count
+[monitors.custom1]
+id = "connections"
+name = "Active Connections"
+unit = "connections"
+
+[monitors.custom2]
+id = "queries"
+name = "Queries/sec"
+unit = "qps"
+
+[[monitors]]
+id = "cdn-global"
+name = "Global CDN"
+token = "tk_cdn_mno345"
+interval = 120
+maxRetries = 0
+resendNotification = 12
+groupId = "infrastructure"
+notificationChannels = []
+
+# Custom metric for cache hit rate
+[monitors.custom1]
+id = "cache_hit_rate"
+name = "Cache Hit Rate"
+unit = "%"
+
+[[monitors]]
+id = "payment-gateway"
+name = "Payment Gateway"
+token = "tk_payment_pqr678"
+interval = 30
+maxRetries = 0
+resendNotification = 12
+groupId = "third-party"
+notificationChannels = []
+
 [[monitors]]
 id = "game-server"
 name = "Game Server"
@@ -126,59 +219,104 @@ resendNotification = 12
 groupId = "production"
 notificationChannels = []
 
-# Define custom metric 1
+# Custom metrics for game server
 [monitors.custom1]
-id = "players"        # Used in API requests as query parameter name
-name = "Player Count" # Human-readable display name
-unit = "players"      # Optional unit for display
+id = "players"
+name = "Player Count"
+unit = "players"
 
-# Define custom metric 2
 [monitors.custom2]
 id = "tps"
 name = "Ticks Per Second"
 unit = "TPS"
 
-# Define custom metric 3
 [monitors.custom3]
 id = "memory"
 name = "Memory Usage"
 unit = "MB"
 
-# Group Definition
+# Group definitions
 [[groups]]
 id = "production"
 name = "Production Services"
-strategy = "any-up"  # UP if any child is up
-degradedThreshold = 90
-notificationChannels = ["critical"]
+parentId = "all-services"
+strategy = "percentage"
+degradedThreshold = 50  # percentage - if less than 50% of children are up, group is down
+interval = 60
+notificationChannels = []
 
-# Status Page
+[[groups]]
+id = "staging"
+name = "Staging Services"
+parentId = "all-services"
+strategy = "any-up"
+degradedThreshold = 0  # staging can be fully down without affecting overall status
+interval = 60
+notificationChannels = []
+
+[[groups]]
+id = "infrastructure"
+name = "Infrastructure"
+parentId = "all-services"
+strategy = "all-up"
+degradedThreshold = 80  # infrastructure should mostly be up
+interval = 60
+notificationChannels = []
+
+[[groups]]
+id = "third-party"
+name = "Third Party Services"
+strategy = "percentage"
+degradedThreshold = 70
+interval = 60
+notificationChannels = []
+
+[[groups]]
+id = "all-services"
+name = "All Services"
+strategy = "percentage"
+degradedThreshold = 75  # overall health threshold
+interval = 60
+notificationChannels = []
+
+# Status page definitions
 [[status_pages]]
 id = "public"
-name = "Service Status"
+name = "Public Status Page"
 slug = "status"
-items = ["production"]
+items = ["all-services", "third-party"]  # show main group and third-party services
 
-# Notifications
+[[status_pages]]
+id = "internal"
+name = "Internal Status Page"
+slug = "internal"
+items = ["production", "staging", "infrastructure", "third-party"]  # show all groups
 
-# Critical Discord Notifications
+[[status_pages]]
+id = "production-only"
+name = "Production Status"
+slug = "production"
+items = ["production"]  # show only production group
+
+# Notification Channel definitions
+
+# Critical Notification Channel Configuration
 [notifications.channels.critical]
 id = "critical"
 name = "Critical Production Alerts"
-enabled = true
+description = "High-priority alerts for production outages - sent to #alerts channel"
+enabled = false
 
+# Discord webhook configuration for critical alerts
 [notifications.channels.critical.discord]
-enabled = true
-webhookUrl = "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
+enabled = false
+webhookUrl = "YOUR_DISCORD_WEBHOOK_HERE"
 username = "🚨 Critical Alert Bot"
+avatarUrl = "https://rabbit-company.com/images/logo.png"
 
-[notifications.channels.critical.discord.mentions]
-everyone = true
-roles = ["187949199596191745"]  # @DevOps role ID
-
-# Critical Email Notifications
+# Email configuration for critical alerts
 [notifications.channels.critical.email]
-enabled = true
+enabled = false
 from = '"Rabbit Company" <info@rabbit-company.com>'
 to = [""]
 

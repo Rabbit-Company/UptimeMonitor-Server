@@ -1,9 +1,11 @@
 import { config } from "./config";
-import type { Monitor, Group, StatusPage, StatusData, NotificationChannel } from "./types";
+import type { Monitor, Group, StatusPage, StatusData, NotificationChannel, PulseMonitor } from "./types";
 import { Logger } from "./logger";
 
 class CacheManager {
 	// Configuration caches
+	private pulseMonitors: Map<string, PulseMonitor> = new Map();
+	private pulseMonitorsByToken: Map<string, PulseMonitor> = new Map();
 	private monitors: Map<string, Monitor> = new Map();
 	private monitorsByToken: Map<string, Monitor> = new Map();
 	private groups: Map<string, Group> = new Map();
@@ -14,6 +16,7 @@ class CacheManager {
 	// Relationship caches
 	private monitorsByGroup: Map<string, Monitor[]> = new Map();
 	private groupsByParent: Map<string, Group[]> = new Map();
+	private monitorsByPulseMonitor: Map<string, Monitor[]> = new Map();
 
 	// Reverse index caches
 	private statusPageSlugsByMonitor: Map<string, string[]> = new Map();
@@ -29,6 +32,7 @@ class CacheManager {
 	 * Initialize all caches from configuration
 	 */
 	private initialize(): void {
+		this.initializePulseMonitors();
 		this.initializeMonitors();
 		this.initializeGroups();
 		this.initializeStatusPages();
@@ -37,11 +41,25 @@ class CacheManager {
 		this.buildStatusPageMonitorIndex();
 
 		Logger.info("Cache initialized", {
+			pulseMonitors: this.pulseMonitors.size,
 			monitors: this.monitors.size,
 			groups: this.groups.size,
 			statusPages: this.statusPages.size,
 			notificationChannels: this.notificationChannels.size,
 		});
+	}
+
+	/**
+	 * Initialize PulseMonitor caches
+	 */
+	private initializePulseMonitors(): void {
+		this.pulseMonitors.clear();
+		this.pulseMonitorsByToken.clear();
+
+		for (const pulseMonitor of config.pulseMonitors) {
+			this.pulseMonitors.set(pulseMonitor.id, pulseMonitor);
+			this.pulseMonitorsByToken.set(pulseMonitor.token, pulseMonitor);
+		}
 	}
 
 	/**
@@ -98,6 +116,7 @@ class CacheManager {
 	private buildRelationships(): void {
 		this.monitorsByGroup.clear();
 		this.groupsByParent.clear();
+		this.monitorsByPulseMonitor.clear();
 
 		// Monitors by group
 		for (const monitor of this.monitors.values()) {
@@ -114,6 +133,17 @@ class CacheManager {
 				const existing = this.groupsByParent.get(group.parentId) || [];
 				existing.push(group);
 				this.groupsByParent.set(group.parentId, existing);
+			}
+		}
+
+		// Monitors by PulseMonitor
+		for (const monitor of this.monitors.values()) {
+			if (monitor.pulseMonitors && monitor.pulseMonitors.length > 0) {
+				for (const pulseMonitorId of monitor.pulseMonitors) {
+					const existing = this.monitorsByPulseMonitor.get(pulseMonitorId) || [];
+					existing.push(monitor);
+					this.monitorsByPulseMonitor.set(pulseMonitorId, existing);
+				}
 			}
 		}
 	}
@@ -179,6 +209,25 @@ class CacheManager {
 
 	getMonitorsByGroup(groupId: string): Monitor[] {
 		return this.monitorsByGroup.get(groupId) || [];
+	}
+
+	getPulseMonitor(id: string): PulseMonitor | undefined {
+		return this.pulseMonitors.get(id);
+	}
+
+	getPulseMonitorByToken(token: string): PulseMonitor | undefined {
+		return this.pulseMonitorsByToken.get(token);
+	}
+
+	getAllPulseMonitors(): PulseMonitor[] {
+		return Array.from(this.pulseMonitors.values());
+	}
+
+	/**
+	 * Get all monitors that should be targeted by a specific PulseMonitor
+	 */
+	getMonitorsByPulseMonitor(pulseMonitorId: string): Monitor[] {
+		return this.monitorsByPulseMonitor.get(pulseMonitorId) || [];
 	}
 
 	getGroup(id: string): Group | undefined {
@@ -262,12 +311,14 @@ class CacheManager {
 	 */
 	getStats(): Record<string, number> {
 		return {
+			pulseMonitors: this.pulseMonitors.size,
 			monitors: this.monitors.size,
 			groups: this.groups.size,
 			statusPages: this.statusPages.size,
 			notificationChannels: this.notificationChannels.size,
 			monitorsByGroup: this.monitorsByGroup.size,
 			groupsByParent: this.groupsByParent.size,
+			monitorsByPulseMonitor: this.monitorsByPulseMonitor.size,
 			statusPageMonitorIndex: this.statusPageSlugsByMonitor.size,
 			statusData: this.statusCache.size,
 		};

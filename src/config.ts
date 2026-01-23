@@ -11,6 +11,8 @@ import type {
 	SelfMonitoringConfig,
 	MissingPulseDetectorConfig,
 	CustomMetricConfig,
+	PulseMonitor,
+	PulseConfig,
 } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { Logger } from "./logger";
@@ -120,6 +122,306 @@ function validateCustomMetricConfig(metric: unknown, context: string): CustomMet
 	return result;
 }
 
+function validatePulseConfig(pulse: unknown, context: string): PulseConfig | undefined {
+	if (pulse === undefined) {
+		return undefined;
+	}
+
+	const errors: string[] = [];
+
+	if (!isObject(pulse)) {
+		throw new ConfigValidationError([`${context} must be an object`]);
+	}
+
+	const result: PulseConfig = {};
+	let configCount = 0;
+
+	// Validate HTTP config
+	if (pulse.http !== undefined) {
+		configCount++;
+		if (!isObject(pulse.http)) {
+			errors.push(`${context}.http must be an object`);
+		} else {
+			const http = pulse.http;
+			if (!isString(http.url) || http.url.trim().length === 0) {
+				errors.push(`${context}.http.url must be a non-empty string`);
+			}
+			if (http.method !== undefined && (!isString(http.method) || !["GET", "POST", "HEAD"].includes(http.method.toUpperCase()))) {
+				errors.push(`${context}.http.method must be GET, POST, or HEAD`);
+			}
+			if (http.timeout !== undefined && (!isNumber(http.timeout) || http.timeout <= 0)) {
+				errors.push(`${context}.http.timeout must be a positive number`);
+			}
+			if (http.headers !== undefined && !isArray(http.headers)) {
+				errors.push(`${context}.http.headers must be an array`);
+			}
+			if (errors.length === 0) {
+				result.http = {
+					url: http.url as string,
+					method: http.method as string | undefined,
+					timeout: http.timeout as number | undefined,
+					headers: http.headers as Array<Record<string, string>> | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate WebSocket config
+	if (pulse.ws !== undefined) {
+		configCount++;
+		if (!isObject(pulse.ws)) {
+			errors.push(`${context}.ws must be an object`);
+		} else {
+			const ws = pulse.ws;
+			if (!isString(ws.url) || ws.url.trim().length === 0) {
+				errors.push(`${context}.ws.url must be a non-empty string`);
+			}
+			if (ws.timeout !== undefined && (!isNumber(ws.timeout) || ws.timeout <= 0)) {
+				errors.push(`${context}.ws.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result.ws = {
+					url: ws.url as string,
+					timeout: ws.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate TCP config
+	if (pulse.tcp !== undefined) {
+		configCount++;
+		if (!isObject(pulse.tcp)) {
+			errors.push(`${context}.tcp must be an object`);
+		} else {
+			const tcp = pulse.tcp;
+			if (!isString(tcp.host) || tcp.host.trim().length === 0) {
+				errors.push(`${context}.tcp.host must be a non-empty string`);
+			}
+			if (!isNumber(tcp.port) || tcp.port <= 0 || tcp.port > 65535) {
+				errors.push(`${context}.tcp.port must be a valid port number (1-65535)`);
+			}
+			if (tcp.timeout !== undefined && (!isNumber(tcp.timeout) || tcp.timeout <= 0)) {
+				errors.push(`${context}.tcp.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result.tcp = {
+					host: tcp.host as string,
+					port: tcp.port as number,
+					timeout: tcp.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate UDP config
+	if (pulse.udp !== undefined) {
+		configCount++;
+		if (!isObject(pulse.udp)) {
+			errors.push(`${context}.udp must be an object`);
+		} else {
+			const udp = pulse.udp;
+			if (!isString(udp.host) || udp.host.trim().length === 0) {
+				errors.push(`${context}.udp.host must be a non-empty string`);
+			}
+			if (!isNumber(udp.port) || udp.port <= 0 || udp.port > 65535) {
+				errors.push(`${context}.udp.port must be a valid port number (1-65535)`);
+			}
+			if (udp.timeout !== undefined && (!isNumber(udp.timeout) || udp.timeout <= 0)) {
+				errors.push(`${context}.udp.timeout must be a positive number`);
+			}
+			if (udp.payload !== undefined && !isString(udp.payload)) {
+				errors.push(`${context}.udp.payload must be a string`);
+			}
+			if (udp.expectResponse !== undefined && !isBoolean(udp.expectResponse)) {
+				errors.push(`${context}.udp.expectResponse must be a boolean`);
+			}
+			if (errors.length === 0) {
+				result.udp = {
+					host: udp.host as string,
+					port: udp.port as number,
+					timeout: udp.timeout as number | undefined,
+					payload: udp.payload as string | undefined,
+					expectResponse: udp.expectResponse as boolean | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate ICMP config
+	if (pulse.icmp !== undefined) {
+		configCount++;
+		if (!isObject(pulse.icmp)) {
+			errors.push(`${context}.icmp must be an object`);
+		} else {
+			const icmp = pulse.icmp;
+			if (!isString(icmp.host) || icmp.host.trim().length === 0) {
+				errors.push(`${context}.icmp.host must be a non-empty string`);
+			}
+			if (icmp.timeout !== undefined && (!isNumber(icmp.timeout) || icmp.timeout <= 0)) {
+				errors.push(`${context}.icmp.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result.icmp = {
+					host: icmp.host as string,
+					timeout: icmp.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate SMTP config
+	if (pulse.smtp !== undefined) {
+		configCount++;
+		if (!isObject(pulse.smtp)) {
+			errors.push(`${context}.smtp must be an object`);
+		} else {
+			const smtp = pulse.smtp;
+			if (!isString(smtp.url) || smtp.url.trim().length === 0) {
+				errors.push(`${context}.smtp.url must be a non-empty string`);
+			}
+			if (errors.length === 0) {
+				result.smtp = {
+					url: smtp.url as string,
+				};
+			}
+		}
+	}
+
+	// Validate IMAP config
+	if (pulse.imap !== undefined) {
+		configCount++;
+		if (!isObject(pulse.imap)) {
+			errors.push(`${context}.imap must be an object`);
+		} else {
+			const imap = pulse.imap;
+			if (!isString(imap.server) || imap.server.trim().length === 0) {
+				errors.push(`${context}.imap.server must be a non-empty string`);
+			}
+			if (!isNumber(imap.port) || imap.port <= 0 || imap.port > 65535) {
+				errors.push(`${context}.imap.port must be a valid port number (1-65535)`);
+			}
+			if (!isString(imap.username) || imap.username.trim().length === 0) {
+				errors.push(`${context}.imap.username must be a non-empty string`);
+			}
+			if (!isString(imap.password) || imap.password.trim().length === 0) {
+				errors.push(`${context}.imap.password must be a non-empty string`);
+			}
+			if (errors.length === 0) {
+				result.imap = {
+					server: imap.server as string,
+					port: imap.port as number,
+					username: imap.username as string,
+					password: imap.password as string,
+				};
+			}
+		}
+	}
+
+	// Validate MySQL config
+	if (pulse.mysql !== undefined) {
+		configCount++;
+		if (!isObject(pulse.mysql)) {
+			errors.push(`${context}.mysql must be an object`);
+		} else {
+			const mysql = pulse.mysql;
+			if (!isString(mysql.url) || mysql.url.trim().length === 0) {
+				errors.push(`${context}.mysql.url must be a non-empty string`);
+			}
+			if (mysql.timeout !== undefined && (!isNumber(mysql.timeout) || mysql.timeout <= 0)) {
+				errors.push(`${context}.mysql.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result.mysql = {
+					url: mysql.url as string,
+					timeout: mysql.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate MSSQL config
+	if (pulse.mssql !== undefined) {
+		configCount++;
+		if (!isObject(pulse.mssql)) {
+			errors.push(`${context}.mssql must be an object`);
+		} else {
+			const mssql = pulse.mssql;
+			if (!isString(mssql.url) || mssql.url.trim().length === 0) {
+				errors.push(`${context}.mssql.url must be a non-empty string`);
+			}
+			if (mssql.timeout !== undefined && (!isNumber(mssql.timeout) || mssql.timeout <= 0)) {
+				errors.push(`${context}.mssql.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result.mssql = {
+					url: mssql.url as string,
+					timeout: mssql.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate PostgreSQL config
+	if (pulse.postgresql !== undefined) {
+		configCount++;
+		if (!isObject(pulse.postgresql)) {
+			errors.push(`${context}.postgresql must be an object`);
+		} else {
+			const postgresql = pulse.postgresql;
+			if (!isString(postgresql.url) || postgresql.url.trim().length === 0) {
+				errors.push(`${context}.postgresql.url must be a non-empty string`);
+			}
+			if (postgresql.timeout !== undefined && (!isNumber(postgresql.timeout) || postgresql.timeout <= 0)) {
+				errors.push(`${context}.postgresql.timeout must be a positive number`);
+			}
+			if (postgresql.useTls !== undefined && !isBoolean(postgresql.useTls)) {
+				errors.push(`${context}.postgresql.useTls must be a boolean`);
+			}
+			if (errors.length === 0) {
+				result.postgresql = {
+					url: postgresql.url as string,
+					timeout: postgresql.timeout as number | undefined,
+					useTls: postgresql.useTls as boolean | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate Redis config
+	if (pulse.redis !== undefined) {
+		configCount++;
+		if (!isObject(pulse.redis)) {
+			errors.push(`${context}.redis must be an object`);
+		} else {
+			const redis = pulse.redis;
+			if (!isString(redis.url) || redis.url.trim().length === 0) {
+				errors.push(`${context}.redis.url must be a non-empty string`);
+			}
+			if (redis.timeout !== undefined && (!isNumber(redis.timeout) || redis.timeout <= 0)) {
+				errors.push(`${context}.redis.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result.redis = {
+					url: redis.url as string,
+					timeout: redis.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
+	// Check that at least one config type is defined
+	if (configCount === 0) {
+		errors.push(`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, or redis)`);
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	return result;
+}
+
 function validateMonitor(monitor: unknown, index: number): Monitor {
 	const errors: string[] = [];
 
@@ -160,6 +462,38 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 	// Validate optional groupId
 	if (monitor.groupId !== undefined && (!isString(monitor.groupId) || monitor.groupId.trim().length === 0)) {
 		errors.push(`monitors[${index}].groupId must be a non-empty string if provided`);
+	}
+
+	// Validate optional pulseMonitors array
+	let pulseMonitors: string[] | undefined;
+	if (monitor.pulseMonitors !== undefined) {
+		if (!isArray(monitor.pulseMonitors)) {
+			errors.push(`monitors[${index}].pulseMonitors must be an array if provided`);
+		} else {
+			pulseMonitors = [];
+			for (let i = 0; i < monitor.pulseMonitors.length; i++) {
+				if (!isString(monitor.pulseMonitors[i]) || (monitor.pulseMonitors[i] as string).trim().length === 0) {
+					errors.push(`monitors[${index}].pulseMonitors[${i}] must be a non-empty string`);
+				} else {
+					pulseMonitors.push(monitor.pulseMonitors[i] as string);
+				}
+			}
+		}
+	}
+
+	// Validate pulse configuration
+	let pulse: PulseConfig | undefined;
+	try {
+		pulse = validatePulseConfig(monitor.pulse, `monitors[${index}].pulse`);
+	} catch (error) {
+		if (error instanceof ConfigValidationError) {
+			errors.push(...error.errors);
+		}
+	}
+
+	// If pulseMonitors is set, pulse configuration must also be set
+	if (pulseMonitors && pulseMonitors.length > 0 && !pulse) {
+		errors.push(`monitors[${index}] has pulseMonitors configured but no pulse configuration`);
 	}
 
 	if (errors.length > 0) {
@@ -206,8 +540,10 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		resendNotification: monitor.resendNotification as number,
 		groupId: monitor.groupId as string | undefined,
 		notificationChannels,
+		pulseMonitors,
 	};
 
+	if (pulse) result.pulse = pulse;
 	if (custom1) result.custom1 = custom1;
 	if (custom2) result.custom2 = custom2;
 	if (custom3) result.custom3 = custom3;
@@ -455,6 +791,39 @@ function validateMissingPulseDetectorConfig(config: unknown): MissingPulseDetect
 	}
 
 	return result;
+}
+
+function validatePulseMonitor(pulseMonitor: unknown, index: number): PulseMonitor {
+	const errors: string[] = [];
+
+	if (!isObject(pulseMonitor)) {
+		throw new Error(`PulseMonitors[${index}] must be an object`);
+	}
+
+	// Validate ID
+	if (!isString(pulseMonitor.id) || pulseMonitor.id.trim().length === 0) {
+		errors.push(`PulseMonitors[${index}].id must be a non-empty string`);
+	}
+
+	// Validate name
+	if (!isString(pulseMonitor.name) || pulseMonitor.name.trim().length === 0) {
+		errors.push(`PulseMonitors[${index}].name must be a non-empty string`);
+	}
+
+	// Validate token
+	if (!isString(pulseMonitor.token) || pulseMonitor.token.trim().length === 0) {
+		errors.push(`PulseMonitors[${index}].token must be a non-empty string`);
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	return {
+		id: pulseMonitor.id as string,
+		name: pulseMonitor.name as string,
+		token: pulseMonitor.token as string,
+	};
 }
 
 function validateEmailConfig(config: unknown, channelId: string): any {
@@ -748,6 +1117,24 @@ function validateNotificationChannels(notificationChannels: unknown, context: st
 function validateUniqueIds(config: Config): void {
 	const errors: string[] = [];
 
+	// Check for duplicate PulseMonitor IDs
+	const pulseMonitorIds = new Set<string>();
+	for (const pulseMonitor of config.pulseMonitors) {
+		if (pulseMonitorIds.has(pulseMonitor.id)) {
+			errors.push(`Duplicate PulseMonitor ID: ${pulseMonitor.id}`);
+		}
+		pulseMonitorIds.add(pulseMonitor.id);
+	}
+
+	// Check for duplicate PulseMonitor tokens
+	const pulseMonitorTokens = new Set<string>();
+	for (const pulseMonitor of config.pulseMonitors) {
+		if (pulseMonitorTokens.has(pulseMonitor.token)) {
+			errors.push(`Duplicate PulseMonitor token: ${pulseMonitor.token}`);
+		}
+		pulseMonitorTokens.add(pulseMonitor.token);
+	}
+
 	// Check for duplicate monitor IDs
 	const monitorIds = new Set<string>();
 	for (const monitor of config.monitors) {
@@ -815,12 +1202,13 @@ function validateReferences(config: Config): void {
 	const errors: string[] = [];
 
 	// Create sets of valid IDs
+	const validPulseMonitorIds = new Set(config.pulseMonitors.map((pm) => pm.id));
 	const validMonitorIds = new Set(config.monitors.map((m) => m.id));
 	const validGroupIds = new Set(config.groups.map((g) => g.id));
 	const allValidIds = new Set([...validMonitorIds, ...validGroupIds]);
 	const validNotificationChannelIds = new Set(Object.keys(config.notifications?.channels || {}));
 
-	// Validate monitor group references
+	// Validate monitor group references and pulseMonitors references
 	for (const monitor of config.monitors) {
 		if (monitor.groupId && !validGroupIds.has(monitor.groupId)) {
 			errors.push(`Monitor '${monitor.id}' references non-existent group: ${monitor.groupId}`);
@@ -831,6 +1219,20 @@ function validateReferences(config: Config): void {
 				if (!validNotificationChannelIds.has(channelId)) {
 					errors.push(`Monitor '${monitor.id}' references non-existent notification channel: ${channelId}`);
 				}
+			}
+		}
+
+		// Validate pulseMonitors references
+		if (monitor.pulseMonitors) {
+			for (const pulseMonitorId of monitor.pulseMonitors) {
+				if (!validPulseMonitorIds.has(pulseMonitorId)) {
+					errors.push(`Monitor '${monitor.id}' references non-existent PulseMonitor: ${pulseMonitorId}`);
+				}
+			}
+
+			// Monitors with pulseMonitors must have pulse configuration
+			if (monitor.pulseMonitors.length > 0 && !monitor.pulse) {
+				errors.push(`Monitor '${monitor.id}' has pulseMonitors configured but no pulse configuration`);
 			}
 		}
 	}
@@ -1007,6 +1409,26 @@ function loadConfig(): Config {
 			} else throw error;
 		}
 
+		// Validate PulseMonitors
+		const pulseMonitors: PulseMonitor[] = [];
+		if (parsed.PulseMonitors !== undefined) {
+			if (!isArray(parsed.PulseMonitors)) {
+				allErrors.push("PulseMonitors must be an array");
+			} else {
+				for (let i = 0; i < parsed.PulseMonitors.length; i++) {
+					try {
+						pulseMonitors.push(validatePulseMonitor(parsed.PulseMonitors[i], i));
+					} catch (error) {
+						if (error instanceof ConfigValidationError) {
+							allErrors.push(...error.errors);
+						} else if (error instanceof Error) {
+							allErrors.push(error.message);
+						}
+					}
+				}
+			}
+		}
+
 		// Validate monitors
 		const monitors: Monitor[] = [];
 		if (!isArray(parsed.monitors)) {
@@ -1078,6 +1500,7 @@ function loadConfig(): Config {
 			selfMonitoring,
 			missingPulseDetector,
 			notifications,
+			pulseMonitors,
 			monitors,
 			groups,
 			statusPages,
@@ -1095,6 +1518,7 @@ function loadConfig(): Config {
 			monitors: config.monitors.length,
 			groups: config.groups.length,
 			statusPages: config.statusPages.length,
+			pulseMonitors: config.pulseMonitors.length,
 			notificationChannels: Object.keys(config.notifications?.channels || {}).length,
 			missingPulseDetectorInterval: config.missingPulseDetector.interval + "s",
 		});

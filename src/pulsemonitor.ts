@@ -1,4 +1,4 @@
-import type { Server } from "@rabbit-company/web";
+import type { Server, WebSocketData } from "@rabbit-company/web";
 import { cache } from "./cache";
 import { Logger } from "./logger";
 import type { Monitor, PulseMonitor } from "./types";
@@ -194,7 +194,7 @@ export function notifyAllPulseMonitorClients(server: Server): void {
  * Returns the subscription response or null if invalid
  */
 export function handlePulseMonitorSubscription(
-	ws: Bun.ServerWebSocket<undefined>,
+	ws: Bun.ServerWebSocket<WebSocketData<Record<string, unknown>>>,
 	token: string,
 ): { success: true; pulseMonitor: PulseMonitor; channel: string; configs: any[] } | { success: false; error: string } {
 	const pulseMonitor = cache.getPulseMonitorByToken(token);
@@ -210,7 +210,7 @@ export function handlePulseMonitorSubscription(
 	ws.subscribe(channel);
 
 	Logger.audit("PulseMonitor client subscribed", {
-		ip: ws.remoteAddress,
+		ip: ws.data.clientIp || ws.remoteAddress,
 		pulseMonitorId: pulseMonitor.id,
 		pulseMonitorName: pulseMonitor.name,
 		channel,

@@ -405,7 +405,7 @@ app.websocket({
 	idleTimeout: 120,
 	maxPayloadLength: 1024 * 1024, // 1 MB
 	open(ws) {
-		Logger.audit("WebSocket connection opened", { ip: ws.remoteAddress });
+		Logger.audit("WebSocket connection opened", { ip: ws.data.clientIp || ws.remoteAddress });
 		ws.send(
 			JSON.stringify({
 				action: "connected",
@@ -679,7 +679,7 @@ app.websocket({
 			const channel = `slug-${data.slug}`;
 			ws.subscribe(channel);
 
-			Logger.audit(`WebSocket subscribed to channel: ${channel}`, { ip: ws.remoteAddress });
+			Logger.audit(`WebSocket subscribed to channel: ${channel}`, { ip: ws.data.clientIp || ws.remoteAddress });
 
 			ws.send(
 				JSON.stringify({
@@ -721,7 +721,7 @@ app.websocket({
 
 			ws.unsubscribe(channel);
 
-			Logger.audit(`WebSocket unsubscribed from ${channel}`, { ip: ws.remoteAddress });
+			Logger.audit(`WebSocket unsubscribed from ${channel}`, { ip: ws.data.clientIp || ws.remoteAddress });
 
 			ws.send(
 				JSON.stringify({
@@ -763,7 +763,7 @@ app.websocket({
 		);
 	},
 	close(ws, code, reason) {
-		Logger.audit(`WebSocket connection closed`, { ip: ws.remoteAddress, code, reason: reason || "none" });
+		Logger.audit(`WebSocket connection closed`, { ip: ws.data.clientIp || ws.remoteAddress, code, reason: reason || "none" });
 
 		ws.subscriptions.forEach((subscription) => {
 			ws.unsubscribe(subscription);
@@ -771,7 +771,7 @@ app.websocket({
 	},
 	error(ws, error) {
 		Logger.error("WebSocket runtime error", {
-			ip: ws.remoteAddress,
+			ip: ws.data.clientIp || ws.remoteAddress,
 			error,
 		});
 	},

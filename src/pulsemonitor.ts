@@ -16,6 +16,7 @@ export function buildPulseMonitorConfig(monitor: Monitor): any {
 		name: monitor.name,
 		token: monitor.token,
 		interval: pulseInterval,
+		debug: true,
 	};
 
 	// Add pulse configuration if the monitor has it configured

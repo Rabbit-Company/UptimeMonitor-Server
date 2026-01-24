@@ -414,7 +414,7 @@ app.websocket({
 			}),
 		);
 	},
-	message(ws, message) {
+	async message(ws, message) {
 		if (typeof message !== "string") {
 			ws.send(
 				JSON.stringify({
@@ -433,6 +433,198 @@ app.websocket({
 				JSON.stringify({
 					action: "error",
 					message: "Invalid JSON payload",
+					timestamp: new Date().toISOString(),
+				}),
+			);
+			return;
+		}
+
+		// Handle pulse push via WebSocket
+		if (data?.action === "push") {
+			if (typeof data?.token !== "string") {
+				ws.send(
+					JSON.stringify({
+						action: "error",
+						message: "Missing or invalid 'token' parameter",
+						timestamp: new Date().toISOString(),
+					}),
+				);
+				return;
+			}
+
+			const monitor: Monitor | undefined = cache.getMonitorByToken(data.token);
+			if (!monitor) {
+				ws.send(
+					JSON.stringify({
+						action: "error",
+						message: "Invalid token",
+						timestamp: new Date().toISOString(),
+					}),
+				);
+				return;
+			}
+
+			// Parse latency
+			let latency: number | null = null;
+			if (data.latency !== undefined && data.latency !== null) {
+				latency = parseFloat(String(data.latency));
+				if (isNaN(latency) || latency <= 0) {
+					ws.send(
+						JSON.stringify({
+							action: "error",
+							message: "Invalid latency",
+							timestamp: new Date().toISOString(),
+						}),
+					);
+					return;
+				}
+				latency = Math.min(latency, 600000);
+			}
+
+			// Parse custom metrics
+			const customMetrics: CustomMetrics = {
+				custom1: null,
+				custom2: null,
+				custom3: null,
+			};
+
+			// Custom1
+			if (monitor.custom1) {
+				const custom1Value = data[monitor.custom1.id] ?? data.custom1;
+				if (custom1Value !== undefined && custom1Value !== null) {
+					const parsed = parseFloat(String(custom1Value));
+					if (!isNaN(parsed)) {
+						customMetrics.custom1 = parsed;
+					}
+				}
+			} else if (data.custom1 !== undefined && data.custom1 !== null) {
+				const parsed = parseFloat(String(data.custom1));
+				if (!isNaN(parsed)) {
+					customMetrics.custom1 = parsed;
+				}
+			}
+
+			// Custom2
+			if (monitor.custom2) {
+				const custom2Value = data[monitor.custom2.id] ?? data.custom2;
+				if (custom2Value !== undefined && custom2Value !== null) {
+					const parsed = parseFloat(String(custom2Value));
+					if (!isNaN(parsed)) {
+						customMetrics.custom2 = parsed;
+					}
+				}
+			} else if (data.custom2 !== undefined && data.custom2 !== null) {
+				const parsed = parseFloat(String(data.custom2));
+				if (!isNaN(parsed)) {
+					customMetrics.custom2 = parsed;
+				}
+			}
+
+			// Custom3
+			if (monitor.custom3) {
+				const custom3Value = data[monitor.custom3.id] ?? data.custom3;
+				if (custom3Value !== undefined && custom3Value !== null) {
+					const parsed = parseFloat(String(custom3Value));
+					if (!isNaN(parsed)) {
+						customMetrics.custom3 = parsed;
+					}
+				}
+			} else if (data.custom3 !== undefined && data.custom3 !== null) {
+				const parsed = parseFloat(String(data.custom3));
+				if (!isNaN(parsed)) {
+					customMetrics.custom3 = parsed;
+				}
+			}
+
+			// Parse timing parameters
+			let startTime: Date | null = null;
+			if (data.startTime !== undefined && data.startTime !== null) {
+				const parsed = isNaN(Number(data.startTime)) ? new Date(String(data.startTime)) : new Date(Number(data.startTime));
+				if (isNaN(parsed.getTime())) {
+					ws.send(
+						JSON.stringify({
+							action: "error",
+							message: "Invalid startTime format",
+							timestamp: new Date().toISOString(),
+						}),
+					);
+					return;
+				}
+				startTime = parsed;
+			}
+
+			let endTime: Date | null = null;
+			if (data.endTime !== undefined && data.endTime !== null) {
+				const parsed = isNaN(Number(data.endTime)) ? new Date(String(data.endTime)) : new Date(Number(data.endTime));
+				if (isNaN(parsed.getTime())) {
+					ws.send(
+						JSON.stringify({
+							action: "error",
+							message: "Invalid endTime format",
+							timestamp: new Date().toISOString(),
+						}),
+					);
+					return;
+				}
+				endTime = parsed;
+			}
+
+			// Apply timing logic (same as HTTP endpoint)
+			if (startTime && endTime) {
+				const calculatedLatency = endTime.getTime() - startTime.getTime();
+				if (calculatedLatency < 0) {
+					ws.send(
+						JSON.stringify({
+							action: "error",
+							message: "endTime must be after startTime",
+							timestamp: new Date().toISOString(),
+						}),
+					);
+					return;
+				}
+				if (!latency) latency = Math.min(calculatedLatency, 600000);
+			} else if (startTime && latency !== null) {
+				endTime = new Date(startTime.getTime() + latency);
+			} else if (endTime && latency !== null) {
+				startTime = new Date(endTime.getTime() - latency);
+			} else if (latency !== null) {
+				endTime = new Date();
+				startTime = new Date(endTime.getTime() - latency);
+			} else {
+				endTime = new Date();
+				startTime = endTime;
+			}
+
+			// Validate timestamp bounds
+			const now = new Date();
+			if (endTime.getTime() > now.getTime() + 60000) {
+				ws.send(
+					JSON.stringify({
+						action: "error",
+						message: "Timestamp too far in the future",
+						timestamp: new Date().toISOString(),
+					}),
+				);
+				return;
+			}
+			if (startTime.getTime() < now.getTime() - 600000) {
+				ws.send(
+					JSON.stringify({
+						action: "error",
+						message: "Timestamp too far in the past",
+						timestamp: new Date().toISOString(),
+					}),
+				);
+				return;
+			}
+
+			// Store the pulse
+			await storePulse(monitor.id, latency, startTime, false, customMetrics);
+
+			ws.send(
+				JSON.stringify({
+					action: "pushed",
+					monitorId: monitor.id,
 					timestamp: new Date().toISOString(),
 				}),
 			);

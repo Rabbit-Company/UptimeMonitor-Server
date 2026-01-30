@@ -243,6 +243,7 @@ parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 50  # percentage - if less than 50% of children are up, group is down
 interval = 60
+resendNotification = 12
 notificationChannels = []
 
 [[groups]]
@@ -252,6 +253,7 @@ parentId = "all-services"
 strategy = "any-up"
 degradedThreshold = 0  # staging can be fully down without affecting overall status
 interval = 60
+resendNotification = 12
 notificationChannels = []
 
 [[groups]]
@@ -261,6 +263,7 @@ parentId = "all-services"
 strategy = "all-up"
 degradedThreshold = 80  # infrastructure should mostly be up
 interval = 60
+resendNotification = 12
 notificationChannels = []
 
 [[groups]]
@@ -269,6 +272,7 @@ name = "Third Party Services"
 strategy = "percentage"
 degradedThreshold = 70
 interval = 60
+resendNotification = 12
 notificationChannels = []
 
 [[groups]]
@@ -277,6 +281,7 @@ name = "All Services"
 strategy = "percentage"
 degradedThreshold = 75  # overall health threshold
 interval = 60
+resendNotification = 12
 notificationChannels = []
 
 # Status page definitions

@@ -331,6 +331,17 @@ port = 465
 secure = true
 user = "info@rabbit-company.com"
 pass = ""
+
+# Ntfy configuration for critical alerts
+[notifications.channels.critical.ntfy]
+enabled = false
+server = "https://ntfy.sh"
+topic = "your-topic-here"
+# Optional: Token authentication
+#token = "tk_your_token_here"
+# Optional: Username/password authentication
+#username = "your_username"
+#password = "your_password"
 ```
 
 ## 📡 Sending Pulses

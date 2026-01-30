@@ -1,5 +1,6 @@
 import { EmailProvider } from "./providers/email";
 import { DiscordProvider } from "./providers/discord";
+import { NtfyProvider } from "./providers/ntfy";
 import { Logger } from "../logger";
 import type { NotificationChannel, NotificationEvent, NotificationProvider } from "../types";
 
@@ -26,6 +27,10 @@ export class NotificationChannelManager {
 
 			if (channel.discord?.enabled) {
 				channelProviders.push(new DiscordProvider(channel.discord));
+			}
+
+			if (channel.ntfy?.enabled) {
+				channelProviders.push(new NtfyProvider(channel.ntfy));
 			}
 
 			if (channelProviders.length > 0) {
@@ -75,7 +80,7 @@ export class NotificationChannelManager {
 							error: error instanceof Error ? error.message : "Unknown error",
 							event,
 						});
-					})
+					}),
 				);
 			}
 		}

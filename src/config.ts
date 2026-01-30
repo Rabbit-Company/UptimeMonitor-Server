@@ -995,6 +995,65 @@ function validateDiscordConfig(config: unknown, channelId: string): any {
 	return result;
 }
 
+function validateNtfyConfig(config: unknown, channelId: string): any {
+	const errors: string[] = [];
+	const cfg = config as Record<string, unknown>;
+
+	if (!isBoolean(cfg.enabled)) {
+		errors.push(`notifications.channels.${channelId}.ntfy.enabled must be a boolean`);
+	}
+
+	if (!cfg.enabled) {
+		return { enabled: false };
+	}
+
+	// Validate server
+	if (!isString(cfg.server) || cfg.server.trim().length === 0) {
+		errors.push(`notifications.channels.${channelId}.ntfy.server must be a non-empty string`);
+	}
+
+	// Validate topic
+	if (!isString(cfg.topic) || cfg.topic.trim().length === 0) {
+		errors.push(`notifications.channels.${channelId}.ntfy.topic must be a non-empty string`);
+	}
+
+	// Validate optional username
+	if (cfg.username !== undefined && (!isString(cfg.username) || cfg.username.trim().length === 0)) {
+		errors.push(`notifications.channels.${channelId}.ntfy.username must be a non-empty string if provided`);
+	}
+
+	// Validate optional password
+	if (cfg.password !== undefined && (!isString(cfg.password) || cfg.password.trim().length === 0)) {
+		errors.push(`notifications.channels.${channelId}.ntfy.password must be a non-empty string if provided`);
+	}
+
+	// Validate optional token
+	if (cfg.token !== undefined && (!isString(cfg.token) || cfg.token.trim().length === 0)) {
+		errors.push(`notifications.channels.${channelId}.ntfy.token must be a non-empty string if provided`);
+	}
+
+	// Warn if username is provided without password or vice versa
+	if ((cfg.username && !cfg.password) || (!cfg.username && cfg.password)) {
+		errors.push(`notifications.channels.${channelId}.ntfy: both username and password must be provided together`);
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	const result: any = {
+		enabled: cfg.enabled,
+		server: cfg.server,
+		topic: cfg.topic,
+	};
+
+	if (cfg.username) result.username = cfg.username;
+	if (cfg.password) result.password = cfg.password;
+	if (cfg.token) result.token = cfg.token;
+
+	return result;
+}
+
 function validateNotificationChannel(channel: unknown, channelId: string): NotificationChannel {
 	const errors: string[] = [];
 
@@ -1047,6 +1106,16 @@ function validateNotificationChannel(channel: unknown, channelId: string): Notif
 	if (channel.discord) {
 		try {
 			result.discord = validateDiscordConfig(channel.discord, channelId);
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				throw error;
+			}
+		}
+	}
+
+	if (channel.ntfy) {
+		try {
+			result.ntfy = validateNtfyConfig(channel.ntfy, channelId);
 		} catch (error) {
 			if (error instanceof ConfigValidationError) {
 				throw error;
@@ -1327,8 +1396,9 @@ function validateNotificationChannelProviders(config: Config): void {
 		// Check that enabled channels have at least one provider configured
 		const hasEmail = channel.email?.enabled;
 		const hasDiscord = channel.discord?.enabled;
+		const hasNtfy = channel.ntfy?.enabled;
 
-		if (!hasEmail && !hasDiscord) {
+		if (!hasEmail && !hasDiscord && !hasNtfy) {
 			errors.push(`Notification channel '${channelId}' is enabled but has no providers configured`);
 		}
 	}

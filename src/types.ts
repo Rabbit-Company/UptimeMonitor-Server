@@ -591,6 +591,15 @@ export interface WebhookConfig {
 	template?: string;
 }
 
+export interface NtfyConfig {
+	enabled: boolean;
+	server: string;
+	topic: string;
+	username?: string;
+	password?: string;
+	token?: string;
+}
+
 export interface DowntimeRecord {
 	startTime: Date;
 	endTime: Date;
@@ -615,6 +624,8 @@ export interface NotificationChannel {
 	email?: EmailConfig;
 	/** Discord configuration for this channel */
 	discord?: DiscordConfig;
+	/** Ntfy configuration for this channel */
+	ntfy?: NtfyConfig;
 }
 
 export interface NotificationEvent {

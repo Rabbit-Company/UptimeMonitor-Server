@@ -24,6 +24,7 @@ import { selfMonitor } from "./selfmonitor";
 import { ipExtract } from "@rabbit-company/web-middleware/ip-extract";
 import { handlePulseMonitorSubscription, notifyAllPulseMonitorClients } from "./pulsemonitor";
 import { Algorithm, rateLimit } from "@rabbit-company/web-middleware/rate-limit";
+import { groupStateTracker } from "./group-state-tracker";
 
 await initClickHouse();
 
@@ -71,6 +72,7 @@ app.get("/v1/reload/:token", async (ctx) => {
 
 		// Update notification configuration in missing pulse detector
 		missingPulseDetector.updateNotificationConfig(newConfig.notifications || { channels: {} });
+		groupStateTracker.updateNotificationConfig();
 
 		// Update all monitor statuses
 		await Promise.all(cache.getAllMonitors().map((m) => updateMonitorStatus(m.id)));

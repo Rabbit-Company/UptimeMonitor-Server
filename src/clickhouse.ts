@@ -764,7 +764,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 
 	// Send notifications (skip during grace period)
 	if (!isInGracePeriod() && group.notificationChannels?.length) {
-		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
+		const notificationManager = groupStateTracker.getNotificationManager();
 		const groupInfo = { strategy: group.strategy, childrenUp: totalUp, totalChildren: totalKnown, upPercentage };
 
 		if (isGoingDown) {

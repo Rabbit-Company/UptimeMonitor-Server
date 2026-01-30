@@ -1,4 +1,6 @@
 import { Logger } from "./logger";
+import { config } from "./config";
+import { NotificationManager } from "./notifications";
 import type { GroupState } from "./types";
 
 /**
@@ -8,6 +10,25 @@ import type { GroupState } from "./types";
  */
 class GroupStateTracker {
 	private readonly groupStates = new Map<string, GroupState>();
+	private readonly notificationManager: NotificationManager;
+
+	constructor() {
+		this.notificationManager = new NotificationManager(config.notifications || { channels: {} });
+	}
+
+	/**
+	 * Get the NotificationManager instance (reused for all group notifications)
+	 */
+	getNotificationManager(): NotificationManager {
+		return this.notificationManager;
+	}
+
+	/**
+	 * Update notification configuration (called when config is reloaded)
+	 */
+	updateNotificationConfig(): void {
+		this.notificationManager.updateConfig(config.notifications || { channels: {} });
+	}
 
 	/**
 	 * Get the current state for a group
@@ -17,7 +38,8 @@ class GroupStateTracker {
 	}
 
 	/**
-	 * Record that a group has gone down or is still down
+	 * Record that a group has gone down or is still down.
+	 * Increments on every call (similar to how MissingPulseDetector works for monitors).
 	 * @param groupId The group ID
 	 * @param isFirstDown Whether this is the first down detection (status changed from up/degraded to down)
 	 */

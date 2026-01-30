@@ -112,7 +112,7 @@ export class MissingPulseDetector {
 	}
 
 	/**
-	 * Handle monitors that have never sent a pulse
+	 * Handle monitors that have never received a pulse
 	 */
 	private handleNeverPulsedMonitor(monitor: Monitor, now: number): void {
 		const timeSinceStartup = now - STARTUP_TIME;
@@ -120,7 +120,7 @@ export class MissingPulseDetector {
 
 		// Only log after grace period + one full interval
 		if (timeSinceStartup > GRACE_PERIOD + maxAllowedInterval) {
-			Logger.warn("Monitor has never sent a pulse", {
+			Logger.warn("Monitor has never received a pulse", {
 				monitorId: monitor.id,
 				monitorName: monitor.name,
 				timeSinceStartup: Math.round(timeSinceStartup / 1000) + "s",

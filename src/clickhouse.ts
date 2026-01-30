@@ -7,6 +7,7 @@ import { NotificationManager } from "./notifications";
 import { cache } from "./cache";
 import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
 import { server } from ".";
+import { groupStateTracker } from "./group-state-tracker";
 
 export const updateQueue = new Set<string>();
 export const BATCH_INTERVAL = 5000; // 5 seconds
@@ -747,19 +748,69 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 
 	cache.setStatus(groupId, groupStatus);
 
-	// Notifications
-	if (previousStatus && previousStatus !== status && !isInGracePeriod() && group.notificationChannels?.length) {
-		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
-		const eventType = status === "up" ? "recovered" : "down";
+	// Track group state for downtime calculations
+	const isGoingDown = status === "down" && previousStatus !== "down";
+	const isRecovering = status !== "down" && previousStatus === "down";
+	const isStillDown = status === "down" && previousStatus === "down";
 
-		await notificationManager.sendNotification(group.notificationChannels, {
-			type: eventType,
-			monitorId: groupId,
-			monitorName: group.name,
-			timestamp: new Date(),
-			sourceType: "group",
-			groupInfo: { strategy: group.strategy, childrenUp: totalUp, totalChildren: totalKnown, upPercentage },
-		});
+	// Update group state tracking
+	if (isGoingDown) {
+		// Group just went down - record the start time
+		groupStateTracker.recordDown(groupId, true);
+	} else if (isStillDown) {
+		// Group is still down - increment the counter
+		groupStateTracker.recordDown(groupId, false);
+	}
+
+	// Send notifications (skip during grace period)
+	if (!isInGracePeriod() && group.notificationChannels?.length) {
+		const notificationManager = new NotificationManager(config.notifications || { channels: {} });
+		const groupInfo = { strategy: group.strategy, childrenUp: totalUp, totalChildren: totalKnown, upPercentage };
+
+		if (isGoingDown) {
+			// Group just went down - send down notification
+			await notificationManager.sendNotification(group.notificationChannels, {
+				type: "down",
+				monitorId: groupId,
+				monitorName: group.name,
+				timestamp: new Date(),
+				sourceType: "group",
+				downtime: 0,
+				groupInfo,
+			});
+			groupStateTracker.recordNotificationSent(groupId);
+		} else if (isRecovering) {
+			// Group recovered - get the downtime info and send recovery notification
+			const recoveryInfo = groupStateTracker.recordRecovery(groupId, group.interval);
+
+			await notificationManager.sendNotification(group.notificationChannels, {
+				type: "recovered",
+				monitorId: groupId,
+				monitorName: group.name,
+				timestamp: new Date(),
+				sourceType: "group",
+				previousConsecutiveDownCount: recoveryInfo?.previousConsecutiveDownCount ?? 0,
+				downtime: recoveryInfo?.downtime ?? 0,
+				groupInfo,
+			});
+		} else if (isStillDown && group.resendNotification && group.resendNotification > 0) {
+			// Group is still down - check if we should send a "still-down" reminder
+			if (groupStateTracker.shouldSendStillDownNotification(groupId, group.resendNotification)) {
+				const downtimeInfo = groupStateTracker.getDowntimeInfo(groupId, group.interval);
+
+				await notificationManager.sendNotification(group.notificationChannels, {
+					type: "still-down",
+					monitorId: groupId,
+					monitorName: group.name,
+					timestamp: new Date(),
+					sourceType: "group",
+					consecutiveDownCount: downtimeInfo?.consecutiveDownCount ?? 0,
+					downtime: downtimeInfo?.downtime ?? 0,
+					groupInfo,
+				});
+				groupStateTracker.recordNotificationSent(groupId);
+			}
+		}
 	}
 
 	if (group.parentId) {

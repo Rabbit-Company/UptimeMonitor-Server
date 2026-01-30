@@ -242,8 +242,24 @@ export interface Group {
 	interval: number;
 	/** Optional parent group ID */
 	parentId?: string;
+	/** Resend "still-down" notification after this many consecutive down checks (0 = never resend) */
+	resendNotification: number;
 	/** Notification channel IDs to use for this group */
 	notificationChannels?: string[];
+}
+
+/**
+ * Represents the current state of a group being tracked for downtime.
+ * This is used to track when a group goes down so we can calculate
+ * accurate downtime duration when it recovers.
+ */
+export interface GroupState {
+	/** Number of consecutive times the group has been marked as down */
+	consecutiveDownCount: number;
+	/** Timestamp when the group first went down (undefined if group is up) */
+	downStartTime?: number;
+	/** The down count at which the last notification was sent (for resendNotification) */
+	lastNotificationCount: number;
 }
 
 /**

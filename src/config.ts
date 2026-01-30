@@ -590,6 +590,13 @@ function validateGroup(group: unknown, index: number): Group {
 		errors.push(`groups[${index}].degradedThreshold must be between 0 and 100`);
 	}
 
+	// Validate resendNotification (optional, defaults to 0 which means never resend)
+	if (group.resendNotification !== undefined) {
+		if (!isNumber(group.resendNotification) || group.resendNotification < 0) {
+			errors.push(`groups[${index}].resendNotification must be a non-negative number`);
+		}
+	}
+
 	if (errors.length > 0) {
 		throw new ConfigValidationError(errors);
 	}
@@ -603,6 +610,7 @@ function validateGroup(group: unknown, index: number): Group {
 		degradedThreshold: group.degradedThreshold as number,
 		interval: group.interval as number,
 		parentId: group.parentId as string | undefined,
+		resendNotification: (group.resendNotification as number | undefined) ?? 0,
 		notificationChannels,
 	};
 }

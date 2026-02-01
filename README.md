@@ -82,7 +82,7 @@ curl http://localhost:3000/v1/status/:slug
 
 ```
 ┌─────────────────┐      ┌──────────────────┐      ┌─────────────┐
-│  Your Services  │────▶│  Uptime Monitor  │────▶│  ClickHouse │
+│  Your Services  │─────▶│  Uptime Monitor  │─────▶│  ClickHouse │
 │  (send pulses)  │      │   (Bun server)   │      │  (storage)  │
 └─────────────────┘      └──────────────────┘      └─────────────┘
                                   │

@@ -230,6 +230,7 @@ id = "internal"
 name = "Internal Status Page"
 slug = "internal"
 items = ["production", "staging", "infrastructure", "third-party"]  # show all groups
+password = "password_protected_5412"
 
 [[status_pages]]
 id = "production-only"

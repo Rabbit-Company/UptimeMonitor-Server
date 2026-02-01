@@ -20,10 +20,11 @@ import { aggregationJob } from "./aggregation";
 import { logger } from "@rabbit-company/web-middleware/logger";
 import { cors } from "@rabbit-company/web-middleware/cors";
 import { cache as webCache } from "@rabbit-company/web-middleware/cache";
+import { bearerAuth } from "@rabbit-company/web-middleware/bearer-auth";
+import { Algorithm, rateLimit } from "@rabbit-company/web-middleware/rate-limit";
 import { selfMonitor } from "./selfmonitor";
 import { ipExtract } from "@rabbit-company/web-middleware/ip-extract";
 import { handlePulseMonitorSubscription, notifyAllPulseMonitorClients } from "./pulsemonitor";
-import { Algorithm, rateLimit } from "@rabbit-company/web-middleware/rate-limit";
 import { groupStateTracker } from "./group-state-tracker";
 
 await initClickHouse();
@@ -57,7 +58,7 @@ app.get("/v1/health/missing-pulse-detector", (ctx) => {
 
 // Configuration reload endpoint
 app.get("/v1/reload/:token", async (ctx) => {
-	const token: string = ctx.params["token"] || "";
+	const token: string = ctx.params["token"]!;
 
 	if (token !== config.server.reloadToken) {
 		return ctx.json({ error: "Invalid token" }, 401);
@@ -129,7 +130,7 @@ app.get(
 		},
 	}),
 	async (ctx) => {
-		const token: string = ctx.params["token"] || "";
+		const token: string = ctx.params["token"]!;
 		const query = ctx.query();
 
 		const monitor: Monitor | undefined = cache.getMonitorByToken(token);
@@ -248,51 +249,111 @@ app.get(
 );
 
 // Status page endpoints
-app.get("/v1/status/:slug", webCache({ ttl: 30, generateETags: false }), async (ctx) => {
-	const slug: string = ctx.params["slug"] || "";
-	const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
-	if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
+app.get(
+	"/v1/status/:slug",
+	bearerAuth({
+		skip(ctx) {
+			const slug = ctx.params["slug"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			if (!statusPage) return true;
+			if (cache.isStatusPageProtected(slug)) return false;
+			return true;
+		},
+		validate(token, ctx) {
+			const slug = ctx.params["slug"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			if (!statusPage) return false;
+			if (token.length !== statusPage.hashedPassword!.length) return false;
+			return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(statusPage.hashedPassword!));
+		},
+	}),
+	webCache({
+		ttl: 30,
+		generateETags: false,
+		shouldCache(ctx, res) {
+			const slug = ctx.params["slug"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			if (!statusPage) return false;
+			if (cache.isStatusPageProtected(slug)) return false;
+			return res.status >= 200 && res.status < 300;
+		},
+	}),
+	async (ctx) => {
+		const slug: string = ctx.params["slug"]!;
+		const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+		if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-	const statusData: StatusData[] = buildStatusTree(statusPage.items);
-	return ctx.json({
-		name: statusPage.name,
-		slug: statusPage.slug,
-		items: statusData,
-		lastUpdated: new Date(),
-	});
-});
+		const statusData: StatusData[] = buildStatusTree(statusPage.items);
+		return ctx.json({
+			name: statusPage.name,
+			slug: statusPage.slug,
+			items: statusData,
+			lastUpdated: new Date(),
+		});
+	},
+);
 
-app.get("/v1/status/:slug/summary", webCache({ ttl: 30, generateETags: false }), async (ctx) => {
-	const slug: string = ctx.params["slug"] || "";
-	const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
-	if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
+app.get(
+	"/v1/status/:slug/summary",
+	bearerAuth({
+		skip(ctx) {
+			const slug = ctx.params["slug"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			if (!statusPage) return true;
+			if (cache.isStatusPageProtected(slug)) return false;
+			return true;
+		},
+		validate(token, ctx) {
+			const slug = ctx.params["slug"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			if (!statusPage) return false;
+			if (token.length !== statusPage.hashedPassword!.length) return false;
+			return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(statusPage.hashedPassword!));
+		},
+	}),
+	webCache({
+		ttl: 30,
+		generateETags: false,
+		shouldCache(ctx, res) {
+			const slug = ctx.params["slug"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			if (!statusPage) return false;
+			if (cache.isStatusPageProtected(slug)) return false;
+			return res.status >= 200 && res.status < 300;
+		},
+	}),
+	async (ctx) => {
+		const slug: string = ctx.params["slug"]!;
+		const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+		if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-	let totalUp = 0,
-		totalDegraded = 0,
-		totalDown = 0;
+		let totalUp = 0,
+			totalDegraded = 0,
+			totalDown = 0;
 
-	for (const id of statusPage.items) {
-		const status = cache.getStatus(id);
-		if (!status) continue;
-		if (status.status === "up") totalUp++;
-		else if (status.status === "degraded") totalDegraded++;
-		else if (status.status === "down") totalDown++;
-	}
+		for (const id of statusPage.items) {
+			const status = cache.getStatus(id);
+			if (!status) continue;
+			if (status.status === "up") totalUp++;
+			else if (status.status === "degraded") totalDegraded++;
+			else if (status.status === "down") totalDown++;
+		}
 
-	const overallStatus = totalDown > 0 ? "down" : totalDegraded > 0 ? "degraded" : "up";
+		const overallStatus = totalDown > 0 ? "down" : totalDegraded > 0 ? "degraded" : "up";
 
-	return ctx.json({
-		status: overallStatus,
-		monitors: { up: totalUp, degraded: totalDegraded, down: totalDown, total: totalUp + totalDegraded + totalDown },
-	});
-});
+		return ctx.json({
+			status: overallStatus,
+			monitors: { up: totalUp, degraded: totalDegraded, down: totalDown, total: totalUp + totalDegraded + totalDown },
+		});
+	},
+);
 
 /**
  * GET /v1/monitors/:id/history
  * Returns all raw pulses (~24h due to TTL)
  */
 app.get("/v1/monitors/:id/history", webCache({ ttl: 30, generateETags: false }), async (ctx) => {
-	const monitorId = ctx.params["id"] || "";
+	const monitorId = ctx.params["id"]!;
 	const monitor = cache.getMonitor(monitorId);
 	if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
 
@@ -316,7 +377,7 @@ app.get("/v1/monitors/:id/history", webCache({ ttl: 30, generateETags: false }),
  * Returns hourly aggregated data (~90 days due to TTL)
  */
 app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
-	const monitorId = ctx.params["id"] || "";
+	const monitorId = ctx.params["id"]!;
 	const monitor = cache.getMonitor(monitorId);
 	if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
 
@@ -340,7 +401,7 @@ app.get("/v1/monitors/:id/history/hourly", webCache({ ttl: 300, generateETags: f
  * Returns daily aggregated data (all time)
  */
 app.get("/v1/monitors/:id/history/daily", webCache({ ttl: 900, generateETags: false }), async (ctx) => {
-	const monitorId = ctx.params["id"] || "";
+	const monitorId = ctx.params["id"]!;
 	const monitor = cache.getMonitor(monitorId);
 	if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
 
@@ -369,7 +430,7 @@ app.get("/v1/monitors/:id/history/daily", webCache({ ttl: 900, generateETags: fa
  * - "percentage": Group uptime is the percentage of child monitors that are up
  */
 app.get("/v1/groups/:id/history", webCache({ ttl: 30, generateETags: false }), async (ctx) => {
-	const groupId = ctx.params["id"] || "";
+	const groupId = ctx.params["id"]!;
 	const group: Group | undefined = cache.getGroup(groupId);
 	if (!group) return ctx.json({ error: "Group not found" }, 404);
 
@@ -388,7 +449,7 @@ app.get("/v1/groups/:id/history", webCache({ ttl: 30, generateETags: false }), a
  * Returns hourly history for a group (~90 days due to TTL)
  */
 app.get("/v1/groups/:id/history/hourly", webCache({ ttl: 300, generateETags: false }), async (ctx) => {
-	const groupId = ctx.params["id"] || "";
+	const groupId = ctx.params["id"]!;
 	const group: Group | undefined = cache.getGroup(groupId);
 	if (!group) return ctx.json({ error: "Group not found" }, 404);
 
@@ -407,7 +468,7 @@ app.get("/v1/groups/:id/history/hourly", webCache({ ttl: 300, generateETags: fal
  * Returns daily history for a group (all time)
  */
 app.get("/v1/groups/:id/history/daily", webCache({ ttl: 900, generateETags: false }), async (ctx) => {
-	const groupId = ctx.params["id"] || "";
+	const groupId = ctx.params["id"]!;
 	const group: Group | undefined = cache.getGroup(groupId);
 	if (!group) return ctx.json({ error: "Group not found" }, 404);
 
@@ -701,6 +762,45 @@ app.websocket({
 					}),
 				);
 				return;
+			}
+
+			if (cache.isStatusPageProtected(data.slug)) {
+				const password: string | null = typeof data?.password === "string" ? data.password : null;
+				if (!password) {
+					ws.send(
+						JSON.stringify({
+							action: "error",
+							message: "This status page is password protected. 'password' is required.",
+							slug: data.slug,
+							timestamp: new Date().toISOString(),
+						}),
+					);
+					return;
+				}
+
+				if (password?.length !== statusPage.hashedPassword?.length) {
+					ws.send(
+						JSON.stringify({
+							action: "error",
+							message: "Password needs to be Blake2b-512 hashed",
+							slug: data.slug,
+							timestamp: new Date().toISOString(),
+						}),
+					);
+					return;
+				}
+
+				if (!crypto.timingSafeEqual(Buffer.from(password), Buffer.from(statusPage.hashedPassword))) {
+					ws.send(
+						JSON.stringify({
+							action: "error",
+							message: "Password is incorrect",
+							slug: data.slug,
+							timestamp: new Date().toISOString(),
+						}),
+					);
+					return;
+				}
 			}
 
 			const channel = `slug-${data.slug}`;

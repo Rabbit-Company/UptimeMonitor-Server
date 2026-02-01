@@ -17,6 +17,7 @@ import type {
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { Logger } from "./logger";
 import { type IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
+import { password } from "bun";
 
 export const defaultReloadToken = generateSecureToken();
 
@@ -653,16 +654,35 @@ function validateStatusPage(page: unknown, index: number): StatusPage {
 		}
 	}
 
+	if (page.password !== undefined) {
+		if (!isString(page.password) || page.password.trim().length === 0) {
+			errors.push(`status_pages[${index}].password must be a non-empty string if provided`);
+		} else if ((page.password as string).length < 8) {
+			errors.push(`status_pages[${index}].password must be at least 8 characters long`);
+		}
+	}
+
 	if (errors.length > 0) {
 		throw new ConfigValidationError(errors);
 	}
 
-	return {
+	const result: StatusPage = {
 		id: page.id as string,
 		name: page.name as string,
 		slug: page.slug as string,
 		items: page.items as string[],
 	};
+
+	if (page.password !== undefined) {
+		result.password = page.password as string;
+
+		const hasher = new Bun.CryptoHasher("blake2b512");
+		hasher.update(result.password);
+
+		result.hashedPassword = hasher.digest("hex");
+	}
+
+	return result;
 }
 
 function validateClickHouseConfig(config: unknown): NodeClickHouseClientConfigOptions {

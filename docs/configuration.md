@@ -224,16 +224,33 @@ id = "public"
 name = "Public Status"
 slug = "status"
 items = ["production", "third-party"]
+# password = "optional-password"
 ```
 
-| Field   | Required | Description                                 |
-| ------- | -------- | ------------------------------------------- |
-| `id`    | Yes      | Unique identifier                           |
-| `name`  | Yes      | Display name                                |
-| `slug`  | Yes      | URL path (lowercase, hyphens, numbers only) |
-| `items` | Yes      | Array of monitor and/or group IDs           |
+| Field      | Required | Description                                                         |
+| ---------- | -------- | ------------------------------------------------------------------- |
+| `id`       | Yes      | Unique identifier                                                   |
+| `name`     | Yes      | Display name                                                        |
+| `slug`     | Yes      | URL path (lowercase, hyphens, numbers only)                         |
+| `items`    | Yes      | Array of monitor and/or group IDs                                   |
+| `password` | No       | Optional password to protect the status page (minimum 8 characters) |
 
-Access at: `GET /v1/status/:slug`
+### Accessing Status Pages
+
+```
+GET /v1/status/:slug
+GET /v1/status/:slug/summary
+```
+
+#### Public status pages
+
+If no `password` is configured, the status page is publicly accessible and does not require authentication.
+
+#### Password-protected status pages
+
+If a `password` is configured, requests must include an `Authorization` header using a Bearer token.
+
+The Bearer token must be the **BLAKE2b-512 hash of the password**.
 
 ## PulseMonitors
 

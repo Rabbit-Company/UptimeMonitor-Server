@@ -195,6 +195,29 @@ class CacheManager {
 		}
 	}
 
+	isStatusPageProtected(slug: string): boolean {
+		const statusPage = this.statusPagesBySlug.get(slug);
+		return statusPage?.password !== undefined && statusPage.password.length > 0;
+	}
+
+	getStatusPagePassword(slug: string): string | undefined {
+		const statusPage = this.statusPagesBySlug.get(slug);
+		return statusPage?.password;
+	}
+
+	verifyStatusPagePassword(slug: string, providedPassword: string | null): boolean {
+		const statusPage = this.statusPagesBySlug.get(slug);
+		if (!statusPage) {
+			return false;
+		}
+
+		if (!statusPage.password) {
+			return true;
+		}
+
+		return providedPassword === statusPage.password;
+	}
+
 	getMonitor(id: string): Monitor | undefined {
 		return this.monitors.get(id);
 	}

@@ -30,6 +30,17 @@ This starts:
 
 ### 2. Configure Your Monitors
 
+**Option A: Visual Configuration Editor (Recommended)**
+
+Visit https://uptime-monitor.org/configurator to visually create and edit your configuration with a user-friendly interface. You can:
+
+- Import your existing config.toml file
+- Visually create monitors, groups, and status pages
+- Configure custom metrics and notification channels
+- Export your configuration back to TOML format
+
+**Option B: Manual Configuration**
+
 Edit `config.toml` to add your monitors:
 
 ```toml
@@ -64,19 +75,21 @@ curl http://localhost:3000/v1/status/:slug
 
 ## Documentation
 
-| Document                                         | Description                                |
-| ------------------------------------------------ | ------------------------------------------ |
-| [Configuration Guide](docs/configuration.md)     | Complete config.toml reference             |
-| [API Reference](docs/api.md)                     | All endpoints and WebSocket events         |
-| [Notifications](docs/notifications.md)           | Setting up Discord, Email, Ntfy            |
-| [Groups & Strategies](docs/groups.md)            | Organizing monitors hierarchically         |
-| [Custom Metrics](docs/custom-metrics.md)         | Tracking additional data points            |
-| [PulseMonitor Integration](docs/pulsemonitor.md) | Automated monitoring from multiple regions |
+| Document                                                               | Description                                |
+| ---------------------------------------------------------------------- | ------------------------------------------ |
+| [Configuration Guide](docs/configuration.md)                           | Complete config.toml reference             |
+| [API Reference](docs/api.md)                                           | All endpoints and WebSocket events         |
+| [Notifications](docs/notifications.md)                                 | Setting up Discord, Email, Ntfy            |
+| [Groups & Strategies](docs/groups.md)                                  | Organizing monitors hierarchically         |
+| [Custom Metrics](docs/custom-metrics.md)                               | Tracking additional data points            |
+| [PulseMonitor Integration](docs/pulsemonitor.md)                       | Automated monitoring from multiple regions |
+| [Visual Configuration Editor](https://uptime-monitor.org/configurator) | Web-based UI for configuring monitors      |
 
 ## Related Projects
 
-- [UptimeMonitor-StatusPage](https://github.com/Rabbit-Company/UptimeMonitor-StatusPage) — Frontend status page
-- [PulseMonitor](https://github.com/Rabbit-Company/PulseMonitor) — Automated pulse sender for multiple protocols
+- [UptimeMonitor-StatusPage](https://github.com/Rabbit-Company/UptimeMonitor-StatusPage) - Frontend status page
+- [PulseMonitor](https://github.com/Rabbit-Company/PulseMonitor) - Automated pulse sender for multiple protocols
+- [Visual Configuration Editor](https://uptime-monitor.org/configurator) - Web-based UI for configuring monitors
 
 ## Architecture
 

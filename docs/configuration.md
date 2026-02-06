@@ -2,6 +2,24 @@
 
 Uptime Monitor uses a TOML configuration file. By default, it looks for `config.toml` in the current directory, or you can set the `CONFIG` environment variable to a custom path.
 
+## Visual Configuration Editor
+
+We recommend using the [**Visual Configuration Editor**](https://uptime-monitor.org/configurator) for an easier configuration experience:
+
+The Visual Configuration Editor allows you to:
+
+- Import your existing `config.toml` file
+- Visually create and edit monitors, groups, and status pages
+- Configure custom metrics and notification channels with a user-friendly UI
+- Export your configuration back to TOML format
+- Validate your configuration for common errors
+
+You can use the editor online without any installation, and it provides real-time validation and previews of your configuration.
+
+## Manual Configuration
+
+If you prefer to edit the TOML file directly, here's the complete reference:
+
 ## Minimal Configuration
 
 The smallest working configuration:

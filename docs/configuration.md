@@ -136,17 +136,17 @@ notificationChannels = ["critical"]
 pulseMonitors = ["US-WEST-1"]
 ```
 
-| Field                  | Required | Default | Description                                         |
-| ---------------------- | -------- | ------- | --------------------------------------------------- |
-| `id`                   | Yes      | —       | Unique identifier                                   |
-| `name`                 | Yes      | —       | Display name                                        |
-| `token`                | Yes      | —       | Secret token for pulse authentication               |
-| `interval`             | Yes      | —       | Expected pulse interval in seconds                  |
-| `maxRetries`           | Yes      | —       | Missed pulses before marking down (0 = immediate)   |
-| `resendNotification`   | Yes      | —       | Resend notification every N down checks (0 = never) |
-| `groupId`              | No       | —       | Parent group ID                                     |
-| `notificationChannels` | No       | `[]`    | Array of notification channel IDs                   |
-| `pulseMonitors`        | No       | `[]`    | Array of PulseMonitor IDs for automated checking    |
+| Field                  | Required | Default | Description                                                  |
+| ---------------------- | -------- | ------- | ------------------------------------------------------------ |
+| `id`                   | Yes      | —       | Unique identifier                                            |
+| `name`                 | Yes      | —       | Display name                                                 |
+| `token`                | Yes      | —       | Secret token for pulse authentication                        |
+| `interval`             | Yes      | —       | Expected pulse interval in seconds (see [Pulses](pulses.md)) |
+| `maxRetries`           | Yes      | —       | Missed pulses before marking down (see [Pulses](pulses.md))  |
+| `resendNotification`   | Yes      | —       | Resend notification every N down checks (0 = never)          |
+| `groupId`              | No       | —       | Parent group ID                                              |
+| `notificationChannels` | No       | `[]`    | Array of notification channel IDs                            |
+| `pulseMonitors`        | No       | `[]`    | Array of PulseMonitor IDs for automated checking             |
 
 ### Custom Metrics
 

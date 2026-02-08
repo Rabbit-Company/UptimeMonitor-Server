@@ -22,7 +22,7 @@ Check if the server is running.
 
 ### GET /v1/push/:token
 
-Send a heartbeat pulse for a monitor.
+Send a heartbeat pulse for a monitor. See [Pulses](pulses.md) for a detailed guide on how pulses work, timing parameters, and best practices.
 
 **Path Parameters:**
 | Parameter | Description |

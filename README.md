@@ -67,6 +67,8 @@ Or with latency tracking:
 curl "http://localhost:3000/v1/push/secret-token-here?latency=125"
 ```
 
+See [Pulses](docs/pulses.md) for timing parameters, best practices, and how pulse windows work.
+
 ### 4. Check Status
 
 ```bash
@@ -75,15 +77,16 @@ curl http://localhost:3000/v1/status/:slug
 
 ## Documentation
 
-| Document                                                               | Description                                |
-| ---------------------------------------------------------------------- | ------------------------------------------ |
-| [Configuration Guide](docs/configuration.md)                           | Complete config.toml reference             |
-| [API Reference](docs/api.md)                                           | All endpoints and WebSocket events         |
-| [Notifications](docs/notifications.md)                                 | Setting up Discord, Email, Ntfy            |
-| [Groups & Strategies](docs/groups.md)                                  | Organizing monitors hierarchically         |
-| [Custom Metrics](docs/custom-metrics.md)                               | Tracking additional data points            |
-| [PulseMonitor Integration](docs/pulsemonitor.md)                       | Automated monitoring from multiple regions |
-| [Visual Configuration Editor](https://uptime-monitor.org/configurator) | Web-based UI for configuring monitors      |
+| Document                                                               | Description                                 |
+| ---------------------------------------------------------------------- | ------------------------------------------- |
+| [Pulses](docs/pulses.md)                                               | How pulses work, timing, and best practices |
+| [Configuration Guide](docs/configuration.md)                           | Complete config.toml reference              |
+| [API Reference](docs/api.md)                                           | All endpoints and WebSocket events          |
+| [Notifications](docs/notifications.md)                                 | Setting up Discord, Email, Ntfy             |
+| [Groups & Strategies](docs/groups.md)                                  | Organizing monitors hierarchically          |
+| [Custom Metrics](docs/custom-metrics.md)                               | Tracking additional data points             |
+| [PulseMonitor Integration](docs/pulsemonitor.md)                       | Automated monitoring from multiple regions  |
+| [Visual Configuration Editor](https://uptime-monitor.org/configurator) | Web-based UI for configuring monitors       |
 
 ## Related Projects
 

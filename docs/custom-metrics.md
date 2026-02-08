@@ -1,6 +1,6 @@
 # Custom Metrics
 
-Track up to 3 additional numeric values per monitor alongside latency. Useful for player counts, connection pools, queue depths, and more.
+Track up to 3 additional numeric values per monitor alongside latency. Custom metrics are sent as part of [pulses](pulses.md). Useful for player counts, connection pools, queue depths, and more.
 
 ## Configuration
 
@@ -31,11 +31,11 @@ name = "Memory Usage"
 unit = "MB"
 ```
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `id` | Yes | Query parameter name (letters, numbers, underscores) |
-| `name` | Yes | Human-readable display name |
-| `unit` | No | Unit label for display (e.g., "MB", "conn", "%") |
+| Field  | Required | Description                                          |
+| ------ | -------- | ---------------------------------------------------- |
+| `id`   | Yes      | Query parameter name (letters, numbers, underscores) |
+| `name` | Yes      | Human-readable display name                          |
+| `unit` | No       | Unit label for display (e.g., "MB", "conn", "%")     |
 
 ## Sending Custom Metrics
 
@@ -61,12 +61,12 @@ curl "http://localhost:3000/v1/push/tk_game?latency=15&players=42&tps=19.8"
 
 ```json
 {
-  "action": "push",
-  "token": "tk_game",
-  "latency": 15,
-  "players": 42,
-  "tps": 19.8,
-  "memory": 2048
+	"action": "push",
+	"token": "tk_game",
+	"latency": 15,
+	"players": 42,
+	"tps": 19.8,
+	"memory": 2048
 }
 ```
 
@@ -79,41 +79,42 @@ curl http://localhost:3000/v1/status/status
 ```
 
 **Response:**
+
 ```json
 {
-  "items": [
-    {
-      "id": "game-server",
-      "type": "monitor",
-      "name": "Game Server",
-      "status": "up",
-      "latency": 15,
-      "custom1": {
-        "config": {
-          "id": "players",
-          "name": "Player Count",
-          "unit": "players"
-        },
-        "value": 42
-      },
-      "custom2": {
-        "config": {
-          "id": "tps",
-          "name": "Ticks Per Second",
-          "unit": "TPS"
-        },
-        "value": 19.8
-      },
-      "custom3": {
-        "config": {
-          "id": "memory",
-          "name": "Memory Usage",
-          "unit": "MB"
-        },
-        "value": 2048
-      }
-    }
-  ]
+	"items": [
+		{
+			"id": "game-server",
+			"type": "monitor",
+			"name": "Game Server",
+			"status": "up",
+			"latency": 15,
+			"custom1": {
+				"config": {
+					"id": "players",
+					"name": "Player Count",
+					"unit": "players"
+				},
+				"value": 42
+			},
+			"custom2": {
+				"config": {
+					"id": "tps",
+					"name": "Ticks Per Second",
+					"unit": "TPS"
+				},
+				"value": 19.8
+			},
+			"custom3": {
+				"config": {
+					"id": "memory",
+					"name": "Memory Usage",
+					"unit": "MB"
+				},
+				"value": 2048
+			}
+		}
+	]
 }
 ```
 
@@ -126,33 +127,34 @@ curl http://localhost:3000/v1/monitors/game-server/history/hourly
 ```
 
 **Response:**
+
 ```json
 {
-  "monitorId": "game-server",
-  "type": "hourly",
-  "customMetrics": {
-    "custom1": { "id": "players", "name": "Player Count", "unit": "players" },
-    "custom2": { "id": "tps", "name": "Ticks Per Second", "unit": "TPS" },
-    "custom3": { "id": "memory", "name": "Memory Usage", "unit": "MB" }
-  },
-  "data": [
-    {
-      "timestamp": "2025-01-15T10:00:00Z",
-      "uptime": 100,
-      "latency_min": 10,
-      "latency_max": 25,
-      "latency_avg": 15.3,
-      "custom1_min": 20,
-      "custom1_max": 85,
-      "custom1_avg": 45.7,
-      "custom2_min": 18.5,
-      "custom2_max": 20.0,
-      "custom2_avg": 19.6,
-      "custom3_min": 1800,
-      "custom3_max": 2500,
-      "custom3_avg": 2100
-    }
-  ]
+	"monitorId": "game-server",
+	"type": "hourly",
+	"customMetrics": {
+		"custom1": { "id": "players", "name": "Player Count", "unit": "players" },
+		"custom2": { "id": "tps", "name": "Ticks Per Second", "unit": "TPS" },
+		"custom3": { "id": "memory", "name": "Memory Usage", "unit": "MB" }
+	},
+	"data": [
+		{
+			"timestamp": "2025-01-15T10:00:00Z",
+			"uptime": 100,
+			"latency_min": 10,
+			"latency_max": 25,
+			"latency_avg": 15.3,
+			"custom1_min": 20,
+			"custom1_max": 85,
+			"custom1_avg": 45.7,
+			"custom2_min": 18.5,
+			"custom2_max": 20.0,
+			"custom2_avg": 19.6,
+			"custom3_min": 1800,
+			"custom3_max": 2500,
+			"custom3_avg": 2100
+		}
+	]
 }
 ```
 
@@ -162,17 +164,17 @@ Custom metrics are included in real-time pulse events:
 
 ```json
 {
-  "action": "pulse",
-  "data": {
-    "slug": "status",
-    "monitorId": "game-server",
-    "status": "up",
-    "latency": 15,
-    "custom1": 42,
-    "custom2": 19.8,
-    "custom3": 2048,
-    "timestamp": "2025-01-15T10:30:00.000Z"
-  }
+	"action": "pulse",
+	"data": {
+		"slug": "status",
+		"monitorId": "game-server",
+		"status": "up",
+		"latency": 15,
+		"custom1": 42,
+		"custom2": 19.8,
+		"custom3": 2048,
+		"timestamp": "2025-01-15T10:30:00.000Z"
+	}
 }
 ```
 
@@ -295,6 +297,7 @@ unit = "dBm"
 ## Data Types
 
 Custom metrics accept any numeric value:
+
 - Integers: `42`, `-10`, `1000000`
 - Decimals: `19.8`, `0.001`, `99.99`
 - Negative values: `-5.5`
@@ -305,23 +308,25 @@ Non-numeric values are ignored (no error, just not stored).
 
 Custom metrics follow the same retention as latency data:
 
-| Table | Retention | Aggregation |
-|-------|-----------|-------------|
-| `pulses` | ~24 hours | Raw values |
-| `pulses_hourly` | ~90 days | min, max, avg per hour |
-| `pulses_daily` | Forever | min, max, avg per day |
+| Table           | Retention | Aggregation            |
+| --------------- | --------- | ---------------------- |
+| `pulses`        | ~24 hours | Raw values             |
+| `pulses_hourly` | ~90 days  | min, max, avg per hour |
+| `pulses_daily`  | Forever   | min, max, avg per day  |
 
 ## Best Practices
 
 ### 1. Choose meaningful IDs
 
 Use short, descriptive IDs that make sense in URLs:
+
 - ✅ `players`, `tps`, `memory`
 - ❌ `player_count_metric_1`, `m1`
 
 ### 2. Always include units
 
 Units help with display and understanding:
+
 ```toml
 [monitors.custom1]
 id = "memory"
@@ -336,12 +341,14 @@ If a metric is defined, try to send it with every pulse. Missing values appear a
 ### 4. Use appropriate precision
 
 ClickHouse stores metrics as `Float32`. For most use cases, 2-3 decimal places are sufficient:
+
 - ✅ `tps=19.8`
 - ❌ `tps=19.8234567890123`
 
 ### 5. Monitor rate of change
 
 The min/max/avg aggregation in history lets you spot anomalies:
+
 - Sudden spikes in `custom1_max`
 - Gradual drift in `custom1_avg`
 - Zero values in `custom1_min` (potential issue)

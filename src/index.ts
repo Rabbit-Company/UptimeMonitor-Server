@@ -26,6 +26,7 @@ import { selfMonitor } from "./selfmonitor";
 import { ipExtract } from "@rabbit-company/web-middleware/ip-extract";
 import { handlePulseMonitorSubscription, notifyAllPulseMonitorClients } from "./pulsemonitor";
 import { groupStateTracker } from "./group-state-tracker";
+import { openapi } from "./openapi";
 
 await initClickHouse();
 
@@ -54,6 +55,10 @@ app.get("/health", (ctx) => {
 
 app.get("/v1/health/missing-pulse-detector", (ctx) => {
 	return ctx.json(missingPulseDetector.getStatus());
+});
+
+app.get("/openapi.json", webCache({ ttl: 3600, generateETags: false }), (ctx) => {
+	return ctx.json(openapi);
 });
 
 // Configuration reload endpoint

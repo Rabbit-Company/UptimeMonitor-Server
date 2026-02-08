@@ -30,8 +30,8 @@ interval = 30
 maxRetries = 0    # Mark down immediately on first missed pulse
 ```
 
-- `maxRetries = 0` — Down on the first missed pulse
-- `maxRetries = 3` — Tolerates 3 missed pulses before marking down (roughly `3 x interval from missingPulseDetector` seconds)
+- `maxRetries = 0` - Down on the first missed pulse
+- `maxRetries = 3` - Tolerates 3 missed pulses before marking down (roughly `3 x interval from missingPulseDetector` seconds)
 
 ## Sending Pulses
 
@@ -40,7 +40,7 @@ Pulses are sent via HTTP GET or WebSocket.
 ### HTTP
 
 ```bash
-# Simple pulse — records with current timestamp
+# Simple pulse - records with current timestamp
 curl http://localhost:3000/v1/push/:token
 ```
 

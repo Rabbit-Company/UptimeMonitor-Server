@@ -167,7 +167,7 @@ Group uptime is computed from child uptimes using the same strategy:
 
 ## Group History
 
-Groups don't store their own pulses—history is computed from children in real-time.
+Groups don't store their own pulses-history is computed from children in real-time.
 
 ```bash
 # Get raw history (~24h)

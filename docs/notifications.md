@@ -4,9 +4,9 @@ Uptime Monitor supports multiple notification providers. Notifications are organ
 
 ## How It Works
 
-1. **Define channels** — Each channel has a unique ID and can have multiple providers (Discord, Email, Ntfy)
-2. **Assign channels to monitors/groups** — Use the `notificationChannels` array
-3. **Receive alerts** — When a monitor goes down, recovers, or stays down, notifications are sent to all providers in the assigned channels
+1. **Define channels** - Each channel has a unique ID and can have multiple providers (Discord, Email, Ntfy)
+2. **Assign channels to monitors/groups** - Use the `notificationChannels` array
+3. **Receive alerts** - When a monitor goes down, recovers, or stays down, notifications are sent to all providers in the assigned channels
 
 ## Notification Types
 
@@ -173,6 +173,55 @@ password = "secret"
 
 ```bash
 ntfy subscribe my-uptime-alerts
+```
+
+## Telegram
+
+Send notifications to Telegram chats, groups, or channels via a bot.
+
+### Configuration
+
+```toml
+[notifications.channels.critical.telegram]
+enabled = true
+botToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+chatId = "-1001234567890"
+# Optional: send to a specific forum topic
+# topicId = 123
+# Optional: send silently
+# disableNotification = false
+
+```
+
+| Field                 | Required | Description                                     |
+| --------------------- | -------- | ----------------------------------------------- |
+| `enabled`             | Yes      | Enable Telegram notifications                   |
+| `botToken`            | Yes      | Bot API token from @BotFather                   |
+| `chatId`              | Yes      | Target chat/group/channel ID                    |
+| `topicId`             | No       | Forum topic ID (for groups with topics enabled) |
+| `disableNotification` | No       | Send silently without notification sound        |
+
+### Setting Up a Telegram Bot
+
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/newbot` and follow the prompts
+3. Copy the bot token provided
+4. Add the bot to your group/channel
+5. Get the chat ID:
+   - For groups: add [@userinfobot](https://t.me/userinfobot) to the group, or use the Telegram Bot API `getUpdates` endpoint
+   - For channels: forward a message from the channel to @userinfobot
+   - For direct messages: message the bot and check `getUpdates`
+
+### Forum Topics
+
+If your group has topics (forum mode) enabled, you can send to a specific topic:
+
+```toml
+[notifications.channels.critical.telegram]
+enabled = true
+botToken = "123456:ABC-DEF..."
+chatId = "-1001234567890"
+topicId = 42
 ```
 
 ## Assigning Channels to Monitors

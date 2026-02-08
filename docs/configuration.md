@@ -138,13 +138,13 @@ pulseMonitors = ["US-WEST-1"]
 
 | Field                  | Required | Default | Description                                                  |
 | ---------------------- | -------- | ------- | ------------------------------------------------------------ |
-| `id`                   | Yes      | —       | Unique identifier                                            |
-| `name`                 | Yes      | —       | Display name                                                 |
-| `token`                | Yes      | —       | Secret token for pulse authentication                        |
-| `interval`             | Yes      | —       | Expected pulse interval in seconds (see [Pulses](pulses.md)) |
-| `maxRetries`           | Yes      | —       | Missed pulses before marking down (see [Pulses](pulses.md))  |
-| `resendNotification`   | Yes      | —       | Resend notification every N down checks (0 = never)          |
-| `groupId`              | No       | —       | Parent group ID                                              |
+| `id`                   | Yes      | -       | Unique identifier                                            |
+| `name`                 | Yes      | -       | Display name                                                 |
+| `token`                | Yes      | -       | Secret token for pulse authentication                        |
+| `interval`             | Yes      | -       | Expected pulse interval in seconds (see [Pulses](pulses.md)) |
+| `maxRetries`           | Yes      | -       | Missed pulses before marking down (see [Pulses](pulses.md))  |
+| `resendNotification`   | Yes      | -       | Resend notification every N down checks (0 = never)          |
+| `groupId`              | No       | -       | Parent group ID                                              |
 | `notificationChannels` | No       | `[]`    | Array of notification channel IDs                            |
 | `pulseMonitors`        | No       | `[]`    | Array of PulseMonitor IDs for automated checking             |
 
@@ -217,21 +217,21 @@ notificationChannels = ["critical"]
 
 | Field                  | Required | Default | Description                                      |
 | ---------------------- | -------- | ------- | ------------------------------------------------ |
-| `id`                   | Yes      | —       | Unique identifier                                |
-| `name`                 | Yes      | —       | Display name                                     |
-| `strategy`             | Yes      | —       | `"any-up"`, `"all-up"`, or `"percentage"`        |
-| `degradedThreshold`    | Yes      | —       | Percentage threshold (0-100) for degraded status |
-| `interval`             | Yes      | —       | Used for uptime calculations                     |
+| `id`                   | Yes      | -       | Unique identifier                                |
+| `name`                 | Yes      | -       | Display name                                     |
+| `strategy`             | Yes      | -       | `"any-up"`, `"all-up"`, or `"percentage"`        |
+| `degradedThreshold`    | Yes      | -       | Percentage threshold (0-100) for degraded status |
+| `interval`             | Yes      | -       | Used for uptime calculations                     |
 | `resendNotification`   | No       | `0`     | Resend notification every N down checks          |
-| `parentId`             | No       | —       | Parent group ID for nesting                      |
+| `parentId`             | No       | -       | Parent group ID for nesting                      |
 | `notificationChannels` | No       | `[]`    | Array of notification channel IDs                |
 
 ### Strategy Reference
 
 | Strategy     | UP              | DEGRADED       | DOWN              |
 | ------------ | --------------- | -------------- | ----------------- |
-| `any-up`     | ≥1 child up     | —              | All children down |
-| `all-up`     | All children up | —              | Any child down    |
+| `any-up`     | ≥1 child up     | -              | All children down |
+| `all-up`     | All children up | -              | Any child down    |
 | `percentage` | 100% up         | ≥threshold% up | <threshold% up    |
 
 ## Status Pages
@@ -329,7 +329,7 @@ The reload token is shown in logs at startup if not explicitly configured.
 
 The configuration is validated at startup. Common errors:
 
-- **Duplicate IDs/tokens** — All IDs and tokens must be unique
-- **Invalid references** — Group/notification channel IDs must exist
-- **Circular references** — Groups cannot reference themselves as parents
-- **Missing required fields** — All required fields must be present
+- **Duplicate IDs/tokens** - All IDs and tokens must be unique
+- **Invalid references** - Group/notification channel IDs must exist
+- **Circular references** - Groups cannot reference themselves as parents
+- **Missing required fields** - All required fields must be present

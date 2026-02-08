@@ -17,7 +17,6 @@ import type {
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { Logger } from "./logger";
 import { type IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
-import { password } from "bun";
 
 export const defaultReloadToken = generateSecureToken();
 
@@ -1074,6 +1073,50 @@ function validateNtfyConfig(config: unknown, channelId: string): any {
 	return result;
 }
 
+function validateTelegramConfig(config: unknown, channelId: string): any {
+	const errors: string[] = [];
+	const cfg = config as Record<string, unknown>;
+
+	if (!isBoolean(cfg.enabled)) {
+		errors.push(`notifications.channels.${channelId}.telegram.enabled must be a boolean`);
+	}
+
+	if (!cfg.enabled) {
+		return { enabled: false };
+	}
+
+	if (!isString(cfg.botToken) || cfg.botToken.trim().length === 0) {
+		errors.push(`notifications.channels.${channelId}.telegram.botToken must be a non-empty string`);
+	}
+
+	if (!isString(cfg.chatId) || cfg.chatId.trim().length === 0) {
+		errors.push(`notifications.channels.${channelId}.telegram.chatId must be a non-empty string`);
+	}
+
+	if (cfg.topicId !== undefined && !isNumber(cfg.topicId)) {
+		errors.push(`notifications.channels.${channelId}.telegram.topicId must be a number if provided`);
+	}
+
+	if (cfg.disableNotification !== undefined && !isBoolean(cfg.disableNotification)) {
+		errors.push(`notifications.channels.${channelId}.telegram.disableNotification must be a boolean if provided`);
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	const result: any = {
+		enabled: cfg.enabled,
+		botToken: cfg.botToken,
+		chatId: cfg.chatId,
+	};
+
+	if (cfg.topicId !== undefined) result.topicId = cfg.topicId;
+	if (cfg.disableNotification !== undefined) result.disableNotification = cfg.disableNotification;
+
+	return result;
+}
+
 function validateNotificationChannel(channel: unknown, channelId: string): NotificationChannel {
 	const errors: string[] = [];
 
@@ -1136,6 +1179,16 @@ function validateNotificationChannel(channel: unknown, channelId: string): Notif
 	if (channel.ntfy) {
 		try {
 			result.ntfy = validateNtfyConfig(channel.ntfy, channelId);
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				throw error;
+			}
+		}
+	}
+
+	if (channel.telegram) {
+		try {
+			result.telegram = validateTelegramConfig(channel.telegram, channelId);
 		} catch (error) {
 			if (error instanceof ConfigValidationError) {
 				throw error;
@@ -1417,8 +1470,9 @@ function validateNotificationChannelProviders(config: Config): void {
 		const hasEmail = channel.email?.enabled;
 		const hasDiscord = channel.discord?.enabled;
 		const hasNtfy = channel.ntfy?.enabled;
+		const hasTelegram = channel.telegram?.enabled;
 
-		if (!hasEmail && !hasDiscord && !hasNtfy) {
+		if (!hasEmail && !hasDiscord && !hasNtfy && !hasTelegram) {
 			errors.push(`Notification channel '${channelId}' is enabled but has no providers configured`);
 		}
 	}

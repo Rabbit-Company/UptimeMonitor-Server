@@ -277,3 +277,13 @@ topic = "uptime-monitor"
 # Optional: Username/password authentication
 #username = "your_username"
 #password = "your_password"
+
+# Telegram configuration for critical alerts
+[notifications.channels.critical.telegram]
+enabled = false
+botToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+chatId = "-1001234567890"
+# Optional: send to a specific forum topic
+# topicId = 123
+# Optional: send silently
+# disableNotification = false

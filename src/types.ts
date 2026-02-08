@@ -603,6 +603,14 @@ export interface NtfyConfig {
 	token?: string;
 }
 
+export interface TelegramConfig {
+	enabled: boolean;
+	botToken: string;
+	chatId: string;
+	topicId?: number;
+	disableNotification?: boolean;
+}
+
 export interface DowntimeRecord {
 	startTime: Date;
 	endTime: Date;
@@ -629,6 +637,8 @@ export interface NotificationChannel {
 	discord?: DiscordConfig;
 	/** Ntfy configuration for this channel */
 	ntfy?: NtfyConfig;
+	/** Telegram configuration for this channel */
+	telegram?: TelegramConfig;
 }
 
 export interface NotificationEvent {

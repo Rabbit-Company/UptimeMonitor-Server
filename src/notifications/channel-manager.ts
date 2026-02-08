@@ -1,6 +1,7 @@
 import { EmailProvider } from "./providers/email";
 import { DiscordProvider } from "./providers/discord";
 import { NtfyProvider } from "./providers/ntfy";
+import { TelegramProvider } from "./providers/telegram";
 import { Logger } from "../logger";
 import type { NotificationChannel, NotificationEvent, NotificationProvider } from "../types";
 
@@ -31,6 +32,10 @@ export class NotificationChannelManager {
 
 			if (channel.ntfy?.enabled) {
 				channelProviders.push(new NtfyProvider(channel.ntfy));
+			}
+
+			if (channel.telegram?.enabled) {
+				channelProviders.push(new TelegramProvider(channel.telegram));
 			}
 
 			if (channelProviders.length > 0) {

@@ -4,12 +4,12 @@ A high-performance uptime monitoring system built with Bun and ClickHouse. Recei
 
 ## Features
 
-- **Pulse-Based Monitoring** — Services send heartbeats; missing pulses trigger alerts
-- **Hierarchical Groups** — Organize monitors with flexible health strategies (any-up, all-up, percentage)
-- **Custom Metrics** — Track up to 3 numeric values per monitor (player count, connections, etc.)
-- **Multi-Channel Notifications** — Discord, Email, and Ntfy support with per-monitor control
-- **Real-Time Status Pages** — WebSocket-powered live updates
-- **Self-Healing** — Automatic backfill when the monitor itself recovers from downtime
+- **Pulse-Based Monitoring** - Services send heartbeats; missing pulses trigger alerts
+- **Hierarchical Groups** - Organize monitors with flexible health strategies (any-up, all-up, percentage)
+- **Custom Metrics** - Track up to 3 numeric values per monitor (player count, connections, etc.)
+- **Multi-Channel Notifications** - Discord, Email, Ntfy and Telegram support with per-monitor control
+- **Real-Time Status Pages** - WebSocket-powered live updates
+- **Self-Healing** - Automatic backfill when the monitor itself recovers from downtime
 
 ## Quick Start
 
@@ -82,7 +82,7 @@ curl http://localhost:3000/v1/status/:slug
 | [Pulses](docs/pulses.md)                                               | How pulses work, timing, and best practices |
 | [Configuration Guide](docs/configuration.md)                           | Complete config.toml reference              |
 | [API Reference](docs/api.md)                                           | All endpoints and WebSocket events          |
-| [Notifications](docs/notifications.md)                                 | Setting up Discord, Email, Ntfy             |
+| [Notifications](docs/notifications.md)                                 | Setting up Discord, Email, Ntfy, Telegram   |
 | [Groups & Strategies](docs/groups.md)                                  | Organizing monitors hierarchically          |
 | [Custom Metrics](docs/custom-metrics.md)                               | Tracking additional data points             |
 | [PulseMonitor Integration](docs/pulsemonitor.md)                       | Automated monitoring from multiple regions  |

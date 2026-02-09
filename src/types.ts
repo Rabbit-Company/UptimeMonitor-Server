@@ -207,6 +207,8 @@ export interface Monitor {
 	resendNotification: number;
 	/** Optional group ID this monitor belongs to */
 	groupId?: string;
+	/** Array of monitor/group IDs this monitor depends on for notification suppression */
+	dependencies?: string[];
 	/** Notification channel IDs to use for this monitor */
 	notificationChannels?: string[];
 	/** Configuration for custom metric 1 */
@@ -244,6 +246,8 @@ export interface Group {
 	parentId?: string;
 	/** Resend "still-down" notification after this many consecutive down checks (0 = never resend) */
 	resendNotification: number;
+	/** Array of monitor/group IDs this group depends on for notification suppression */
+	dependencies?: string[];
 	/** Notification channel IDs to use for this group */
 	notificationChannels?: string[];
 }
@@ -260,6 +264,8 @@ export interface GroupState {
 	downStartTime?: number;
 	/** The down count at which the last notification was sent (for resendNotification) */
 	lastNotificationCount: number;
+	/** Whether the down notification was suppressed due to a dependency being down */
+	notificationSuppressed?: boolean;
 }
 
 /**
@@ -672,6 +678,8 @@ export interface MonitorState {
 	lastNotificationCount: number;
 	/** Timestamp when the monitor first went down (undefined if monitor is up) */
 	downStartTime?: number;
+	/** Whether the down notification was suppressed due to a dependency being down */
+	notificationSuppressed?: boolean;
 }
 
 /**

@@ -24,6 +24,14 @@ class CacheManager {
 	// Status cache
 	public statusCache: Map<string, StatusData> = new Map();
 
+	// Dependency caches (rebuilt on initialize/reload)
+	/** Maps entity ID -> its dependency level (0 = no dependencies, higher = deeper) */
+	private dependencyLevels: Map<string, number> = new Map();
+	/** Monitors sorted by dependency level ascending (no-deps first) */
+	private monitorsByDependencyLevel: Monitor[] = [];
+	/** Maps entity ID -> array of dependency IDs */
+	private dependenciesById: Map<string, string[]> = new Map();
+
 	constructor() {
 		this.initialize();
 	}
@@ -39,6 +47,7 @@ class CacheManager {
 		this.initializeNotificationChannels();
 		this.buildRelationships();
 		this.buildStatusPageMonitorIndex();
+		this.buildDependencyGraph();
 
 		Logger.info("Cache initialized", {
 			pulseMonitors: this.pulseMonitors.size,
@@ -138,7 +147,7 @@ class CacheManager {
 
 		// Monitors by PulseMonitor
 		for (const monitor of this.monitors.values()) {
-			if (monitor.pulseMonitors && monitor.pulseMonitors.length > 0) {
+			if (monitor.pulseMonitors) {
 				for (const pulseMonitorId of monitor.pulseMonitors) {
 					const existing = this.monitorsByPulseMonitor.get(pulseMonitorId) || [];
 					existing.push(monitor);
@@ -149,89 +158,119 @@ class CacheManager {
 	}
 
 	/**
-	 * Recursively collect all monitor IDs in a group
-	 */
-	private collectMonitorsInGroup(groupId: string, result: Set<string>): void {
-		// Direct monitors
-		const monitors = this.monitorsByGroup.get(groupId) || [];
-		for (const monitor of monitors) {
-			result.add(monitor.id);
-		}
-
-		// Child groups
-		const childGroups = this.groupsByParent.get(groupId) || [];
-		for (const child of childGroups) {
-			this.collectMonitorsInGroup(child.id, result);
-		}
-	}
-
-	/**
-	 * Build reverse index: monitorId -> status page slugs
+	 * Build status page -> monitor reverse index
 	 */
 	private buildStatusPageMonitorIndex(): void {
 		this.statusPageSlugsByMonitor.clear();
 
 		for (const page of this.statusPages.values()) {
-			const monitorsOnPage = new Set<string>();
-
 			for (const itemId of page.items) {
-				// Direct monitor
-				if (this.monitors.has(itemId)) {
-					monitorsOnPage.add(itemId);
-					continue;
+				// Get all monitors for this item (could be a monitor ID or group ID)
+				const monitorIds = this.getAllMonitorIdsForItem(itemId);
+				for (const monitorId of monitorIds) {
+					const existing = this.statusPageSlugsByMonitor.get(monitorId) || [];
+					if (!existing.includes(page.slug)) {
+						existing.push(page.slug);
+					}
+					this.statusPageSlugsByMonitor.set(monitorId, existing);
 				}
-
-				// Group (recursive)
-				if (this.groups.has(itemId)) {
-					this.collectMonitorsInGroup(itemId, monitorsOnPage);
-				}
-			}
-
-			for (const monitorId of monitorsOnPage) {
-				const existing = this.statusPageSlugsByMonitor.get(monitorId) || [];
-				existing.push(page.slug);
-				this.statusPageSlugsByMonitor.set(monitorId, existing);
 			}
 		}
 	}
 
-	isStatusPageProtected(slug: string): boolean {
-		const statusPage = this.statusPagesBySlug.get(slug);
-		return statusPage?.password !== undefined && statusPage.password.length > 0;
-	}
-
-	getStatusPagePassword(slug: string): string | undefined {
-		const statusPage = this.statusPagesBySlug.get(slug);
-		return statusPage?.password;
-	}
-
-	verifyStatusPagePassword(slug: string, providedPassword: string | null): boolean {
-		const statusPage = this.statusPagesBySlug.get(slug);
-		if (!statusPage) {
-			return false;
+	/**
+	 * Get all monitor IDs for a status page item (recursively handles groups)
+	 */
+	private getAllMonitorIdsForItem(itemId: string): string[] {
+		// If it's a monitor, return just that ID
+		if (this.monitors.has(itemId)) {
+			return [itemId];
 		}
 
-		if (!statusPage.password) {
-			return true;
+		// If it's a group, get all monitors in it (recursively)
+		if (this.groups.has(itemId)) {
+			const monitorIds: string[] = [];
+			const directMonitors = this.monitorsByGroup.get(itemId) || [];
+			for (const monitor of directMonitors) {
+				monitorIds.push(monitor.id);
+			}
+
+			const childGroups = this.groupsByParent.get(itemId) || [];
+			for (const childGroup of childGroups) {
+				monitorIds.push(...this.getAllMonitorIdsForItem(childGroup.id));
+			}
+
+			return monitorIds;
 		}
 
-		return providedPassword === statusPage.password;
+		return [];
 	}
 
-	getMonitor(id: string): Monitor | undefined {
-		return this.monitors.get(id);
-	}
+	/**
+	 * Build dependency graph and compute levels via topological sort.
+	 * Level 0 = no dependencies (processed first).
+	 * Level N = depends on something at level N-1.
+	 */
+	private buildDependencyGraph(): void {
+		this.dependencyLevels.clear();
+		this.dependenciesById.clear();
+		this.monitorsByDependencyLevel = [];
 
-	getMonitorByToken(token: string): Monitor | undefined {
-		return this.monitorsByToken.get(token);
-	}
+		// Collect all dependency edges
+		for (const monitor of this.monitors.values()) {
+			if (monitor.dependencies?.length) {
+				this.dependenciesById.set(monitor.id, monitor.dependencies);
+			}
+		}
+		for (const group of this.groups.values()) {
+			if (group.dependencies?.length) {
+				this.dependenciesById.set(group.id, group.dependencies);
+			}
+		}
 
-	getAllMonitors(): Monitor[] {
-		return Array.from(this.monitors.values());
-	}
+		// Compute level for each entity (memoized DFS)
+		const computing = new Set<string>();
 
-	getMonitorsByGroup(groupId: string): Monitor[] {
-		return this.monitorsByGroup.get(groupId) || [];
+		const computeLevel = (id: string): number => {
+			if (this.dependencyLevels.has(id)) return this.dependencyLevels.get(id)!;
+			if (computing.has(id)) return 0; // circular guard (validated in config)
+
+			computing.add(id);
+			const deps = this.dependenciesById.get(id);
+			let level = 0;
+			if (deps) {
+				for (const depId of deps) {
+					level = Math.max(level, computeLevel(depId) + 1);
+				}
+			}
+			computing.delete(id);
+			this.dependencyLevels.set(id, level);
+			return level;
+		};
+
+		// Compute levels for all monitors and groups
+		for (const monitor of this.monitors.values()) {
+			computeLevel(monitor.id);
+		}
+		for (const group of this.groups.values()) {
+			computeLevel(group.id);
+		}
+
+		// Pre-sort monitors by dependency level ascending (no-deps first)
+		this.monitorsByDependencyLevel = [...this.monitors.values()].sort((a, b) => {
+			return (this.dependencyLevels.get(a.id) ?? 0) - (this.dependencyLevels.get(b.id) ?? 0);
+		});
+
+		const levelCounts: Record<number, number> = {};
+		for (const [, level] of this.dependencyLevels) {
+			levelCounts[level] = (levelCounts[level] || 0) + 1;
+		}
+
+		Logger.debug("Dependency graph built", {
+			totalEntities: this.dependencyLevels.size,
+			entitiesWithDeps: this.dependenciesById.size,
+			levelCounts: JSON.stringify(levelCounts),
+		});
 	}
 
 	getPulseMonitor(id: string): PulseMonitor | undefined {
@@ -246,11 +285,20 @@ class CacheManager {
 		return Array.from(this.pulseMonitors.values());
 	}
 
-	/**
-	 * Get all monitors that should be targeted by a specific PulseMonitor
-	 */
 	getMonitorsByPulseMonitor(pulseMonitorId: string): Monitor[] {
 		return this.monitorsByPulseMonitor.get(pulseMonitorId) || [];
+	}
+
+	getMonitor(id: string): Monitor | undefined {
+		return this.monitors.get(id);
+	}
+
+	getMonitorByToken(token: string): Monitor | undefined {
+		return this.monitorsByToken.get(token);
+	}
+
+	getAllMonitors(): Monitor[] {
+		return Array.from(this.monitors.values());
 	}
 
 	getGroup(id: string): Group | undefined {
@@ -259,6 +307,10 @@ class CacheManager {
 
 	getAllGroups(): Group[] {
 		return Array.from(this.groups.values());
+	}
+
+	getMonitorsByGroup(groupId: string): Monitor[] {
+		return this.monitorsByGroup.get(groupId) || [];
 	}
 
 	getChildGroups(parentId: string): Group[] {
@@ -297,6 +349,29 @@ class CacheManager {
 		this.statusCache.set(id, status);
 	}
 
+	isStatusPageProtected(slug: string): boolean {
+		const statusPage = this.statusPagesBySlug.get(slug);
+		return statusPage?.password !== undefined && statusPage.password.length > 0;
+	}
+
+	getStatusPagePassword(slug: string): string | undefined {
+		const statusPage = this.statusPagesBySlug.get(slug);
+		return statusPage?.password;
+	}
+
+	verifyStatusPagePassword(slug: string, providedPassword: string | null): boolean {
+		const statusPage = this.statusPagesBySlug.get(slug);
+		if (!statusPage) {
+			return false;
+		}
+
+		if (!statusPage.password) {
+			return true;
+		}
+
+		return providedPassword === statusPage.password;
+	}
+
 	/**
 	 * Get all direct children (monitors and groups) of a group
 	 */
@@ -318,6 +393,52 @@ class CacheManager {
 
 	hasGroup(id: string): boolean {
 		return this.groups.has(id);
+	}
+
+	/**
+	 * Get all monitors sorted by dependency level (no-deps first).
+	 */
+	getMonitorsByDependencyLevel(): Monitor[] {
+		return this.monitorsByDependencyLevel;
+	}
+
+	/**
+	 * Get the dependency level of an entity (0 = no deps).
+	 */
+	getDependencyLevel(id: string): number {
+		return this.dependencyLevels.get(id) ?? 0;
+	}
+
+	/**
+	 * Get the dependency IDs for an entity.
+	 */
+	getDependencies(id: string): string[] {
+		return this.dependenciesById.get(id) ?? [];
+	}
+
+	/**
+	 * Check if any of an entity's dependencies are currently down.
+	 * Returns the first down dependency ID, or undefined if all deps are up.
+	 */
+	isAnyDependencyDown(entityId: string): string | undefined {
+		const deps = this.dependenciesById.get(entityId);
+		if (!deps || deps.length === 0) return undefined;
+
+		for (const depId of deps) {
+			const status = this.statusCache.get(depId);
+			if (status && status.status === "down") {
+				return depId;
+			}
+		}
+		return undefined;
+	}
+
+	/**
+	 * Check if an entity has any dependencies configured.
+	 */
+	hasDependencies(entityId: string): boolean {
+		const deps = this.dependenciesById.get(entityId);
+		return !!(deps && deps.length > 0);
 	}
 
 	/**
@@ -344,6 +465,8 @@ class CacheManager {
 			monitorsByPulseMonitor: this.monitorsByPulseMonitor.size,
 			statusPageMonitorIndex: this.statusPageSlugsByMonitor.size,
 			statusData: this.statusCache.size,
+			dependencyLevels: this.dependencyLevels.size,
+			entitiesWithDeps: this.dependenciesById.size,
 		};
 	}
 }

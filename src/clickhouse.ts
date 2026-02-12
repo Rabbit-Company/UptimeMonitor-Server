@@ -3,7 +3,6 @@ import { config } from "./config";
 import { Logger } from "./logger";
 import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics, GroupHistoryRecord, Group } from "./types";
 import { missingPulseDetector } from "./missing-pulse-detector";
-import { NotificationManager } from "./notifications";
 import { cache } from "./cache";
 import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
 import { server } from ".";
@@ -762,43 +761,126 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		groupStateTracker.recordDown(groupId, false);
 	}
 
-	// Send notifications (skip during grace period)
+	// Send notifications (skip during grace period, check dependency suppression)
 	if (!isInGracePeriod() && group.notificationChannels?.length) {
 		const notificationManager = groupStateTracker.getNotificationManager();
 		const groupInfo = { strategy: group.strategy, childrenUp: totalUp, totalChildren: totalKnown, upPercentage };
 
+		const downDep = cache.isAnyDependencyDown(groupId);
+
 		if (isGoingDown) {
-			// Group just went down - send down notification
-			await notificationManager.sendNotification(group.notificationChannels, {
-				type: "down",
-				monitorId: groupId,
-				monitorName: group.name,
-				timestamp: new Date(),
-				sourceType: "group",
-				downtime: 0,
-				groupInfo,
-			});
-			groupStateTracker.recordNotificationSent(groupId);
+			if (downDep) {
+				// Dependency already down - suppress immediately
+				const gState = groupStateTracker.getState(groupId);
+				if (gState) gState.notificationSuppressed = true;
+				Logger.info("Group down notification suppressed (dependency down)", {
+					groupId,
+					groupName: group.name,
+					suppressedBy: downDep,
+				});
+			} else if (cache.hasDependencies(groupId)) {
+				// Has dependencies but none down yet - delayed recheck (fire and forget)
+				const gState = groupStateTracker.getState(groupId);
+				const abortController = groupStateTracker.createPendingAbort(groupId);
+
+				groupStateTracker.recordNotificationSent(groupId);
+
+				const delay = Math.max(Math.floor((group.interval * 1000) / 2), 5000);
+
+				setTimeout(async () => {
+					try {
+						groupStateTracker.cleanupPendingAbort(groupId);
+
+						// Group recovered during the delay — skip
+						if (abortController.signal.aborted) {
+							Logger.debug("Pending group notification cancelled (group recovered during delay)", {
+								groupId,
+								groupName: group.name,
+							});
+							return;
+						}
+
+						const downDepAfterDelay = cache.isAnyDependencyDown(groupId);
+						if (downDepAfterDelay) {
+							if (gState) gState.notificationSuppressed = true;
+							Logger.info("Group down notification suppressed after delay", {
+								groupId,
+								groupName: group.name,
+								suppressedBy: downDepAfterDelay,
+							});
+						} else {
+							if (gState) gState.notificationSuppressed = false;
+							notificationManager.sendNotification(group.notificationChannels!, {
+								type: "down",
+								monitorId: groupId,
+								monitorName: group.name,
+								timestamp: new Date(),
+								sourceType: "group",
+								downtime: 0,
+								groupInfo,
+							});
+							groupStateTracker.recordNotificationSent(groupId);
+						}
+					} catch (err) {
+						Logger.error("Error in delayed group notification", {
+							groupId,
+							error: err instanceof Error ? err.message : "Unknown error",
+						});
+					}
+				}, delay);
+			} else {
+				// No dependencies - send immediately
+				const gState = groupStateTracker.getState(groupId);
+				if (gState) gState.notificationSuppressed = false;
+				notificationManager.sendNotification(group.notificationChannels, {
+					type: "down",
+					monitorId: groupId,
+					monitorName: group.name,
+					timestamp: new Date(),
+					sourceType: "group",
+					downtime: 0,
+					groupInfo,
+				});
+				groupStateTracker.recordNotificationSent(groupId);
+			}
 		} else if (isRecovering) {
-			// Group recovered - get the downtime info and send recovery notification
+			// Cancel any pending deferred down notification
+			groupStateTracker.cancelPendingNotification(groupId);
+
+			const gState = groupStateTracker.getState(groupId);
 			const recoveryInfo = groupStateTracker.recordRecovery(groupId, group.interval);
 
-			await notificationManager.sendNotification(group.notificationChannels, {
-				type: "recovered",
-				monitorId: groupId,
-				monitorName: group.name,
-				timestamp: new Date(),
-				sourceType: "group",
-				previousConsecutiveDownCount: recoveryInfo?.previousConsecutiveDownCount ?? 0,
-				downtime: recoveryInfo?.downtime ?? 0,
-				groupInfo,
-			});
+			if (gState?.notificationSuppressed) {
+				Logger.info("Group recovery notification suppressed (down was suppressed)", {
+					groupId,
+					groupName: group.name,
+					previousConsecutiveDownCount: recoveryInfo?.previousConsecutiveDownCount ?? 0,
+				});
+			} else {
+				notificationManager.sendNotification(group.notificationChannels, {
+					type: "recovered",
+					monitorId: groupId,
+					monitorName: group.name,
+					timestamp: new Date(),
+					sourceType: "group",
+					previousConsecutiveDownCount: recoveryInfo?.previousConsecutiveDownCount ?? 0,
+					downtime: recoveryInfo?.downtime ?? 0,
+					groupInfo,
+				});
+			}
 		} else if (isStillDown && group.resendNotification && group.resendNotification > 0) {
-			// Group is still down - check if we should send a "still-down" reminder
-			if (groupStateTracker.shouldSendStillDownNotification(groupId, group.resendNotification)) {
+			if (downDep) {
+				// Suppress still-down reminders when dependency is down
+				const gState = groupStateTracker.getState(groupId);
+				if (gState) gState.notificationSuppressed = true;
+				Logger.info("Group still-down notification suppressed (dependency down)", {
+					groupId,
+					groupName: group.name,
+					suppressedBy: downDep,
+				});
+			} else if (groupStateTracker.shouldSendStillDownNotification(groupId, group.resendNotification)) {
 				const downtimeInfo = groupStateTracker.getDowntimeInfo(groupId, group.interval);
-
-				await notificationManager.sendNotification(group.notificationChannels, {
+				notificationManager.sendNotification(group.notificationChannels, {
 					type: "still-down",
 					monitorId: groupId,
 					monitorName: group.name,

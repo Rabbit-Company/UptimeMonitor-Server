@@ -265,6 +265,34 @@ The `resendNotification` field controls "still-down" reminders:
 - "Still down" reminder every 5 × 12 = 60 seconds while down
 - Recovery notification when back up
 
+## Dependency-Based Notification Suppression
+
+You can configure monitors and groups to suppress notifications when an upstream dependency is down. This prevents notification storms when infrastructure fails - for example, if a server goes down, you won't get separate alerts for each app running on it.
+
+Add a `dependencies` array to any monitor or group:
+
+```toml
+[[monitors]]
+id = "app-1"
+name = "App 1"
+token = "token-app-1"
+interval = 30
+maxRetries = 0
+resendNotification = 0
+dependencies = ["server-1"]       # No notifications if server-1 is down
+notificationChannels = ["discord"]
+```
+
+When `server-1` is down:
+
+- Down notifications for `app-1` are suppressed
+- Still-down reminders for `app-1` are suppressed
+- Recovery notifications for `app-1` are suppressed (since the user never saw a down alert)
+
+Status tracking (uptime, group health, status pages) is unaffected - only notifications are suppressed.
+
+See [Dependencies](dependencies.md) for full documentation, multi-layer examples, and validation rules.
+
 ## Multiple Providers per Channel
 
 A channel can have multiple providers enabled simultaneously:

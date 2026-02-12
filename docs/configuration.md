@@ -134,19 +134,27 @@ resendNotification = 12
 groupId = "production"
 notificationChannels = ["critical"]
 pulseMonitors = ["US-WEST-1"]
+# dependencies = ["server-group"]  # Suppress notifications if dependency is down
 ```
 
-| Field                  | Required | Default | Description                                                  |
-| ---------------------- | -------- | ------- | ------------------------------------------------------------ |
-| `id`                   | Yes      | -       | Unique identifier                                            |
-| `name`                 | Yes      | -       | Display name                                                 |
-| `token`                | Yes      | -       | Secret token for pulse authentication                        |
-| `interval`             | Yes      | -       | Expected pulse interval in seconds (see [Pulses](pulses.md)) |
-| `maxRetries`           | Yes      | -       | Missed pulses before marking down (see [Pulses](pulses.md))  |
-| `resendNotification`   | Yes      | -       | Resend notification every N down checks (0 = never)          |
-| `groupId`              | No       | -       | Parent group ID                                              |
-| `notificationChannels` | No       | `[]`    | Array of notification channel IDs                            |
-| `pulseMonitors`        | No       | `[]`    | Array of PulseMonitor IDs for automated checking             |
+| Field                  | Required | Default | Description                                                                                                                                |
+| ---------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                   | Yes      | -       | Unique identifier                                                                                                                          |
+| `name`                 | Yes      | -       | Display name                                                                                                                               |
+| `token`                | Yes      | -       | Secret token for pulse authentication                                                                                                      |
+| `interval`             | Yes      | -       | Expected pulse interval in seconds (see [Pulses](pulses.md))                                                                               |
+| `maxRetries`           | Yes      | -       | Missed pulses before marking down (see [Pulses](pulses.md))                                                                                |
+| `resendNotification`   | Yes      | -       | Resend notification every N down checks (0 = never)                                                                                        |
+| `groupId`              | No       | -       | Parent group ID                                                                                                                            |
+| `notificationChannels` | No       | `[]`    | Array of notification channel IDs                                                                                                          |
+| `pulseMonitors`        | No       | `[]`    | Array of PulseMonitor IDs for automated checking                                                                                           |
+| `dependencies`         | No       | `[]`    | Array of monitor/group IDs. If any dependency is down, notifications for this monitor are suppressed (see [Dependencies](dependencies.md)) |
+
+### Dependency-Based Notification Suppression
+
+Monitors and groups can declare dependencies on other monitors or groups using the `dependencies` array.
+When any dependency is down, notifications for the dependent entity are suppressed - preventing
+notification storms when upstream infrastructure fails. See [Dependencies](dependencies.md) for full documentation.
 
 ### Custom Metrics
 
@@ -213,18 +221,20 @@ interval = 60
 resendNotification = 12
 parentId = "all-services"
 notificationChannels = ["critical"]
+# dependencies = ["network"]       # Suppress notifications if dependency is down
 ```
 
-| Field                  | Required | Default | Description                                      |
-| ---------------------- | -------- | ------- | ------------------------------------------------ |
-| `id`                   | Yes      | -       | Unique identifier                                |
-| `name`                 | Yes      | -       | Display name                                     |
-| `strategy`             | Yes      | -       | `"any-up"`, `"all-up"`, or `"percentage"`        |
-| `degradedThreshold`    | Yes      | -       | Percentage threshold (0-100) for degraded status |
-| `interval`             | Yes      | -       | Used for uptime calculations                     |
-| `resendNotification`   | No       | `0`     | Resend notification every N down checks          |
-| `parentId`             | No       | -       | Parent group ID for nesting                      |
-| `notificationChannels` | No       | `[]`    | Array of notification channel IDs                |
+| Field                  | Required | Default | Description                                                                                                                              |
+| ---------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                   | Yes      | -       | Unique identifier                                                                                                                        |
+| `name`                 | Yes      | -       | Display name                                                                                                                             |
+| `strategy`             | Yes      | -       | `"any-up"`, `"all-up"`, or `"percentage"`                                                                                                |
+| `degradedThreshold`    | Yes      | -       | Percentage threshold (0-100) for degraded status                                                                                         |
+| `interval`             | Yes      | -       | Used for uptime calculations                                                                                                             |
+| `resendNotification`   | No       | `0`     | Resend notification every N down checks                                                                                                  |
+| `parentId`             | No       | -       | Parent group ID for nesting                                                                                                              |
+| `notificationChannels` | No       | `[]`    | Array of notification channel IDs                                                                                                        |
+| `dependencies`         | No       | `[]`    | Array of monitor/group IDs. If any dependency is down, notifications for this group are suppressed (see [Dependencies](dependencies.md)) |
 
 ### Strategy Reference
 

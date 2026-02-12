@@ -11,6 +11,8 @@ import type { GroupState } from "./types";
 class GroupStateTracker {
 	private readonly groupStates = new Map<string, GroupState>();
 	private readonly notificationManager: NotificationManager;
+	/** Abort controllers for pending deferred group notifications (one per group) */
+	private readonly pendingAbortControllers = new Map<string, AbortController>();
 
 	constructor() {
 		this.notificationManager = new NotificationManager(config.notifications || { channels: {} });
@@ -155,6 +157,32 @@ class GroupStateTracker {
 			previousConsecutiveDownCount,
 			downtime,
 		};
+	}
+
+	/**
+	 * Create an AbortController for a pending deferred notification.
+	 * Cancels any existing pending notification for this group.
+	 */
+	createPendingAbort(groupId: string): AbortController {
+		this.pendingAbortControllers.get(groupId)?.abort();
+		const controller = new AbortController();
+		this.pendingAbortControllers.set(groupId, controller);
+		return controller;
+	}
+
+	/**
+	 * Cancel any pending deferred notification for a group and clean up.
+	 */
+	cancelPendingNotification(groupId: string): void {
+		this.pendingAbortControllers.get(groupId)?.abort();
+		this.pendingAbortControllers.delete(groupId);
+	}
+
+	/**
+	 * Clean up the abort controller for a group (after the deferred notification resolves).
+	 */
+	cleanupPendingAbort(groupId: string): void {
+		this.pendingAbortControllers.delete(groupId);
 	}
 
 	/**

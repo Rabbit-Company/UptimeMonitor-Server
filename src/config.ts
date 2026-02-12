@@ -481,6 +481,22 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		}
 	}
 
+	let dependencies: string[] | undefined;
+	if (monitor.dependencies !== undefined) {
+		if (!isArray(monitor.dependencies)) {
+			errors.push(`monitors[${index}].dependencies must be an array if provided`);
+		} else {
+			dependencies = [];
+			for (let i = 0; i < monitor.dependencies.length; i++) {
+				if (!isString(monitor.dependencies[i]) || (monitor.dependencies[i] as string).trim().length === 0) {
+					errors.push(`monitors[${index}].dependencies[${i}] must be a non-empty string`);
+				} else {
+					dependencies.push(monitor.dependencies[i] as string);
+				}
+			}
+		}
+	}
+
 	// Validate pulse configuration
 	let pulse: PulseConfig | undefined;
 	try {
@@ -539,6 +555,7 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		maxRetries: monitor.maxRetries as number,
 		resendNotification: monitor.resendNotification as number,
 		groupId: monitor.groupId as string | undefined,
+		dependencies,
 		notificationChannels,
 		pulseMonitors,
 	};
@@ -597,6 +614,22 @@ function validateGroup(group: unknown, index: number): Group {
 		}
 	}
 
+	let dependencies: string[] | undefined;
+	if (group.dependencies !== undefined) {
+		if (!isArray(group.dependencies)) {
+			errors.push(`groups[${index}].dependencies must be an array if provided`);
+		} else {
+			dependencies = [];
+			for (let i = 0; i < group.dependencies.length; i++) {
+				if (!isString(group.dependencies[i]) || (group.dependencies[i] as string).trim().length === 0) {
+					errors.push(`groups[${index}].dependencies[${i}] must be a non-empty string`);
+				} else {
+					dependencies.push(group.dependencies[i] as string);
+				}
+			}
+		}
+	}
+
 	if (errors.length > 0) {
 		throw new ConfigValidationError(errors);
 	}
@@ -611,6 +644,7 @@ function validateGroup(group: unknown, index: number): Group {
 		interval: group.interval as number,
 		parentId: group.parentId as string | undefined,
 		resendNotification: (group.resendNotification as number | undefined) ?? 0,
+		dependencies,
 		notificationChannels,
 	};
 }
@@ -1358,7 +1392,7 @@ function validateReferences(config: Config): void {
 	const allValidIds = new Set([...validMonitorIds, ...validGroupIds]);
 	const validNotificationChannelIds = new Set(Object.keys(config.notifications?.channels || {}));
 
-	// Validate monitor group references and pulseMonitors references
+	// Validate monitor group references
 	for (const monitor of config.monitors) {
 		if (monitor.groupId && !validGroupIds.has(monitor.groupId)) {
 			errors.push(`Monitor '${monitor.id}' references non-existent group: ${monitor.groupId}`);
@@ -1372,7 +1406,17 @@ function validateReferences(config: Config): void {
 			}
 		}
 
-		// Validate pulseMonitors references
+		if (monitor.dependencies) {
+			for (const depId of monitor.dependencies) {
+				if (!allValidIds.has(depId)) {
+					errors.push(`Monitor '${monitor.id}' has dependency on non-existent monitor/group: ${depId}`);
+				}
+				if (depId === monitor.id) {
+					errors.push(`Monitor '${monitor.id}' cannot depend on itself`);
+				}
+			}
+		}
+
 		if (monitor.pulseMonitors) {
 			for (const pulseMonitorId of monitor.pulseMonitors) {
 				if (!validPulseMonitorIds.has(pulseMonitorId)) {
@@ -1405,6 +1449,17 @@ function validateReferences(config: Config): void {
 				}
 			}
 		}
+
+		if (group.dependencies) {
+			for (const depId of group.dependencies) {
+				if (!allValidIds.has(depId)) {
+					errors.push(`Group '${group.id}' has dependency on non-existent monitor/group: ${depId}`);
+				}
+				if (depId === group.id) {
+					errors.push(`Group '${group.id}' cannot depend on itself`);
+				}
+			}
+		}
 	}
 
 	// Validate status page item references
@@ -1424,7 +1479,7 @@ function validateReferences(config: Config): void {
 function detectCircularReferences(config: Config): void {
 	const errors: string[] = [];
 
-	// Check for circular group references
+	// Check for circular group parent references
 	const visited = new Set<string>();
 	const recursionStack = new Set<string>();
 
@@ -1450,6 +1505,49 @@ function detectCircularReferences(config: Config): void {
 	for (const group of config.groups) {
 		if (!visited.has(group.id)) {
 			checkCircular(group.id);
+		}
+	}
+
+	// Check for circular dependency references (across all monitors and groups)
+	const allEntities = new Map<string, string[]>();
+	for (const monitor of config.monitors) {
+		if (monitor.dependencies?.length) {
+			allEntities.set(monitor.id, monitor.dependencies);
+		}
+	}
+	for (const group of config.groups) {
+		if (group.dependencies?.length) {
+			allEntities.set(group.id, group.dependencies);
+		}
+	}
+
+	const depVisited = new Set<string>();
+	const depStack = new Set<string>();
+
+	function checkDepCircular(entityId: string, path: string[] = []): void {
+		if (depStack.has(entityId)) {
+			errors.push(`Circular dependency detected: ${[...path, entityId].join(" -> ")}`);
+			return;
+		}
+
+		if (depVisited.has(entityId)) return;
+
+		depVisited.add(entityId);
+		depStack.add(entityId);
+
+		const deps = allEntities.get(entityId);
+		if (deps) {
+			for (const depId of deps) {
+				checkDepCircular(depId, [...path, entityId]);
+			}
+		}
+
+		depStack.delete(entityId);
+	}
+
+	for (const entityId of allEntities.keys()) {
+		if (!depVisited.has(entityId)) {
+			checkDepCircular(entityId);
 		}
 	}
 

@@ -133,6 +133,32 @@ all-services (percentage, 75%)
     └── web-staging (monitor)
 ```
 
+## Dependencies vs Group Hierarchy
+
+The group hierarchy (`parentId`) and `dependencies` serve different purposes:
+
+- **Group hierarchy** (`parentId`) is for **status aggregation** - calculating whether a group is up, down, or degraded based on its children. It also determines how monitors are organized on status pages.
+- **Dependencies** is for **notification suppression** - when a dependency is down, notifications for the dependent entity are suppressed to avoid alert storms.
+
+These are orthogonal. A group can have a `parentId` for status aggregation and completely different `dependencies` for notification suppression. That said, it's common for them to overlap.
+
+```toml
+# This group is a child of "infrastructure" for status purposes,
+# but depends on "network" for notification suppression
+[[groups]]
+id = "server-1"
+name = "Server 1"
+strategy = "all-up"
+degradedThreshold = 50
+interval = 30
+resendNotification = 0
+parentId = "infrastructure"
+dependencies = ["network"]
+notificationChannels = ["discord"]
+```
+
+See [Dependencies](dependencies.md) for full documentation and examples.
+
 ## Assigning Monitors to Groups
 
 Use the `groupId` field on monitors:

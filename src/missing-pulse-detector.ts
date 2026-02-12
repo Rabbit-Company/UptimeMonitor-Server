@@ -13,6 +13,8 @@ export class MissingPulseDetector {
 	private readonly monitorStates = new Map<string, MonitorState>();
 	private readonly notificationManager: NotificationManager;
 	private readonly lastPulseTime = new Map<string, Date>();
+	/** Abort controllers for pending deferred notifications (one per monitor) */
+	private readonly pendingAbortControllers = new Map<string, AbortController>();
 
 	constructor(options: MissingPulseDetectorOptions = {}) {
 		this.checkInterval = options.checkInterval || 5000;
@@ -48,6 +50,12 @@ export class MissingPulseDetector {
 
 		clearInterval(this.intervalId);
 		this.intervalId = undefined;
+
+		for (const controller of this.pendingAbortControllers.values()) {
+			controller.abort();
+		}
+		this.pendingAbortControllers.clear();
+
 		Logger.info("Stopped missing pulse detector");
 	}
 
@@ -59,55 +67,85 @@ export class MissingPulseDetector {
 	}
 
 	/**
-	 * Check all monitors for missing pulses
+	 * Check all monitors for missing pulses.
+	 * Monitors are processed in dependency-level order so that upstream
+	 * entities (level 0) are evaluated before downstream ones.
+	 *
+	 * Two-phase approach:
+	 * Phase 1: Check all monitors sequentially by level, update statuses,
+	 *          send notifications immediately for monitors without dependencies.
+	 * Phase 2: For monitors with dependencies whose deps weren't already down,
+	 *          wait a short delay then recheck before sending notifications.
 	 */
 	private async detectMissingPulses(): Promise<void> {
 		const now = Date.now();
-		const monitors = cache.getAllMonitors();
+		const monitors = cache.getMonitorsByDependencyLevel();
 
-		const detectionPromises = monitors.map((monitor) => this.checkMonitor(monitor, now));
+		const pendingNotifications: Array<{
+			monitor: Monitor;
+			state: MonitorState;
+			downtimeInfo: DowntimeInfo;
+			type: "down" | "still-down";
+			abortSignal: AbortSignal;
+		}> = [];
 
-		await Promise.allSettled(detectionPromises);
+		// Phase 1: Process monitors in dependency order (level 0 first)
+		for (const monitor of monitors) {
+			try {
+				await this.checkMonitor(monitor, now, pendingNotifications);
+			} catch (error) {
+				Logger.error("Error checking monitor for missing pulses", {
+					monitorId: monitor.id,
+					error: error instanceof Error ? error.message : "Unknown error",
+				});
+			}
+		}
+
+		// Phase 2: Process pending notifications after delay (fire and forget)
+		if (pendingNotifications.length > 0) {
+			this.processPendingNotifications(pendingNotifications);
+		}
 	}
 
 	/**
-	 * Check a single monitor for missing pulses
+	 * Check a single monitor for missing pulses with dependency awareness.
+	 * Status updates happen immediately; notifications may be deferred.
 	 */
-	private async checkMonitor(monitor: Monitor, now: number): Promise<void> {
-		try {
-			const status = cache.getStatus(monitor.id);
-			const trackedPulseTime = this.lastPulseTime.get(monitor.id);
+	private async checkMonitor(
+		monitor: Monitor,
+		now: number,
+		pendingNotifications: Array<{
+			monitor: Monitor;
+			state: MonitorState;
+			downtimeInfo: DowntimeInfo;
+			type: "down" | "still-down";
+			abortSignal: AbortSignal;
+		}>,
+	): Promise<void> {
+		const status = cache.getStatus(monitor.id);
+		const trackedPulseTime = this.lastPulseTime.get(monitor.id);
 
-			// Use the most recent pulse time from either source
-			let lastCheck: number | undefined;
+		let lastCheck: number | undefined;
+		if (trackedPulseTime && status?.lastCheck) {
+			lastCheck = Math.max(trackedPulseTime.getTime(), status.lastCheck.getTime());
+		} else if (trackedPulseTime) {
+			lastCheck = trackedPulseTime.getTime();
+		} else if (status?.lastCheck) {
+			lastCheck = status.lastCheck.getTime();
+		}
 
-			if (trackedPulseTime && status?.lastCheck) {
-				// Use whichever is more recent
-				lastCheck = Math.max(trackedPulseTime.getTime(), status.lastCheck.getTime());
-			} else if (trackedPulseTime) {
-				lastCheck = trackedPulseTime.getTime();
-			} else if (status?.lastCheck) {
-				lastCheck = status.lastCheck.getTime();
-			}
+		if (!lastCheck) {
+			this.handleNeverPulsedMonitor(monitor, now);
+			return;
+		}
 
-			if (!lastCheck) {
-				this.handleNeverPulsedMonitor(monitor, now);
-				return;
-			}
+		const timeSinceLastCheck = now - lastCheck;
+		const maxAllowedInterval = this.getMaxAllowedInterval(monitor);
 
-			const timeSinceLastCheck = now - lastCheck;
-			const maxAllowedInterval = this.getMaxAllowedInterval(monitor);
-
-			if (timeSinceLastCheck > maxAllowedInterval) {
-				await this.handleMissingPulse(monitor, timeSinceLastCheck, now);
-			} else {
-				this.handleMonitorUp(monitor.id);
-			}
-		} catch (error) {
-			Logger.error("Error checking monitor for missing pulses", {
-				monitorId: monitor.id,
-				error: error instanceof Error ? error.message : "Unknown error",
-			});
+		if (timeSinceLastCheck > maxAllowedInterval) {
+			await this.handleMissingPulse(monitor, timeSinceLastCheck, now, pendingNotifications);
+		} else {
+			this.handleMonitorUp(monitor.id);
 		}
 	}
 
@@ -147,9 +185,22 @@ export class MissingPulseDetector {
 	}
 
 	/**
-	 * Handle a detected missing pulse
+	 * Handle a detected missing pulse with dependency-aware notification suppression.
+	 * Status is always updated immediately. Notifications for monitors with dependencies
+	 * may be deferred for a short period to handle race conditions.
 	 */
-	private async handleMissingPulse(monitor: Monitor, timeSinceLastCheck: number, now: number): Promise<void> {
+	private async handleMissingPulse(
+		monitor: Monitor,
+		timeSinceLastCheck: number,
+		now: number,
+		pendingNotifications: Array<{
+			monitor: Monitor;
+			state: MonitorState;
+			downtimeInfo: DowntimeInfo;
+			type: "down" | "still-down";
+			abortSignal: AbortSignal;
+		}>,
+	): Promise<void> {
 		const state = this.incrementMissedCount(monitor.id);
 		const expectedInterval = monitor.interval * 1000;
 		const missedIntervals = Math.floor(timeSinceLastCheck / expectedInterval);
@@ -165,7 +216,117 @@ export class MissingPulseDetector {
 		}
 
 		if (state.missedCount > monitor.maxRetries) {
-			await this.handleMonitorDown(monitor, now);
+			const mState = this.incrementDownCount(monitor.id);
+			const isFirstDown = mState.consecutiveDownCount === 1;
+
+			if (isFirstDown || !mState.downStartTime) {
+				this.initializeDowntime(monitor, now);
+			}
+
+			await updateMonitorStatus(monitor.id);
+
+			if (this.shouldSendNotification(monitor, mState)) {
+				const downtimeInfo = this.getDowntimeInfo(monitor.id, now);
+				const hasDeps = cache.hasDependencies(monitor.id);
+				const notificationType: "down" | "still-down" = mState.consecutiveDownCount === 1 ? "down" : "still-down";
+
+				if (hasDeps) {
+					const downDep = cache.isAnyDependencyDown(monitor.id);
+					if (downDep) {
+						// Suppress immediately
+						mState.notificationSuppressed = true;
+						mState.lastNotificationCount = mState.consecutiveDownCount;
+
+						Logger.info("Notification suppressed (dependency already down)", {
+							monitorId: monitor.id,
+							monitorName: monitor.name,
+							suppressedBy: downDep,
+							notificationType,
+						});
+					} else {
+						// Queue for delayed recheck
+						// Cancel any existing pending notification for this monitor
+						this.pendingAbortControllers.get(monitor.id)?.abort();
+						const abortController = new AbortController();
+						this.pendingAbortControllers.set(monitor.id, abortController);
+
+						mState.lastNotificationCount = mState.consecutiveDownCount;
+
+						pendingNotifications.push({
+							monitor,
+							state: mState,
+							downtimeInfo,
+							type: notificationType,
+							abortSignal: abortController.signal,
+						});
+					}
+				} else {
+					// No dependencies - send immediately (fire and forget)
+					mState.notificationSuppressed = false;
+					if (notificationType === "down") {
+						this.notifyMonitorDown(monitor, downtimeInfo.actualDowntime);
+					} else {
+						this.notifyMonitorStillDown(monitor, mState.consecutiveDownCount, downtimeInfo.actualDowntime);
+					}
+					mState.lastNotificationCount = mState.consecutiveDownCount;
+				}
+			}
+		}
+	}
+
+	/**
+	 * After a delay, recheck dependencies for pending notifications.
+	 * If a dependency went down during the delay, suppress the notification.
+	 * If the monitor recovered during the delay (abortSignal.aborted), skip it.
+	 * This handles the race condition where a downstream monitor detects
+	 * failure before its upstream dependency.
+	 */
+	private async processPendingNotifications(
+		pendingNotifications: Array<{
+			monitor: Monitor;
+			state: MonitorState;
+			downtimeInfo: DowntimeInfo;
+			type: "down" | "still-down";
+			abortSignal: AbortSignal;
+		}>,
+	): Promise<void> {
+		const delay = Math.max(Math.floor(((pendingNotifications?.[0]?.monitor?.interval || 30) / 2) * 1000), 5000);
+		await new Promise((resolve) => setTimeout(resolve, delay));
+
+		for (const pending of pendingNotifications) {
+			const { monitor, state, downtimeInfo, type, abortSignal } = pending;
+
+			this.pendingAbortControllers.delete(monitor.id);
+
+			if (abortSignal.aborted) {
+				Logger.debug("Pending notification cancelled (monitor recovered during delay)", {
+					monitorId: monitor.id,
+					monitorName: monitor.name,
+					notificationType: type,
+				});
+				continue;
+			}
+
+			const downDep = cache.isAnyDependencyDown(monitor.id);
+
+			if (downDep) {
+				state.notificationSuppressed = true;
+				Logger.info("Notification suppressed after delay (dependency now down)", {
+					monitorId: monitor.id,
+					monitorName: monitor.name,
+					suppressedBy: downDep,
+					notificationType: type,
+					delayMs: delay,
+				});
+			} else {
+				state.notificationSuppressed = false;
+				if (type === "down") {
+					await this.notifyMonitorDown(monitor, downtimeInfo.actualDowntime);
+				} else {
+					await this.notifyMonitorStillDown(monitor, state.consecutiveDownCount, downtimeInfo.actualDowntime);
+				}
+				state.lastNotificationCount = state.consecutiveDownCount;
+			}
 		}
 	}
 
@@ -183,25 +344,6 @@ export class MissingPulseDetector {
 			maxRetries: monitor.maxRetries,
 			inGracePeriod: isInGracePeriod(),
 		});
-	}
-
-	/**
-	 * Handle when a monitor is confirmed down
-	 */
-	private async handleMonitorDown(monitor: Monitor, now: number): Promise<void> {
-		const state = this.incrementDownCount(monitor.id);
-		const isFirstDown = state.consecutiveDownCount === 1;
-
-		if (isFirstDown || !state.downStartTime) {
-			this.initializeDowntime(monitor, now);
-		}
-
-		await updateMonitorStatus(monitor.id);
-
-		if (this.shouldSendNotification(monitor, state)) {
-			const downtimeInfo = this.getDowntimeInfo(monitor.id, now);
-			await this.sendDownNotification(monitor, state, downtimeInfo);
-		}
 	}
 
 	/**
@@ -250,19 +392,6 @@ export class MissingPulseDetector {
 	}
 
 	/**
-	 * Send appropriate down notification
-	 */
-	private async sendDownNotification(monitor: Monitor, state: MonitorState, downtimeInfo: DowntimeInfo): Promise<void> {
-		if (state.consecutiveDownCount === 1) {
-			await this.notifyMonitorDown(monitor, downtimeInfo.actualDowntime);
-		} else {
-			await this.notifyMonitorStillDown(monitor, state.consecutiveDownCount, downtimeInfo.actualDowntime);
-		}
-
-		state.lastNotificationCount = state.consecutiveDownCount;
-	}
-
-	/**
 	 * Determine if a notification should be sent
 	 */
 	private shouldSendNotification(monitor: Monitor, state: MonitorState): boolean {
@@ -288,7 +417,7 @@ export class MissingPulseDetector {
 		});
 
 		if (this.hasNotificationChannels(monitor)) {
-			await this.notificationManager.sendNotification(monitor.notificationChannels!, {
+			this.notificationManager.sendNotification(monitor.notificationChannels!, {
 				type: "down",
 				monitorId: monitor.id,
 				monitorName: monitor.name,
@@ -323,7 +452,7 @@ export class MissingPulseDetector {
 		});
 
 		if (this.hasNotificationChannels(monitor)) {
-			await this.notificationManager.sendNotification(monitor.notificationChannels!, {
+			this.notificationManager.sendNotification(monitor.notificationChannels!, {
 				type: "still-down",
 				monitorId: monitor.id,
 				monitorName: monitor.name,
@@ -451,6 +580,9 @@ export class MissingPulseDetector {
 	 * Called when a pulse is received
 	 */
 	resetMonitor(monitorId: string): void {
+		this.pendingAbortControllers.get(monitorId)?.abort();
+		this.pendingAbortControllers.delete(monitorId);
+
 		const state = this.monitorStates.get(monitorId);
 		if (!state || state.consecutiveDownCount === 0) {
 			this.clearMonitorState(monitorId);
@@ -473,15 +605,24 @@ export class MissingPulseDetector {
 		});
 
 		if (this.hasNotificationChannels(monitor)) {
-			this.notificationManager.sendNotification(monitor.notificationChannels!, {
-				type: "recovered",
-				monitorId,
-				monitorName: monitor.name,
-				previousConsecutiveDownCount: state.consecutiveDownCount,
-				downtime: totalDowntime,
-				timestamp: new Date(),
-				sourceType: "monitor",
-			});
+			if (state.notificationSuppressed) {
+				Logger.info("Recovery notification suppressed (down notification was suppressed)", {
+					monitorId,
+					monitorName: monitor.name,
+					previousConsecutiveDownCount: state.consecutiveDownCount,
+					totalDowntime: Math.round(totalDowntime / 1000) + "s",
+				});
+			} else {
+				this.notificationManager.sendNotification(monitor.notificationChannels!, {
+					type: "recovered",
+					monitorId,
+					monitorName: monitor.name,
+					previousConsecutiveDownCount: state.consecutiveDownCount,
+					downtime: totalDowntime,
+					timestamp: new Date(),
+					sourceType: "monitor",
+				});
+			}
 		}
 
 		const slugs = cache.getStatusPageSlugsByMonitor(monitorId);
@@ -520,6 +661,6 @@ export class MissingPulseDetector {
 
 // Use the configured interval from config (in seconds), convert to milliseconds
 // Default is 5 seconds if not configured
-const checkIntervalMs = (config.missingPulseDetector?.interval ?? 5) * 1000;
+const checkIntervalMs = (config.missingPulseDetector?.interval ? config.missingPulseDetector.interval : 5) * 1000;
 
 export const missingPulseDetector = new MissingPulseDetector({ checkInterval: checkIntervalMs });

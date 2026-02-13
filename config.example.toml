@@ -10,6 +10,14 @@ proxy = "direct"
 # Optional: Set your own reload token. If not provided, one will be auto-generated at startup.
 #reloadToken = ""
 
+# Admin API Configuration
+# Enables REST API endpoints for managing monitors, groups, status pages,
+# notification channels, and pulse monitors programmatically.
+# All changes are persisted to config.toml and auto-reloaded.
+[adminAPI]
+enabled = false
+token = "your-secure-admin-token-here"
+
 [logger]
 level = 7
 

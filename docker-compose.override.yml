@@ -11,7 +11,7 @@ services:
       - TZ=UTC
       - CONFIG=/app/config/config.toml
     volumes:
-      - ./config.toml:/app/config/config.toml:ro
+      - ./config.toml:/app/config/config.toml
     networks:
       - internal-network
     depends_on:

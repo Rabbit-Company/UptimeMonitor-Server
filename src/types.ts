@@ -298,6 +298,16 @@ export interface ServerConfig {
 }
 
 /**
+ * Admin API configuration
+ */
+export interface AdminAPIConfig {
+	/** Whether the admin API is enabled */
+	enabled: boolean;
+	/** Bearer token for admin API authentication */
+	token: string;
+}
+
+/**
  * Application configuration object.
  */
 export interface Config {
@@ -305,6 +315,8 @@ export interface Config {
 	clickhouse: NodeClickHouseClientConfigOptions;
 	/** Server-specific configuration */
 	server: ServerConfig;
+	/** Admin API configuration */
+	adminAPI: AdminAPIConfig;
 	/** Logger configuration */
 	logger: LoggerConfig;
 	/** Self-monitoring and automatic backfill configuration */

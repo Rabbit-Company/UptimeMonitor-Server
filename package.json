@@ -18,6 +18,7 @@
 		"@clickhouse/client": "^1.17.0",
 		"@rabbit-company/web": "^0.18.1",
 		"@rabbit-company/web-middleware": "^0.18.1",
-		"nodemailer": "^8.0.1"
+		"nodemailer": "^8.0.1",
+		"smol-toml": "^1.6.0"
 	}
 }

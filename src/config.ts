@@ -13,12 +13,14 @@ import type {
 	CustomMetricConfig,
 	PulseMonitor,
 	PulseConfig,
+	AdminAPIConfig,
 } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { Logger } from "./logger";
 import { type IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
 
 export const defaultReloadToken = generateSecureToken();
+export const defaultAdminToken = generateSecureToken();
 
 // Validation error class
 class ConfigValidationError extends Error {
@@ -782,6 +784,38 @@ function validateServerConfig(config: unknown): ServerConfig {
 			errors.push("server.reloadToken must be a non-empty string if provided");
 		} else {
 			result.reloadToken = cfg.reloadToken;
+		}
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	return result;
+}
+
+function validateAdminAPIConfig(config: unknown): AdminAPIConfig {
+	const errors: string[] = [];
+	const cfg = (config || {}) as Record<string, unknown>;
+
+	const result: AdminAPIConfig = {
+		enabled: false,
+		token: defaultAdminToken,
+	};
+
+	if (cfg.enabled !== undefined) {
+		if (!isBoolean(cfg.enabled)) {
+			errors.push("adminAPI.enabled must be a boolean");
+		} else {
+			result.enabled = cfg.enabled;
+		}
+	}
+
+	if (cfg.token !== undefined) {
+		if (!isString(cfg.token) || cfg.token.trim().length === 0) {
+			errors.push("adminAPI.token must be a non-empty string if provided");
+		} else {
+			result.token = cfg.token;
 		}
 	}
 
@@ -1581,7 +1615,7 @@ function validateNotificationChannelProviders(config: Config): void {
 }
 
 // Load and validate configuration
-function loadConfig(): Config {
+function loadConfig(exitOnError: boolean = true): Config {
 	const configPath = process.env["CONFIG"] || "./config.toml";
 
 	try {
@@ -1610,6 +1644,17 @@ function loadConfig(): Config {
 			if (error instanceof ConfigValidationError) {
 				allErrors.push(...error.errors);
 				server = { port: 3000, proxy: "direct", reloadToken: defaultReloadToken };
+			} else throw error;
+		}
+
+		// Validate adminAPI config
+		let adminAPI: AdminAPIConfig;
+		try {
+			adminAPI = validateAdminAPIConfig(parsed.adminAPI);
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				allErrors.push(...error.errors);
+				adminAPI = { enabled: false, token: defaultAdminToken };
 			} else throw error;
 		}
 
@@ -1746,6 +1791,7 @@ function loadConfig(): Config {
 		const config: Config = {
 			clickhouse,
 			server,
+			adminAPI,
 			logger,
 			selfMonitoring,
 			missingPulseDetector,
@@ -1787,7 +1833,11 @@ function loadConfig(): Config {
 			Logger.error("Unknown error", { "error.message": err?.message });
 		}
 
-		process.exit(1);
+		if (exitOnError) {
+			process.exit(1);
+		}
+
+		throw err;
 	}
 }
 
@@ -1795,7 +1845,7 @@ export let config: Config = loadConfig();
 
 export function reloadConfig(): Config {
 	Logger.info("🔄 Reloading configuration...");
-	const newConfig = loadConfig();
+	const newConfig = loadConfig(false);
 	config = newConfig;
 	return newConfig;
 }

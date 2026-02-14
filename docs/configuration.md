@@ -4,17 +4,14 @@ Uptime Monitor uses a TOML configuration file. By default, it looks for `config.
 
 ## Visual Configuration Editor
 
-We recommend using the [**Visual Configuration Editor**](https://uptime-monitor.org/configurator) for an easier configuration experience:
+The easiest way to create or edit your configuration is using the [Visual Configuration Editor](https://uptime-monitor.org/configurator).
 
 The Visual Configuration Editor allows you to:
 
-- Import your existing `config.toml` file
-- Visually create and edit monitors, groups, and status pages
-- Configure custom metrics and notification channels with a user-friendly UI
+- Start from scratch or import an existing config.toml
+- Visually add monitors, groups, and status pages
+- Configure custom metrics and notification channels
 - Export your configuration back to TOML format
-- Validate your configuration for common errors
-
-You can use the editor online without any installation, and it provides real-time validation and previews of your configuration.
 
 ## Manual Configuration
 
@@ -71,6 +68,21 @@ reloadToken = "your-reload-token"
 | `proxy`       | `"direct"`     | IP extraction preset: `direct`, `cloudflare`, `aws`, `gcp`, `azure`, `vercel`, `nginx`, `development` |
 | `reloadToken` | Auto-generated | Token for `/v1/reload/:token` endpoint                                                                |
 
+### Admin API
+
+Enable REST API endpoints for managing monitors, groups, status pages, notification channels, and pulse monitors programmatically. All changes are persisted to `config.toml` and auto-reloaded. See the [Admin API Reference](admin-api.md) for complete endpoint documentation.
+
+```toml
+[adminAPI]
+enabled = false
+token = "your-secure-admin-token-here"
+```
+
+| Field     | Default        | Description                                            |
+| --------- | -------------- | ------------------------------------------------------ |
+| `enabled` | `false`        | Set to `true` to activate admin endpoints              |
+| `token`   | Auto-generated | Bearer token for authenticating all admin API requests |
+
 ### Logger
 
 ```toml
@@ -113,13 +125,13 @@ backfillOnRecovery = true
 latencyStrategy = "last-known"
 ```
 
-| Field                | Default          | Description                                                              |
-| -------------------- | ---------------- | ------------------------------------------------------------------------ |
-| `enabled`            | `false`          | Enable self-monitoring                                                   |
-| `id`                 | `"self-monitor"` | ID for the self-monitor                                                  |
-| `interval`           | `3`              | Health check interval in seconds                                         |
-| `backfillOnRecovery` | `false`          | Generate synthetic pulses for monitors that were healthy before downtime |
-| `latencyStrategy`    | `"last-known"`   | `"last-known"` uses previous latency, `"null"` leaves it empty           |
+| Field                | Default        | Description                                                  |
+| -------------------- | -------------- | ------------------------------------------------------------ |
+| `enabled`            | `false`        | Enable self-monitoring                                       |
+| `id`                 | `self-monitor` | Monitor ID for self-monitoring                               |
+| `interval`           | `3`            | Health check interval in seconds                             |
+| `backfillOnRecovery` | `false`        | Create synthetic pulses for the downtime period              |
+| `latencyStrategy`    | `last-known`   | Strategy for synthetic pulse latency: `last-known` or `null` |
 
 ## Monitors
 
@@ -133,16 +145,15 @@ maxRetries = 0
 resendNotification = 12
 groupId = "production"
 notificationChannels = ["critical"]
-pulseMonitors = ["US-WEST-1"]
-# dependencies = ["server-group"]  # Suppress notifications if dependency is down
+# dependencies = ["database"]        # Suppress notifications if dependency is down
 ```
 
 | Field                  | Required | Default | Description                                                                                                                                |
 | ---------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`                   | Yes      | -       | Unique identifier                                                                                                                          |
 | `name`                 | Yes      | -       | Display name                                                                                                                               |
-| `token`                | Yes      | -       | Secret token for pulse authentication                                                                                                      |
-| `interval`             | Yes      | -       | Expected pulse interval in seconds (see [Pulses](pulses.md))                                                                               |
+| `token`                | Yes      | -       | Secret token for sending pulses (must be unique)                                                                                           |
+| `interval`             | Yes      | -       | Pulse interval in seconds (see [Pulses](pulses.md))                                                                                        |
 | `maxRetries`           | Yes      | -       | Missed pulses before marking down (see [Pulses](pulses.md))                                                                                |
 | `resendNotification`   | Yes      | -       | Resend notification every N down checks (0 = never)                                                                                        |
 | `groupId`              | No       | -       | Parent group ID                                                                                                                            |

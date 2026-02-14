@@ -302,6 +302,35 @@ Get missing pulse detector status.
 
 ---
 
+## Admin API
+
+The Admin API provides full CRUD operations for managing monitors, groups, status pages, notification channels, and pulse monitors programmatically. All changes are persisted to `config.toml` and auto-reloaded.
+
+See the [Admin API Reference](admin-api.md) for complete documentation of all endpoints.
+
+**Quick overview:**
+
+| Resource              | Endpoints                                                                          |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| Configuration         | `GET /v1/admin/config`                                                             |
+| Monitors              | `GET/POST /v1/admin/monitors`, `GET/PUT/DELETE /v1/admin/monitors/:id`             |
+| Groups                | `GET/POST /v1/admin/groups`, `GET/PUT/DELETE /v1/admin/groups/:id`                 |
+| Status Pages          | `GET/POST /v1/admin/status-pages`, `GET/PUT/DELETE /v1/admin/status-pages/:id`     |
+| Notification Channels | `GET/POST /v1/admin/notifications`, `GET/PUT/DELETE /v1/admin/notifications/:id`   |
+| Pulse Monitors        | `GET/POST /v1/admin/pulse-monitors`, `GET/PUT/DELETE /v1/admin/pulse-monitors/:id` |
+
+To enable, add to `config.toml`:
+
+```toml
+[adminAPI]
+enabled = true
+token = "your-secure-admin-token"
+```
+
+All admin endpoints require `Authorization: Bearer <token>`.
+
+---
+
 ## WebSocket API
 
 Connect to `/ws` for real-time updates.

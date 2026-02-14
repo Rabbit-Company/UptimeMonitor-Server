@@ -94,7 +94,6 @@ export function registerStatusPageRoutes(app: Web, getServer: () => Server): voi
 		try {
 			const raw = await readRawConfig();
 			const pages = raw.status_pages as any[];
-			if (pages.length <= 1) return ctx.json({ error: "Cannot delete the last status page" }, 400);
 
 			const idx = pages.findIndex((p: any) => p.id === id);
 			if (idx === -1) return ctx.json({ error: "Status page not found in config file" }, 404);

@@ -21,6 +21,12 @@ export const openapi = {
 		{ name: "Monitor History", description: "Historical data for individual monitors" },
 		{ name: "Group History", description: "Historical data for monitor groups" },
 		{ name: "Configuration", description: "Server configuration management" },
+		{ name: "Admin: Monitors", description: "Admin CRUD operations for monitors" },
+		{ name: "Admin: Groups", description: "Admin CRUD operations for groups" },
+		{ name: "Admin: Status Pages", description: "Admin CRUD operations for status pages" },
+		{ name: "Admin: Notifications", description: "Admin CRUD operations for notification channels" },
+		{ name: "Admin: Pulse Monitors", description: "Admin CRUD operations for PulseMonitor instances" },
+		{ name: "Admin: Configuration", description: "Admin configuration access" },
 	],
 	paths: {
 		"/health": {
@@ -546,6 +552,909 @@ export const openapi = {
 				},
 			},
 		},
+		"/v1/admin/config": {
+			get: {
+				tags: ["Admin: Configuration"],
+				summary: "Get full configuration",
+				description: "Returns the entire current server configuration. Requires Admin API to be enabled.",
+				operationId: "adminGetConfig",
+				security: [{ adminBearerAuth: [] }],
+				responses: {
+					"200": {
+						description: "Full server configuration",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									description:
+										"The complete parsed config.toml as JSON, including all monitors, groups, status pages, notifications, pulse monitors, and server settings.",
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized - missing or invalid admin token, or Admin API disabled",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/monitors": {
+			get: {
+				tags: ["Admin: Monitors"],
+				summary: "List all monitors",
+				description: "Returns all configured monitors.",
+				operationId: "adminListMonitors",
+				security: [{ adminBearerAuth: [] }],
+				responses: {
+					"200": {
+						description: "List of monitors",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["monitors"],
+									properties: {
+										monitors: {
+											type: "array",
+											items: { $ref: "#/components/schemas/AdminMonitor" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			post: {
+				tags: ["Admin: Monitors"],
+				summary: "Create a monitor",
+				description: "Create a new monitor. The configuration is validated, written to config.toml, and hot-reloaded.",
+				operationId: "adminCreateMonitor",
+				security: [{ adminBearerAuth: [] }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminMonitorCreate" },
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "Monitor created",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccessWithId" },
+								example: { success: true, message: "Monitor 'api-staging' created", id: "api-staging" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"409": {
+						description: "Conflict - duplicate monitor ID, group ID collision, or duplicate token",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error - config write or reload failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/monitors/{id}": {
+			get: {
+				tags: ["Admin: Monitors"],
+				summary: "Get a monitor",
+				description: "Returns a single monitor by ID.",
+				operationId: "adminGetMonitor",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Monitor details",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminMonitor" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Monitor not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" }, example: { error: "Monitor not found" } } },
+					},
+				},
+			},
+			put: {
+				tags: ["Admin: Monitors"],
+				summary: "Update a monitor",
+				description: "Partially update a monitor. Send only the fields to change. Set a field to null to remove it. The id field cannot be changed.",
+				operationId: "adminUpdateMonitor",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminMonitorUpdate" },
+						},
+					},
+				},
+				responses: {
+					"200": {
+						description: "Monitor updated",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Monitor 'api-staging' updated" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Monitor not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"409": {
+						description: "Conflict - duplicate token",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			delete: {
+				tags: ["Admin: Monitors"],
+				summary: "Delete a monitor",
+				description: "Delete a monitor. References in status page items are automatically cleaned up.",
+				operationId: "adminDeleteMonitor",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Monitor deleted",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Monitor 'api-staging' deleted" },
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Monitor not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/groups": {
+			get: {
+				tags: ["Admin: Groups"],
+				summary: "List all groups",
+				description: "Returns all configured groups.",
+				operationId: "adminListGroups",
+				security: [{ adminBearerAuth: [] }],
+				responses: {
+					"200": {
+						description: "List of groups",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["groups"],
+									properties: {
+										groups: {
+											type: "array",
+											items: { $ref: "#/components/schemas/AdminGroup" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			post: {
+				tags: ["Admin: Groups"],
+				summary: "Create a group",
+				description: "Create a new group. The configuration is validated, written to config.toml, and hot-reloaded.",
+				operationId: "adminCreateGroup",
+				security: [{ adminBearerAuth: [] }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminGroupCreate" },
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "Group created",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccessWithId" },
+								example: { success: true, message: "Group 'eu-services' created", id: "eu-services" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"409": {
+						description: "Conflict - duplicate group ID or monitor ID collision",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/groups/{id}": {
+			get: {
+				tags: ["Admin: Groups"],
+				summary: "Get a group",
+				description: "Returns a single group by ID.",
+				operationId: "adminGetGroup",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Group details",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminGroup" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Group not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" }, example: { error: "Group not found" } } },
+					},
+				},
+			},
+			put: {
+				tags: ["Admin: Groups"],
+				summary: "Update a group",
+				description: "Partially update a group. Send only the fields to change. Set a field to null to remove it. The id field cannot be changed.",
+				operationId: "adminUpdateGroup",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminGroupUpdate" },
+						},
+					},
+				},
+				responses: {
+					"200": {
+						description: "Group updated",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Group 'eu-services' updated" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Group not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			delete: {
+				tags: ["Admin: Groups"],
+				summary: "Delete a group",
+				description:
+					"Delete a group. References are automatically cleaned up: monitors with this groupId have it removed, status page items are updated, and child groups with this parentId have it removed.",
+				operationId: "adminDeleteGroup",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Group deleted",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Group 'eu-services' deleted" },
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Group not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/status-pages": {
+			get: {
+				tags: ["Admin: Status Pages"],
+				summary: "List all status pages",
+				description: "Returns all configured status pages.",
+				operationId: "adminListStatusPages",
+				security: [{ adminBearerAuth: [] }],
+				responses: {
+					"200": {
+						description: "List of status pages",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["statusPages"],
+									properties: {
+										statusPages: {
+											type: "array",
+											items: { $ref: "#/components/schemas/AdminStatusPage" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			post: {
+				tags: ["Admin: Status Pages"],
+				summary: "Create a status page",
+				description: "Create a new status page. The slug must be unique across all status pages.",
+				operationId: "adminCreateStatusPage",
+				security: [{ adminBearerAuth: [] }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminStatusPageCreate" },
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "Status page created",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccessWithId" },
+								example: { success: true, message: "Status page 'partners' created", id: "partners" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"409": {
+						description: "Conflict - duplicate status page ID or slug already in use",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/status-pages/{id}": {
+			get: {
+				tags: ["Admin: Status Pages"],
+				summary: "Get a status page",
+				description: "Returns a single status page by ID.",
+				operationId: "adminGetStatusPage",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Status page ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Status page details",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminStatusPage" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" }, example: { error: "Status page not found" } } },
+					},
+				},
+			},
+			put: {
+				tags: ["Admin: Status Pages"],
+				summary: "Update a status page",
+				description: "Partially update a status page. The id field cannot be changed. If changing the slug, it must not conflict with another status page.",
+				operationId: "adminUpdateStatusPage",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Status page ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminStatusPageUpdate" },
+						},
+					},
+				},
+				responses: {
+					"200": {
+						description: "Status page updated",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Status page 'partners' updated" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"409": {
+						description: "Conflict - slug already in use",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			delete: {
+				tags: ["Admin: Status Pages"],
+				summary: "Delete a status page",
+				description: "Delete a status page.",
+				operationId: "adminDeleteStatusPage",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Status page ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Status page deleted",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Status page 'partners' deleted" },
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/notifications": {
+			get: {
+				tags: ["Admin: Notifications"],
+				summary: "List all notification channels",
+				description: "Returns all configured notification channels.",
+				operationId: "adminListNotifications",
+				security: [{ adminBearerAuth: [] }],
+				responses: {
+					"200": {
+						description: "List of notification channels",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["notificationChannels"],
+									properties: {
+										notificationChannels: {
+											type: "array",
+											items: { $ref: "#/components/schemas/AdminNotificationChannel" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			post: {
+				tags: ["Admin: Notifications"],
+				summary: "Create a notification channel",
+				description:
+					"Create a new notification channel with one or more providers (Discord, Email, Ntfy, Telegram). At least one provider should be configured.",
+				operationId: "adminCreateNotification",
+				security: [{ adminBearerAuth: [] }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminNotificationChannelCreate" },
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "Notification channel created",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccessWithId" },
+								example: { success: true, message: "Channel 'ops-alerts' created", id: "ops-alerts" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"409": {
+						description: "Conflict - duplicate channel ID",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/notifications/{id}": {
+			get: {
+				tags: ["Admin: Notifications"],
+				summary: "Get a notification channel",
+				description: "Returns a single notification channel by ID.",
+				operationId: "adminGetNotification",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Notification channel ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Notification channel details",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminNotificationChannel" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Notification channel not found",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/Error" }, example: { error: "Notification channel not found" } },
+						},
+					},
+				},
+			},
+			put: {
+				tags: ["Admin: Notifications"],
+				summary: "Update a notification channel",
+				description: "Partially update a notification channel. Set a provider to null to remove it. The id field cannot be changed.",
+				operationId: "adminUpdateNotification",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Notification channel ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminNotificationChannelUpdate" },
+						},
+					},
+				},
+				responses: {
+					"200": {
+						description: "Notification channel updated",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Channel 'ops-alerts' updated" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Notification channel not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			delete: {
+				tags: ["Admin: Notifications"],
+				summary: "Delete a notification channel",
+				description: "Delete a notification channel. References in monitor and group notificationChannels arrays are automatically cleaned up.",
+				operationId: "adminDeleteNotification",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Notification channel ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Notification channel deleted",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Channel 'ops-alerts' deleted" },
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Notification channel not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/pulse-monitors": {
+			get: {
+				tags: ["Admin: Pulse Monitors"],
+				summary: "List all PulseMonitors",
+				description: "Returns all configured PulseMonitor instances.",
+				operationId: "adminListPulseMonitors",
+				security: [{ adminBearerAuth: [] }],
+				responses: {
+					"200": {
+						description: "List of PulseMonitors",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["pulseMonitors"],
+									properties: {
+										pulseMonitors: {
+											type: "array",
+											items: { $ref: "#/components/schemas/AdminPulseMonitor" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			post: {
+				tags: ["Admin: Pulse Monitors"],
+				summary: "Create a PulseMonitor",
+				description: "Create a new PulseMonitor instance. Both the ID and token must be unique.",
+				operationId: "adminCreatePulseMonitor",
+				security: [{ adminBearerAuth: [] }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminPulseMonitorCreate" },
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "PulseMonitor created",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccessWithId" },
+								example: { success: true, message: "PulseMonitor 'AP-EAST-1' created", id: "AP-EAST-1" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"409": {
+						description: "Conflict - duplicate PulseMonitor ID or token",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/pulse-monitors/{id}": {
+			get: {
+				tags: ["Admin: Pulse Monitors"],
+				summary: "Get a PulseMonitor",
+				description: "Returns a single PulseMonitor by ID.",
+				operationId: "adminGetPulseMonitor",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "PulseMonitor ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "PulseMonitor details",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminPulseMonitor" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "PulseMonitor not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" }, example: { error: "PulseMonitor not found" } } },
+					},
+				},
+			},
+			put: {
+				tags: ["Admin: Pulse Monitors"],
+				summary: "Update a PulseMonitor",
+				description: "Partially update a PulseMonitor. The id field cannot be changed. If changing the token, it must not conflict with another PulseMonitor.",
+				operationId: "adminUpdatePulseMonitor",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "PulseMonitor ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminPulseMonitorUpdate" },
+						},
+					},
+				},
+				responses: {
+					"200": {
+						description: "PulseMonitor updated",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "PulseMonitor 'AP-EAST-1' updated" },
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "PulseMonitor not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"409": {
+						description: "Conflict - duplicate token",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			delete: {
+				tags: ["Admin: Pulse Monitors"],
+				summary: "Delete a PulseMonitor",
+				description: "Delete a PulseMonitor. References in monitor pulseMonitors arrays are automatically cleaned up.",
+				operationId: "adminDeletePulseMonitor",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "PulseMonitor ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "PulseMonitor deleted",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "PulseMonitor 'AP-EAST-1' deleted" },
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "PulseMonitor not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"500": {
+						description: "Internal error",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
 	},
 	components: {
 		securitySchemes: {
@@ -553,6 +1462,11 @@ export const openapi = {
 				type: "http",
 				scheme: "bearer",
 				description: "BLAKE2b-512 hash of the status page password. Only required for password-protected status pages.",
+			},
+			adminBearerAuth: {
+				type: "http",
+				scheme: "bearer",
+				description: "Admin API token configured in config.toml under [adminAPI]. Required for all admin endpoints.",
 			},
 		},
 		schemas: {
@@ -655,6 +1569,297 @@ export const openapi = {
 						type: "array",
 						items: { $ref: "#/components/schemas/HistoryRecord" },
 					},
+				},
+			},
+			AdminSuccess: {
+				type: "object",
+				required: ["success", "message"],
+				properties: {
+					success: { type: "boolean", enum: [true] },
+					message: { type: "string", example: "Resource updated" },
+				},
+			},
+			AdminSuccessWithId: {
+				type: "object",
+				required: ["success", "message", "id"],
+				properties: {
+					success: { type: "boolean", enum: [true] },
+					message: { type: "string", example: "Resource created" },
+					id: { type: "string", example: "my-resource" },
+				},
+			},
+			AdminValidationError: {
+				type: "object",
+				required: ["error", "details"],
+				properties: {
+					error: { type: "string", example: "Validation failed" },
+					details: {
+						type: "array",
+						items: { type: "string" },
+						example: ["name is required", "interval must be a positive number"],
+					},
+				},
+			},
+			AdminMonitor: {
+				type: "object",
+				required: ["id", "name", "token", "interval", "maxRetries", "resendNotification", "notificationChannels", "dependencies", "pulseMonitors"],
+				properties: {
+					id: { type: "string", example: "api-prod" },
+					name: { type: "string", example: "Production API" },
+					token: { type: "string", example: "tk_prod_api_abc123" },
+					interval: { type: "number", description: "Expected pulse interval in seconds", example: 30 },
+					maxRetries: { type: "integer", description: "Missed pulses before marking down", example: 0 },
+					resendNotification: { type: "integer", description: "Resend notification every N down checks (0 = never)", example: 12 },
+					groupId: { type: "string", description: "Parent group ID (omitted if not set)", example: "production" },
+					notificationChannels: { type: "array", items: { type: "string" }, example: ["critical"] },
+					dependencies: { type: "array", items: { type: "string" }, example: [] },
+					pulseMonitors: { type: "array", items: { type: "string" }, example: [] },
+					custom1: { $ref: "#/components/schemas/CustomMetricConfig" },
+					custom2: { $ref: "#/components/schemas/CustomMetricConfig" },
+					custom3: { $ref: "#/components/schemas/CustomMetricConfig" },
+					pulse: {
+						type: "object",
+						description: "PulseMonitor protocol configuration (omitted if not set)",
+					},
+				},
+			},
+			AdminMonitorCreate: {
+				type: "object",
+				required: ["id", "name", "token", "interval", "maxRetries", "resendNotification"],
+				properties: {
+					id: { type: "string", description: "Unique ID (alphanumeric, hyphens, underscores)", example: "api-staging" },
+					name: { type: "string", example: "Staging API" },
+					token: { type: "string", description: "Unique secret token for sending pulses", example: "tk_staging_api_def456" },
+					interval: { type: "number", description: "Expected pulse interval in seconds (> 0)", example: 30 },
+					maxRetries: { type: "integer", description: "Missed pulses before marking down (>= 0)", minimum: 0, example: 2 },
+					resendNotification: { type: "integer", description: "Resend notification every N down checks (0 = never)", minimum: 0, example: 0 },
+					groupId: { type: "string", description: "Parent group ID", example: "staging" },
+					notificationChannels: { type: "array", items: { type: "string" }, description: "Notification channel IDs" },
+					dependencies: { type: "array", items: { type: "string" }, description: "Monitor/group IDs for notification suppression" },
+					pulseMonitors: { type: "array", items: { type: "string" }, description: "PulseMonitor IDs" },
+					custom1: { $ref: "#/components/schemas/CustomMetricConfig" },
+					custom2: { $ref: "#/components/schemas/CustomMetricConfig" },
+					custom3: { $ref: "#/components/schemas/CustomMetricConfig" },
+					pulse: { type: "object", description: "PulseMonitor protocol configuration (http, tcp, etc.)" },
+				},
+			},
+			AdminMonitorUpdate: {
+				type: "object",
+				properties: {
+					name: { type: "string", example: "Staging API v2" },
+					token: { type: "string" },
+					interval: { type: "number", description: "Must be > 0" },
+					maxRetries: { type: "integer", minimum: 0 },
+					resendNotification: { type: "integer", minimum: 0 },
+					groupId: { type: "string", nullable: true, description: "Set to null to remove" },
+					notificationChannels: { type: "array", items: { type: "string" } },
+					dependencies: { type: "array", items: { type: "string" } },
+					pulseMonitors: { type: "array", items: { type: "string" } },
+					custom1: { oneOf: [{ $ref: "#/components/schemas/CustomMetricConfig" }, { type: "null" }], description: "Set to null to remove" },
+					custom2: { oneOf: [{ $ref: "#/components/schemas/CustomMetricConfig" }, { type: "null" }], description: "Set to null to remove" },
+					custom3: { oneOf: [{ $ref: "#/components/schemas/CustomMetricConfig" }, { type: "null" }], description: "Set to null to remove" },
+					pulse: { type: "object", nullable: true, description: "Set to null to remove" },
+				},
+			},
+			AdminGroup: {
+				type: "object",
+				required: ["id", "name", "strategy", "degradedThreshold", "interval", "resendNotification", "notificationChannels", "dependencies"],
+				properties: {
+					id: { type: "string", example: "production" },
+					name: { type: "string", example: "Production Services" },
+					strategy: { type: "string", enum: ["any-up", "percentage", "all-up"], example: "percentage" },
+					degradedThreshold: { type: "number", description: "Percentage threshold for degraded status (0-100)", minimum: 0, maximum: 100, example: 50 },
+					interval: { type: "number", description: "Interval in seconds for uptime calculations", example: 60 },
+					resendNotification: { type: "integer", description: "Resend notification every N down checks (0 = never)", example: 12 },
+					parentId: { type: "string", description: "Parent group ID (omitted if not set)", example: "all-services" },
+					notificationChannels: { type: "array", items: { type: "string" }, example: [] },
+					dependencies: { type: "array", items: { type: "string" }, example: [] },
+				},
+			},
+			AdminGroupCreate: {
+				type: "object",
+				required: ["id", "name", "strategy", "degradedThreshold", "interval"],
+				properties: {
+					id: { type: "string", description: "Unique ID (alphanumeric, hyphens, underscores)", example: "eu-services" },
+					name: { type: "string", example: "EU Services" },
+					strategy: { type: "string", enum: ["any-up", "percentage", "all-up"], example: "percentage" },
+					degradedThreshold: { type: "number", minimum: 0, maximum: 100, example: 50 },
+					interval: { type: "number", description: "Must be > 0", example: 60 },
+					resendNotification: { type: "integer", minimum: 0, description: "Defaults to 0", example: 0 },
+					parentId: { type: "string", description: "Parent group ID" },
+					notificationChannels: { type: "array", items: { type: "string" } },
+					dependencies: { type: "array", items: { type: "string" } },
+				},
+			},
+			AdminGroupUpdate: {
+				type: "object",
+				properties: {
+					name: { type: "string" },
+					strategy: { type: "string", enum: ["any-up", "percentage", "all-up"] },
+					degradedThreshold: { type: "number", minimum: 0, maximum: 100 },
+					interval: { type: "number", description: "Must be > 0" },
+					resendNotification: { type: "integer", minimum: 0 },
+					parentId: { type: "string", nullable: true, description: "Set to null to remove" },
+					notificationChannels: { type: "array", items: { type: "string" } },
+					dependencies: { type: "array", items: { type: "string" } },
+				},
+			},
+			AdminStatusPage: {
+				type: "object",
+				required: ["id", "name", "slug", "items"],
+				properties: {
+					id: { type: "string", example: "public" },
+					name: { type: "string", example: "Public Status Page" },
+					slug: { type: "string", example: "status" },
+					items: { type: "array", items: { type: "string" }, description: "Monitor and/or group IDs", example: ["all-services", "third-party"] },
+					password: { type: "string", description: "Password for protection (omitted if not set)" },
+				},
+			},
+			AdminStatusPageCreate: {
+				type: "object",
+				required: ["id", "name", "slug", "items"],
+				properties: {
+					id: { type: "string", description: "Unique ID (alphanumeric, hyphens, underscores)", example: "partners" },
+					name: { type: "string", example: "Partner Status" },
+					slug: { type: "string", description: "URL slug (lowercase letters, numbers, hyphens only)", example: "partner-status" },
+					items: { type: "array", items: { type: "string" }, description: "Non-empty array of monitor/group IDs", example: ["production", "api-prod"] },
+					password: { type: "string", description: "Password to protect the page (minimum 8 characters)" },
+				},
+			},
+			AdminStatusPageUpdate: {
+				type: "object",
+				properties: {
+					name: { type: "string" },
+					slug: { type: "string", description: "Must not conflict with another status page" },
+					items: { type: "array", items: { type: "string" }, description: "Must be non-empty" },
+					password: { type: "string", nullable: true, description: "Set to null to remove password protection (minimum 8 characters if set)" },
+				},
+			},
+			AdminNotificationChannel: {
+				type: "object",
+				required: ["id", "name", "enabled"],
+				properties: {
+					id: { type: "string", example: "critical" },
+					name: { type: "string", example: "Critical Production Alerts" },
+					description: { type: "string", description: "Omitted if not set", example: "High-priority alerts" },
+					enabled: { type: "boolean", example: true },
+					discord: { $ref: "#/components/schemas/AdminDiscordConfig" },
+					email: { $ref: "#/components/schemas/AdminEmailConfig" },
+					ntfy: { $ref: "#/components/schemas/AdminNtfyConfig" },
+					telegram: { $ref: "#/components/schemas/AdminTelegramConfig" },
+				},
+			},
+			AdminNotificationChannelCreate: {
+				type: "object",
+				required: ["id", "name", "enabled"],
+				properties: {
+					id: { type: "string", description: "Unique ID (alphanumeric, hyphens, underscores)", example: "ops-alerts" },
+					name: { type: "string", example: "Ops Team Alerts" },
+					description: { type: "string" },
+					enabled: { type: "boolean", example: true },
+					discord: { $ref: "#/components/schemas/AdminDiscordConfig" },
+					email: { $ref: "#/components/schemas/AdminEmailConfig" },
+					ntfy: { $ref: "#/components/schemas/AdminNtfyConfig" },
+					telegram: { $ref: "#/components/schemas/AdminTelegramConfig" },
+				},
+			},
+			AdminNotificationChannelUpdate: {
+				type: "object",
+				properties: {
+					name: { type: "string" },
+					description: { type: "string", nullable: true },
+					enabled: { type: "boolean" },
+					discord: { oneOf: [{ $ref: "#/components/schemas/AdminDiscordConfig" }, { type: "null" }], description: "Set to null to remove" },
+					email: { oneOf: [{ $ref: "#/components/schemas/AdminEmailConfig" }, { type: "null" }], description: "Set to null to remove" },
+					ntfy: { oneOf: [{ $ref: "#/components/schemas/AdminNtfyConfig" }, { type: "null" }], description: "Set to null to remove" },
+					telegram: { oneOf: [{ $ref: "#/components/schemas/AdminTelegramConfig" }, { type: "null" }], description: "Set to null to remove" },
+				},
+			},
+			AdminDiscordConfig: {
+				type: "object",
+				required: ["enabled"],
+				properties: {
+					enabled: { type: "boolean", example: true },
+					webhookUrl: { type: "string", description: "Required when enabled", example: "https://discord.com/api/webhooks/123/abc" },
+					username: { type: "string", example: "Alert Bot" },
+					avatarUrl: { type: "string", example: "https://example.com/avatar.png" },
+					mentions: {
+						type: "object",
+						properties: {
+							users: { type: "array", items: { type: "string" }, description: "Discord user IDs" },
+							roles: { type: "array", items: { type: "string" }, description: "Discord role IDs" },
+							everyone: { type: "boolean" },
+						},
+					},
+				},
+			},
+			AdminEmailConfig: {
+				type: "object",
+				required: ["enabled"],
+				properties: {
+					enabled: { type: "boolean", example: true },
+					from: { type: "string", description: "Sender address (required when enabled)", example: '"Uptime Monitor" <alerts@example.com>' },
+					to: { type: "array", items: { type: "string" }, description: "Recipient addresses (required when enabled)", example: ["admin@example.com"] },
+					smtp: {
+						type: "object",
+						description: "SMTP configuration (required when enabled)",
+						required: ["host", "port", "secure", "user", "pass"],
+						properties: {
+							host: { type: "string", example: "smtp.example.com" },
+							port: { type: "integer", example: 465 },
+							secure: { type: "boolean", example: true },
+							user: { type: "string", example: "alerts@example.com" },
+							pass: { type: "string", example: "your-smtp-password" },
+						},
+					},
+				},
+			},
+			AdminNtfyConfig: {
+				type: "object",
+				required: ["enabled"],
+				properties: {
+					enabled: { type: "boolean", example: true },
+					server: { type: "string", description: "Required when enabled", example: "https://ntfy.sh" },
+					topic: { type: "string", description: "Required when enabled", example: "uptime-monitor" },
+					token: { type: "string", description: "Optional token authentication" },
+					username: { type: "string", description: "Optional username (must be paired with password)" },
+					password: { type: "string", description: "Optional password (must be paired with username)" },
+				},
+			},
+			AdminTelegramConfig: {
+				type: "object",
+				required: ["enabled"],
+				properties: {
+					enabled: { type: "boolean", example: true },
+					botToken: { type: "string", description: "Required when enabled", example: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" },
+					chatId: { type: "string", description: "Required when enabled", example: "-1001234567890" },
+					topicId: { type: "integer", description: "Optional forum topic ID" },
+					disableNotification: { type: "boolean", description: "Send silently" },
+				},
+			},
+			AdminPulseMonitor: {
+				type: "object",
+				required: ["id", "name", "token"],
+				properties: {
+					id: { type: "string", example: "US-WEST-1" },
+					name: { type: "string", example: "US West 1 (Oregon)" },
+					token: { type: "string", example: "tk_pulse_monitor_us_west_1" },
+				},
+			},
+			AdminPulseMonitorCreate: {
+				type: "object",
+				required: ["id", "name", "token"],
+				properties: {
+					id: { type: "string", description: "Unique ID (alphanumeric, hyphens, underscores)", example: "AP-EAST-1" },
+					name: { type: "string", example: "Asia Pacific (Tokyo)" },
+					token: { type: "string", description: "Unique token for WebSocket authentication", example: "tk_pulse_monitor_ap_east_1" },
+				},
+			},
+			AdminPulseMonitorUpdate: {
+				type: "object",
+				properties: {
+					name: { type: "string" },
+					token: { type: "string", description: "Must not conflict with another PulseMonitor" },
 				},
 			},
 		},

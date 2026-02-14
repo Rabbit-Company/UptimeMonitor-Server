@@ -123,34 +123,6 @@ export function registerGroupRoutes(app: Web, getServer: () => Server): void {
 
 const STRATEGIES = ["any-up", "percentage", "all-up"];
 
-function validate(input: any, isUpdate: boolean): string[] {
-	const e: string[] = [];
-
-	if (!isUpdate) {
-		if (!isValidId(input.id)) e.push("id is required (alphanumeric, hyphens, underscores)");
-		if (!input.name || typeof input.name !== "string" || !input.name.trim()) e.push("name is required");
-		if (!input.strategy || !STRATEGIES.includes(input.strategy)) e.push("strategy must be 'any-up', 'percentage', or 'all-up'");
-		if (typeof input.degradedThreshold !== "number" || input.degradedThreshold < 0 || input.degradedThreshold > 100) e.push("degradedThreshold must be 0-100");
-		if (typeof input.interval !== "number" || input.interval <= 0) e.push("interval must be a positive number");
-	} else {
-		if (input.id !== undefined) e.push("id cannot be changed");
-		if (input.name !== undefined && (typeof input.name !== "string" || !input.name.trim())) e.push("name must be a non-empty string");
-		if (input.strategy !== undefined && !STRATEGIES.includes(input.strategy)) e.push("strategy must be 'any-up', 'percentage', or 'all-up'");
-		if (input.degradedThreshold !== undefined && (typeof input.degradedThreshold !== "number" || input.degradedThreshold < 0 || input.degradedThreshold > 100))
-			e.push("degradedThreshold must be 0-100");
-		if (input.interval !== undefined && (typeof input.interval !== "number" || input.interval <= 0)) e.push("interval must be a positive number");
-	}
-
-	if (input.resendNotification !== undefined && (typeof input.resendNotification !== "number" || input.resendNotification < 0))
-		e.push("resendNotification must be a non-negative number");
-	if (input.parentId !== undefined && input.parentId !== null && (typeof input.parentId !== "string" || !input.parentId.trim()))
-		e.push("parentId must be a non-empty string if provided");
-	if (input.notificationChannels !== undefined && !Array.isArray(input.notificationChannels)) e.push("notificationChannels must be an array");
-	if (input.dependencies !== undefined && !Array.isArray(input.dependencies)) e.push("dependencies must be an array");
-
-	return e;
-}
-
 function serialize(input: any): Record<string, unknown> {
 	const r: Record<string, unknown> = {
 		id: input.id,
@@ -178,4 +150,32 @@ function toResponse(g: any) {
 		notificationChannels: g.notificationChannels || [],
 		dependencies: g.dependencies || [],
 	};
+}
+
+function validate(input: any, isUpdate: boolean): string[] {
+	const e: string[] = [];
+
+	if (!isUpdate) {
+		if (!isValidId(input.id)) e.push("id is required (alphanumeric, hyphens, underscores)");
+		if (!input.name || typeof input.name !== "string" || !input.name.trim()) e.push("name is required");
+		if (!input.strategy || !STRATEGIES.includes(input.strategy)) e.push("strategy must be 'any-up', 'percentage', or 'all-up'");
+		if (typeof input.degradedThreshold !== "number" || input.degradedThreshold < 0 || input.degradedThreshold > 100) e.push("degradedThreshold must be 0-100");
+		if (typeof input.interval !== "number" || input.interval <= 0) e.push("interval must be a positive number");
+	} else {
+		if (input.id !== undefined) e.push("id cannot be changed");
+		if (input.name !== undefined && (typeof input.name !== "string" || !input.name.trim())) e.push("name must be a non-empty string");
+		if (input.strategy !== undefined && !STRATEGIES.includes(input.strategy)) e.push("strategy must be 'any-up', 'percentage', or 'all-up'");
+		if (input.degradedThreshold !== undefined && (typeof input.degradedThreshold !== "number" || input.degradedThreshold < 0 || input.degradedThreshold > 100))
+			e.push("degradedThreshold must be 0-100");
+		if (input.interval !== undefined && (typeof input.interval !== "number" || input.interval <= 0)) e.push("interval must be a positive number");
+	}
+
+	if (input.resendNotification !== undefined && (typeof input.resendNotification !== "number" || input.resendNotification < 0))
+		e.push("resendNotification must be a non-negative number");
+	if (input.parentId !== undefined && input.parentId !== null && (typeof input.parentId !== "string" || !input.parentId.trim()))
+		e.push("parentId must be a non-empty string if provided");
+	if (input.notificationChannels !== undefined && !Array.isArray(input.notificationChannels)) e.push("notificationChannels must be an array");
+	if (input.dependencies !== undefined && !Array.isArray(input.dependencies)) e.push("dependencies must be an array");
+
+	return e;
 }

@@ -119,6 +119,45 @@ export function registerMonitorRoutes(app: Web, getServer: () => Server): void {
 	});
 }
 
+function serialize(input: any): Record<string, unknown> {
+	const r: Record<string, unknown> = {
+		id: input.id,
+		name: input.name,
+		token: input.token,
+		interval: input.interval,
+		maxRetries: input.maxRetries,
+		resendNotification: input.resendNotification,
+	};
+	if (input.groupId) r.groupId = input.groupId;
+	if (input.notificationChannels?.length) r.notificationChannels = input.notificationChannels;
+	if (input.dependencies?.length) r.dependencies = input.dependencies;
+	if (input.pulseMonitors?.length) r.pulseMonitors = input.pulseMonitors;
+	if (input.custom1) r.custom1 = input.custom1;
+	if (input.custom2) r.custom2 = input.custom2;
+	if (input.custom3) r.custom3 = input.custom3;
+	if (input.pulse) r.pulse = input.pulse;
+	return r;
+}
+
+function toResponse(m: any) {
+	return {
+		id: m.id,
+		name: m.name,
+		token: m.token,
+		interval: m.interval,
+		maxRetries: m.maxRetries,
+		resendNotification: m.resendNotification,
+		groupId: m.groupId,
+		notificationChannels: m.notificationChannels || [],
+		dependencies: m.dependencies || [],
+		pulseMonitors: m.pulseMonitors || [],
+		custom1: m.custom1,
+		custom2: m.custom2,
+		custom3: m.custom3,
+		pulse: m.pulse,
+	};
+}
+
 function validate(input: any, isUpdate: boolean): string[] {
 	const e: string[] = [];
 
@@ -163,43 +202,4 @@ function validate(input: any, isUpdate: boolean): string[] {
 	}
 
 	return e;
-}
-
-function serialize(input: any): Record<string, unknown> {
-	const r: Record<string, unknown> = {
-		id: input.id,
-		name: input.name,
-		token: input.token,
-		interval: input.interval,
-		maxRetries: input.maxRetries,
-		resendNotification: input.resendNotification,
-	};
-	if (input.groupId) r.groupId = input.groupId;
-	if (input.notificationChannels?.length) r.notificationChannels = input.notificationChannels;
-	if (input.dependencies?.length) r.dependencies = input.dependencies;
-	if (input.pulseMonitors?.length) r.pulseMonitors = input.pulseMonitors;
-	if (input.custom1) r.custom1 = input.custom1;
-	if (input.custom2) r.custom2 = input.custom2;
-	if (input.custom3) r.custom3 = input.custom3;
-	if (input.pulse) r.pulse = input.pulse;
-	return r;
-}
-
-function toResponse(m: any) {
-	return {
-		id: m.id,
-		name: m.name,
-		token: m.token,
-		interval: m.interval,
-		maxRetries: m.maxRetries,
-		resendNotification: m.resendNotification,
-		groupId: m.groupId,
-		notificationChannels: m.notificationChannels || [],
-		dependencies: m.dependencies || [],
-		pulseMonitors: m.pulseMonitors || [],
-		custom1: m.custom1,
-		custom2: m.custom2,
-		custom3: m.custom3,
-		pulse: m.pulse,
-	};
 }

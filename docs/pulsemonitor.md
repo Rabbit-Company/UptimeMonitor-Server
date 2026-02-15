@@ -160,6 +160,36 @@ url = "redis://user:pass@redis.example.com:6379"
 timeout = 3
 ```
 
+### Minecraft Java
+
+```toml
+[monitors.pulse.minecraft-java]
+host = "mc.example.com"
+port = 25565
+timeout = 3
+
+# Optional: define a custom metric (custom1) to track the current online player count.
+[monitors.custom1]
+id = "players"
+name = "Player Count"
+unit = "players"
+```
+
+### Minecraft Bedrock
+
+```toml
+[monitors.pulse.minecraft-bedrock]
+host = "bedrock.example.com"
+port = 19132
+timeout = 3
+
+# Optional: define a custom metric (custom1) to track the current online player count.
+[monitors.custom1]
+id = "players"
+name = "Player Count"
+unit = "players"
+```
+
 ## Pulse Interval Calculation
 
 The server automatically calculates the pulse interval for PulseMonitor:

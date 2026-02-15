@@ -161,15 +161,7 @@ app.get(
 		};
 
 		if (monitor.custom1) {
-			const custom1Value = query.get(monitor.custom1.id) ?? query.get("custom1");
-			if (custom1Value !== null) {
-				const parsed = parseFloat(custom1Value);
-				if (!isNaN(parsed)) {
-					customMetrics.custom1 = parsed;
-				}
-			}
-		} else {
-			const custom1Value = query.get("custom1");
+			const custom1Value = query.get("custom1") ?? query.get(monitor.custom1.id);
 			if (custom1Value !== null) {
 				const parsed = parseFloat(custom1Value);
 				if (!isNaN(parsed)) {
@@ -179,15 +171,7 @@ app.get(
 		}
 
 		if (monitor.custom2) {
-			const custom2Value = query.get(monitor.custom2.id) ?? query.get("custom2");
-			if (custom2Value !== null) {
-				const parsed = parseFloat(custom2Value);
-				if (!isNaN(parsed)) {
-					customMetrics.custom2 = parsed;
-				}
-			}
-		} else {
-			const custom2Value = query.get("custom2");
+			const custom2Value = query.get("custom2") ?? query.get(monitor.custom2.id);
 			if (custom2Value !== null) {
 				const parsed = parseFloat(custom2Value);
 				if (!isNaN(parsed)) {
@@ -197,15 +181,7 @@ app.get(
 		}
 
 		if (monitor.custom3) {
-			const custom3Value = query.get(monitor.custom3.id) ?? query.get("custom3");
-			if (custom3Value !== null) {
-				const parsed = parseFloat(custom3Value);
-				if (!isNaN(parsed)) {
-					customMetrics.custom3 = parsed;
-				}
-			}
-		} else {
-			const custom3Value = query.get("custom3");
+			const custom3Value = query.get("custom3") ?? query.get(monitor.custom3.id);
 			if (custom3Value !== null) {
 				const parsed = parseFloat(custom3Value);
 				if (!isNaN(parsed)) {
@@ -586,49 +562,34 @@ app.websocket({
 
 			// Custom1
 			if (monitor.custom1) {
-				const custom1Value = data[monitor.custom1.id] ?? data.custom1;
+				const custom1Value = data.custom1 ?? data[monitor.custom1.id];
 				if (custom1Value !== undefined && custom1Value !== null) {
 					const parsed = parseFloat(String(custom1Value));
 					if (!isNaN(parsed)) {
 						customMetrics.custom1 = parsed;
 					}
 				}
-			} else if (data.custom1 !== undefined && data.custom1 !== null) {
-				const parsed = parseFloat(String(data.custom1));
-				if (!isNaN(parsed)) {
-					customMetrics.custom1 = parsed;
-				}
 			}
 
 			// Custom2
 			if (monitor.custom2) {
-				const custom2Value = data[monitor.custom2.id] ?? data.custom2;
+				const custom2Value = data.custom2 ?? data[monitor.custom2.id];
 				if (custom2Value !== undefined && custom2Value !== null) {
 					const parsed = parseFloat(String(custom2Value));
 					if (!isNaN(parsed)) {
 						customMetrics.custom2 = parsed;
 					}
 				}
-			} else if (data.custom2 !== undefined && data.custom2 !== null) {
-				const parsed = parseFloat(String(data.custom2));
-				if (!isNaN(parsed)) {
-					customMetrics.custom2 = parsed;
-				}
 			}
 
 			// Custom3
 			if (monitor.custom3) {
-				const custom3Value = data[monitor.custom3.id] ?? data.custom3;
+				const custom3Value = data.custom3 ?? data[monitor.custom3.id];
 				if (custom3Value !== undefined && custom3Value !== null) {
 					const parsed = parseFloat(String(custom3Value));
 					if (!isNaN(parsed)) {
 						customMetrics.custom3 = parsed;
 					}
-				}
-			} else if (data.custom3 !== undefined && data.custom3 !== null) {
-				const parsed = parseFloat(String(data.custom3));
-				if (!isNaN(parsed)) {
-					customMetrics.custom3 = parsed;
 				}
 			}
 

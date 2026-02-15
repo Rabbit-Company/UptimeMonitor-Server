@@ -412,9 +412,63 @@ function validatePulseConfig(pulse: unknown, context: string): PulseConfig | und
 		}
 	}
 
+	// Validate Minecraft Java config
+	if (pulse["minecraft-java"] !== undefined) {
+		configCount++;
+		if (!isObject(pulse["minecraft-java"])) {
+			errors.push(`${context}.minecraft-java must be an object`);
+		} else {
+			const minecraftJava = pulse["minecraft-java"];
+			if (!isString(minecraftJava.host) || minecraftJava.host.trim().length === 0) {
+				errors.push(`${context}.minecraft-java.host must be a non-empty string`);
+			}
+			if (minecraftJava.port !== undefined && (!isNumber(minecraftJava.port) || minecraftJava.port <= 0 || minecraftJava.port > 65535)) {
+				errors.push(`${context}.minecraft-java.port must be a valid port number (1-65535)`);
+			}
+			if (minecraftJava.timeout !== undefined && (!isNumber(minecraftJava.timeout) || minecraftJava.timeout <= 0)) {
+				errors.push(`${context}.minecraft-java.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result["minecraft-java"] = {
+					host: minecraftJava.host as string,
+					port: minecraftJava.port as number | undefined,
+					timeout: minecraftJava.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
+	// Validate Minecraft Bedrock config
+	if (pulse["minecraft-bedrock"] !== undefined) {
+		configCount++;
+		if (!isObject(pulse["minecraft-bedrock"])) {
+			errors.push(`${context}.minecraft-bedrock must be an object`);
+		} else {
+			const minecraftBedrock = pulse["minecraft-bedrock"];
+			if (!isString(minecraftBedrock.host) || minecraftBedrock.host.trim().length === 0) {
+				errors.push(`${context}.minecraft-bedrock.host must be a non-empty string`);
+			}
+			if (minecraftBedrock.port !== undefined && (!isNumber(minecraftBedrock.port) || minecraftBedrock.port <= 0 || minecraftBedrock.port > 65535)) {
+				errors.push(`${context}.minecraft-bedrock.port must be a valid port number (1-65535)`);
+			}
+			if (minecraftBedrock.timeout !== undefined && (!isNumber(minecraftBedrock.timeout) || minecraftBedrock.timeout <= 0)) {
+				errors.push(`${context}.minecraft-bedrock.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result["minecraft-bedrock"] = {
+					host: minecraftBedrock.host as string,
+					port: minecraftBedrock.port as number | undefined,
+					timeout: minecraftBedrock.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
 	// Check that at least one config type is defined
 	if (configCount === 0) {
-		errors.push(`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, or redis)`);
+		errors.push(
+			`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, redis, minecraft-java, minecraft-bedrock)`,
+		);
 	}
 
 	if (errors.length > 0) {

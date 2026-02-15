@@ -148,6 +148,30 @@ export interface PulseRedisConfig {
 }
 
 /**
+ * Minecraft Java pulse monitoring configuration
+ */
+export interface MinecraftJavaConfig {
+	/** Server address */
+	host: string;
+	/** Server port */
+	port?: number;
+	/** Connection timeout in seconds */
+	timeout?: number;
+}
+
+/**
+ * Minecraft Bedrock pulse monitoring configuration
+ */
+export interface MinecraftBedrockConfig {
+	/** Server address */
+	host: string;
+	/** Server port */
+	port?: number;
+	/** Connection timeout in seconds */
+	timeout?: number;
+}
+
+/**
  * Pulse monitoring configuration - defines what PulseMonitor should check
  * Only one type should be configured per monitor
  */
@@ -174,6 +198,10 @@ export interface PulseConfig {
 	postgresql?: PulsePostgresqlConfig;
 	/** Redis monitoring */
 	redis?: PulseRedisConfig;
+	/** Minecraft Java monitoring */
+	"minecraft-java"?: MinecraftJavaConfig;
+	/** Minecraft Bedrock monitoring */
+	"minecraft-bedrock"?: MinecraftBedrockConfig;
 }
 
 /**

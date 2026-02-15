@@ -118,6 +118,24 @@ export function buildPulseMonitorConfig(monitor: Monitor): any {
 				timeout: monitor.pulse.redis.timeout || 3,
 			};
 		}
+
+		// Minecraft Java monitoring
+		if (monitor.pulse["minecraft-java"]) {
+			pulseConfig["minecraft-java"] = {
+				host: monitor.pulse["minecraft-java"].host,
+				port: monitor.pulse["minecraft-java"].port,
+				timeout: monitor.pulse["minecraft-java"].timeout,
+			};
+		}
+
+		// Minecraft Bedrock monitoring
+		if (monitor.pulse["minecraft-bedrock"]) {
+			pulseConfig["minecraft-bedrock"] = {
+				host: monitor.pulse["minecraft-bedrock"].host,
+				port: monitor.pulse["minecraft-bedrock"].port,
+				timeout: monitor.pulse["minecraft-bedrock"].timeout,
+			};
+		}
 	}
 
 	return pulseConfig;

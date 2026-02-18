@@ -224,6 +224,74 @@ chatId = "-1001234567890"
 topicId = 42
 ```
 
+## Webhook
+
+Send notifications to any HTTP endpoint as a JSON POST request.
+
+```toml
+[notifications.channels.critical.webhook]
+enabled = true
+url = "https://example.com/webhook"
+
+[notifications.channels.critical.webhook.headers]
+Authorization = "Bearer your-token"
+```
+
+| Field     | Required | Description                         |
+| --------- | -------- | ----------------------------------- |
+| `enabled` | Yes      | Enable webhook notifications        |
+| `url`     | Yes      | Target URL to POST notifications to |
+| `headers` | No       | Custom HTTP headers (e.g. for auth) |
+
+### Payload Format
+
+All webhook notifications are sent as `POST` requests with `Content-Type: application/json`. The payload has a fixed structure:
+
+```json
+{
+	"type": "down",
+	"monitorId": "api-prod",
+	"monitorName": "Production API",
+	"sourceType": "monitor",
+	"timestamp": "2025-01-15T10:30:00.000Z",
+	"formattedTime": "2025-01-15 10:30:00",
+	"interval": 60,
+	"downtime": 120000,
+	"downtimeDuration": "2m 0s",
+	"consecutiveDownCount": 2
+}
+```
+
+| Field                          | Type   | Always Present | Description                                          |
+| ------------------------------ | ------ | -------------- | ---------------------------------------------------- |
+| `type`                         | string | Yes            | `down`, `still-down`, or `recovered`                 |
+| `monitorId`                    | string | Yes            | Monitor or group ID                                  |
+| `monitorName`                  | string | Yes            | Monitor or group display name                        |
+| `sourceType`                   | string | Yes            | `monitor` or `group`                                 |
+| `timestamp`                    | string | Yes            | ISO 8601 timestamp                                   |
+| `formattedTime`                | string | Yes            | Human-readable local time                            |
+| `interval`                     | number | Yes            | Check interval in seconds                            |
+| `downtime`                     | number | No             | Downtime duration in milliseconds                    |
+| `downtimeDuration`             | string | No             | Human-readable downtime (e.g. "2m 30s")              |
+| `consecutiveDownCount`         | number | No             | Number of consecutive down checks                    |
+| `previousConsecutiveDownCount` | number | No             | Previous consecutive down count                      |
+| `groupInfo`                    | object | No             | Present only for groups (strategy, childrenUp, etc.) |
+
+### Group Info Object
+
+When `sourceType` is `group`, the payload includes:
+
+```json
+{
+	"groupInfo": {
+		"strategy": "percentage",
+		"childrenUp": 2,
+		"totalChildren": 5,
+		"upPercentage": 40
+	}
+}
+```
+
 ## Assigning Channels to Monitors
 
 ```toml

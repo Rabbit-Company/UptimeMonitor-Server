@@ -295,3 +295,12 @@ chatId = "-1001234567890"
 # topicId = 123
 # Optional: send silently
 # disableNotification = false
+
+# Webhook configuration for critical alerts
+[notifications.channels.critical.webhook]
+enabled = false
+url = "https://example.com/webhook"
+# Optional: Custom headers for authentication
+#[notifications.channels.critical.webhook.headers]
+#Authorization = "Bearer your-token"
+#X-Api-Key = "your-api-key"

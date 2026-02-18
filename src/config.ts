@@ -1239,6 +1239,48 @@ function validateTelegramConfig(config: unknown, channelId: string): any {
 	return result;
 }
 
+function validateWebhookConfig(config: unknown, channelId: string): any {
+	const errors: string[] = [];
+	const cfg = config as Record<string, unknown>;
+
+	if (!isBoolean(cfg.enabled)) {
+		errors.push(`notifications.channels.${channelId}.webhook.enabled must be a boolean`);
+	}
+
+	if (!cfg.enabled) {
+		return { enabled: false };
+	}
+
+	if (!isString(cfg.url) || cfg.url.trim().length === 0) {
+		errors.push(`notifications.channels.${channelId}.webhook.url must be a non-empty string`);
+	}
+
+	if (cfg.headers !== undefined) {
+		if (!isObject(cfg.headers)) {
+			errors.push(`notifications.channels.${channelId}.webhook.headers must be an object`);
+		} else {
+			for (const [key, value] of Object.entries(cfg.headers)) {
+				if (!isString(value)) {
+					errors.push(`notifications.channels.${channelId}.webhook.headers.${key} must be a string`);
+				}
+			}
+		}
+	}
+
+	if (errors.length > 0) {
+		throw new ConfigValidationError(errors);
+	}
+
+	const result: any = {
+		enabled: cfg.enabled,
+		url: cfg.url,
+	};
+
+	if (cfg.headers) result.headers = cfg.headers;
+
+	return result;
+}
+
 function validateNotificationChannel(channel: unknown, channelId: string): NotificationChannel {
 	const errors: string[] = [];
 
@@ -1311,6 +1353,16 @@ function validateNotificationChannel(channel: unknown, channelId: string): Notif
 	if (channel.telegram) {
 		try {
 			result.telegram = validateTelegramConfig(channel.telegram, channelId);
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				throw error;
+			}
+		}
+	}
+
+	if (channel.webhook) {
+		try {
+			result.webhook = validateWebhookConfig(channel.webhook, channelId);
 		} catch (error) {
 			if (error instanceof ConfigValidationError) {
 				throw error;
@@ -1657,8 +1709,9 @@ function validateNotificationChannelProviders(config: Config): void {
 		const hasDiscord = channel.discord?.enabled;
 		const hasNtfy = channel.ntfy?.enabled;
 		const hasTelegram = channel.telegram?.enabled;
+		const hasWebhook = channel.webhook?.enabled;
 
-		if (!hasEmail && !hasDiscord && !hasNtfy && !hasTelegram) {
+		if (!hasEmail && !hasDiscord && !hasNtfy && !hasTelegram && !hasWebhook) {
 			errors.push(`Notification channel '${channelId}' is enabled but has no providers configured`);
 		}
 	}

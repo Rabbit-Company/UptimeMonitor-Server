@@ -2,6 +2,7 @@ import { EmailProvider } from "./providers/email";
 import { DiscordProvider } from "./providers/discord";
 import { NtfyProvider } from "./providers/ntfy";
 import { TelegramProvider } from "./providers/telegram";
+import { WebhookProvider } from "./providers/webhook";
 import { Logger } from "../logger";
 import type { NotificationChannel, NotificationEvent, NotificationProvider } from "../types";
 
@@ -36,6 +37,10 @@ export class NotificationChannelManager {
 
 			if (channel.telegram?.enabled) {
 				channelProviders.push(new TelegramProvider(channel.telegram));
+			}
+
+			if (channel.webhook?.enabled) {
+				channelProviders.push(new WebhookProvider(channel.webhook));
 			}
 
 			if (channelProviders.length > 0) {

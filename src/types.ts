@@ -632,14 +632,6 @@ export interface DiscordConfig {
 	};
 }
 
-export interface WebhookConfig {
-	enabled: boolean;
-	url: string;
-	method?: "POST" | "PUT" | "PATCH";
-	headers?: Record<string, string>;
-	template?: string;
-}
-
 export interface NtfyConfig {
 	enabled: boolean;
 	server: string;
@@ -655,6 +647,12 @@ export interface TelegramConfig {
 	chatId: string;
 	topicId?: number;
 	disableNotification?: boolean;
+}
+
+export interface WebhookConfig {
+	enabled: boolean;
+	url: string;
+	headers?: Record<string, string>;
 }
 
 export interface DowntimeRecord {
@@ -685,6 +683,8 @@ export interface NotificationChannel {
 	ntfy?: NtfyConfig;
 	/** Telegram configuration for this channel */
 	telegram?: TelegramConfig;
+	/** Webhook configuration for this channel */
+	webhook?: WebhookConfig;
 }
 
 export interface NotificationEvent {

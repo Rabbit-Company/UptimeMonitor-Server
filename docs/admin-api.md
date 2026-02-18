@@ -596,6 +596,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 | `email`       | object | Email/SMTP configuration      |
 | `ntfy`        | object | Ntfy push notification config |
 | `telegram`    | object | Telegram bot configuration    |
+| `webhook`     | object | Webhook configuration         |
 
 **Discord configuration:**
 
@@ -650,6 +651,18 @@ curl -X POST -H "Authorization: Bearer <token>" \
 	"chatId": "-1001234567890",
 	"topicId": 123,
 	"disableNotification": false
+}
+```
+
+**Webhook configuration:**
+
+```json
+{
+	"enabled": true,
+	"url": "https://example.com/webhook",
+	"headers": {
+		"Authorization": "Bearer your-token"
+	}
 }
 ```
 

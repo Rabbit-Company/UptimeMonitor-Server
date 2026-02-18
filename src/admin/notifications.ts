@@ -132,6 +132,7 @@ function serialize(input: any): Record<string, unknown> {
 	if (input.email) r.email = input.email;
 	if (input.ntfy) r.ntfy = input.ntfy;
 	if (input.telegram) r.telegram = input.telegram;
+	if (input.webhook) r.webhook = input.webhook;
 	return r;
 }
 
@@ -207,6 +208,23 @@ function validate(input: any, isUpdate: boolean): string[] {
 			if (input.telegram.enabled) {
 				if (!input.telegram.botToken || typeof input.telegram.botToken !== "string") e.push("telegram.botToken is required when enabled");
 				if (!input.telegram.chatId || typeof input.telegram.chatId !== "string") e.push("telegram.chatId is required when enabled");
+			}
+		}
+	}
+
+	// Webhook
+	if (input.webhook !== undefined && input.webhook !== null) {
+		if (typeof input.webhook !== "object" || Array.isArray(input.webhook)) {
+			e.push("webhook must be an object");
+		} else {
+			if (typeof input.webhook.enabled !== "boolean") e.push("webhook.enabled must be a boolean");
+			if (input.webhook.enabled) {
+				if (!input.webhook.url || typeof input.webhook.url !== "string") e.push("webhook.url is required when enabled");
+				if (input.webhook.headers !== undefined) {
+					if (typeof input.webhook.headers !== "object" || Array.isArray(input.webhook.headers)) {
+						e.push("webhook.headers must be an object");
+					}
+				}
 			}
 		}
 	}

@@ -7,7 +7,7 @@ A high-performance uptime monitoring system built with Bun and ClickHouse. Recei
 - **Pulse-Based Monitoring** - Services send heartbeats; missing pulses trigger alerts
 - **Hierarchical Groups** - Organize monitors with flexible health strategies (any-up, all-up, percentage)
 - **Custom Metrics** - Track up to 3 numeric values per monitor (player count, connections, etc.)
-- **Multi-Channel Notifications** - Discord, Email, Ntfy and Telegram support with per-monitor control
+- **Multi-Channel Notifications** - Discord, Email, Ntfy, Telegram and Webhook support with per-monitor control
 - **Dependency-Based Notification Suppression** - Define dependencies between monitors/groups to avoid notification storms when infrastructure fails
 - **Real-Time Status Pages** - WebSocket-powered live updates
 - **Self-Healing** - Automatic backfill when the monitor itself recovers from downtime
@@ -78,18 +78,18 @@ curl http://localhost:3000/v1/status/:slug
 
 ## Documentation
 
-| Document                                                               | Description                                       |
-| ---------------------------------------------------------------------- | ------------------------------------------------- |
-| [Pulses](docs/pulses.md)                                               | How pulses work, timing, and best practices       |
-| [Configuration Guide](docs/configuration.md)                           | Complete config.toml reference                    |
-| [API Reference](docs/api.md)                                           | All endpoints and WebSocket events                |
-| [Admin API Reference](docs/admin-api.md)                               | CRUD endpoints for managing configuration via API |
-| [Notifications](docs/notifications.md)                                 | Setting up Discord, Email, Ntfy, Telegram         |
-| [Groups & Strategies](docs/groups.md)                                  | Organizing monitors hierarchically                |
-| [Dependencies](docs/dependencies.md)                                   | Notification suppression via dependencies         |
-| [Custom Metrics](docs/custom-metrics.md)                               | Tracking additional data points                   |
-| [PulseMonitor Integration](docs/pulsemonitor.md)                       | Automated monitoring from multiple regions        |
-| [Visual Configuration Editor](https://uptime-monitor.org/configurator) | Web-based UI for configuring monitors             |
+| Document                                                               | Description                                        |
+| ---------------------------------------------------------------------- | -------------------------------------------------- |
+| [Pulses](docs/pulses.md)                                               | How pulses work, timing, and best practices        |
+| [Configuration Guide](docs/configuration.md)                           | Complete config.toml reference                     |
+| [API Reference](docs/api.md)                                           | All endpoints and WebSocket events                 |
+| [Admin API Reference](docs/admin-api.md)                               | CRUD endpoints for managing configuration via API  |
+| [Notifications](docs/notifications.md)                                 | Setting up Discord, Email, Ntfy, Telegram, Webhook |
+| [Groups & Strategies](docs/groups.md)                                  | Organizing monitors hierarchically                 |
+| [Dependencies](docs/dependencies.md)                                   | Notification suppression via dependencies          |
+| [Custom Metrics](docs/custom-metrics.md)                               | Tracking additional data points                    |
+| [PulseMonitor Integration](docs/pulsemonitor.md)                       | Automated monitoring from multiple regions         |
+| [Visual Configuration Editor](https://uptime-monitor.org/configurator) | Web-based UI for configuring monitors              |
 
 ## Related Projects
 

@@ -1139,7 +1139,7 @@ export const openapi = {
 				tags: ["Admin: Notifications"],
 				summary: "Create a notification channel",
 				description:
-					"Create a new notification channel with one or more providers (Discord, Email, Ntfy, Telegram). At least one provider should be configured.",
+					"Create a new notification channel with one or more providers (Discord, Email, Ntfy, Telegram, Webhook). At least one provider should be configured.",
 				operationId: "adminCreateNotification",
 				security: [{ adminBearerAuth: [] }],
 				requestBody: {
@@ -1747,6 +1747,7 @@ export const openapi = {
 					email: { $ref: "#/components/schemas/AdminEmailConfig" },
 					ntfy: { $ref: "#/components/schemas/AdminNtfyConfig" },
 					telegram: { $ref: "#/components/schemas/AdminTelegramConfig" },
+					webhook: { $ref: "#/components/schemas/AdminWebhookConfig" },
 				},
 			},
 			AdminNotificationChannelCreate: {
@@ -1761,6 +1762,7 @@ export const openapi = {
 					email: { $ref: "#/components/schemas/AdminEmailConfig" },
 					ntfy: { $ref: "#/components/schemas/AdminNtfyConfig" },
 					telegram: { $ref: "#/components/schemas/AdminTelegramConfig" },
+					webhook: { $ref: "#/components/schemas/AdminWebhookConfig" },
 				},
 			},
 			AdminNotificationChannelUpdate: {
@@ -1773,6 +1775,7 @@ export const openapi = {
 					email: { oneOf: [{ $ref: "#/components/schemas/AdminEmailConfig" }, { type: "null" }], description: "Set to null to remove" },
 					ntfy: { oneOf: [{ $ref: "#/components/schemas/AdminNtfyConfig" }, { type: "null" }], description: "Set to null to remove" },
 					telegram: { oneOf: [{ $ref: "#/components/schemas/AdminTelegramConfig" }, { type: "null" }], description: "Set to null to remove" },
+					webhook: { oneOf: [{ $ref: "#/components/schemas/AdminWebhookConfig" }, { type: "null" }], description: "Set to null to remove" },
 				},
 			},
 			AdminDiscordConfig: {
@@ -1835,6 +1838,20 @@ export const openapi = {
 					chatId: { type: "string", description: "Required when enabled", example: "-1001234567890" },
 					topicId: { type: "integer", description: "Optional forum topic ID" },
 					disableNotification: { type: "boolean", description: "Send silently" },
+				},
+			},
+			AdminWebhookConfig: {
+				type: "object",
+				required: ["enabled"],
+				properties: {
+					enabled: { type: "boolean", example: true },
+					url: { type: "string", description: "Required when enabled", example: "https://example.com/webhook" },
+					headers: {
+						type: "object",
+						additionalProperties: { type: "string" },
+						description: "Custom HTTP headers for authentication",
+						example: { Authorization: "Bearer your-token" },
+					},
 				},
 			},
 			AdminPulseMonitor: {

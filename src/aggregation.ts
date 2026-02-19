@@ -3,11 +3,15 @@ import { cache } from "./cache";
 import { Logger } from "./logger";
 
 export class AggregationJob {
+	private currentRunAbort: AbortController | null = null;
 	private intervalId: NodeJS.Timeout | null = null;
 	private readonly INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 	private isRunning: boolean = false;
 	private readonly MAX_RUN_TIME_MS = 5 * 60 * 1000; // 5 minutes max runtime
 	private lastRunStartTime: number = 0;
+
+	private readonly CH_SELECT_MAX_EXEC_S = 20;
+	private readonly CH_INSERT_MAX_EXEC_S = 240;
 
 	async start(): Promise<void> {
 		if (this.intervalId) return;
@@ -36,10 +40,16 @@ export class AggregationJob {
 			const runDuration = currentTime - this.lastRunStartTime;
 
 			if (runDuration > this.MAX_RUN_TIME_MS) {
-				Logger.warn("Aggregation: Previous run appears stuck, forcing reset", {
+				Logger.warn("Aggregation: Previous run appears stuck, aborting + forcing reset", {
 					durationMs: runDuration,
 					maxAllowedMs: this.MAX_RUN_TIME_MS,
 				});
+
+				try {
+					this.currentRunAbort?.abort(new Error("Aggregation run timed out"));
+				} catch {}
+
+				this.currentRunAbort = null;
 				this.isRunning = false;
 			} else {
 				Logger.debug("Aggregation: Previous run still in progress, skipping");
@@ -50,10 +60,18 @@ export class AggregationJob {
 		this.isRunning = true;
 		this.lastRunStartTime = Date.now();
 
+		const runAbort = new AbortController();
+		this.currentRunAbort = runAbort;
+		const runTimer = setTimeout(() => {
+			try {
+				runAbort.abort(new Error(`Aggregation exceeded ${this.MAX_RUN_TIME_MS}ms`));
+			} catch {}
+		}, this.MAX_RUN_TIME_MS);
+
 		try {
 			Logger.debug("Aggregation: Running...");
-			await this.aggregateHourly();
-			await this.aggregateDaily();
+			await this.aggregateHourly(runAbort.signal);
+			await this.aggregateDaily(runAbort.signal);
 			Logger.debug("Aggregation: Completed");
 		} catch (error: any) {
 			Logger.error("Aggregation failed", {
@@ -64,6 +82,8 @@ export class AggregationJob {
 			// Add a small delay before retrying on error
 			await new Promise((resolve) => setTimeout(resolve, 1000));
 		} finally {
+			clearTimeout(runTimer);
+			this.currentRunAbort = null;
 			this.isRunning = false;
 		}
 	}
@@ -82,7 +102,7 @@ export class AggregationJob {
 	 * For the first hour (when the monitor started mid-hour), expected intervals are calculated
 	 * based on when the first pulse actually arrived, not from the start of the hour.
 	 */
-	private async aggregateHourly(): Promise<void> {
+	private async aggregateHourly(abortSignal: AbortSignal): Promise<void> {
 		const monitors = cache.getAllMonitors();
 
 		for (const monitor of monitors) {
@@ -102,6 +122,11 @@ export class AggregationJob {
 					query: lastAggregatedQuery,
 					query_params: { monitorId: monitor.id },
 					format: "JSONEachRow",
+					abort_signal: abortSignal,
+					clickhouse_settings: {
+						max_execution_time: this.CH_SELECT_MAX_EXEC_S,
+						wait_end_of_query: 1,
+					},
 				});
 				const lastAggregatedData = await lastAggregatedResult.json<{ last_hour: string | null }>();
 
@@ -125,6 +150,11 @@ export class AggregationJob {
 						query: firstPulseQuery,
 						query_params: { monitorId: monitor.id },
 						format: "JSONEachRow",
+						abort_signal: abortSignal,
+						clickhouse_settings: {
+							max_execution_time: this.CH_SELECT_MAX_EXEC_S,
+							wait_end_of_query: 1,
+						},
 					});
 					const firstPulseData = await firstPulseResult.json<{ first_pulse: string | null }>();
 
@@ -293,9 +323,14 @@ export class AggregationJob {
 					LEFT JOIN pulse_stats ps ON ah.hour = ps.hour
 				`;
 
-				await clickhouse.exec({
+				await clickhouse.command({
 					query,
 					query_params: { monitorId: monitor.id },
+					abort_signal: abortSignal,
+					clickhouse_settings: {
+						max_execution_time: this.CH_INSERT_MAX_EXEC_S,
+						wait_end_of_query: 1,
+					},
 				});
 
 				Logger.debug("Hourly aggregation completed", {
@@ -323,7 +358,7 @@ export class AggregationJob {
 	 *
 	 * Days without any hourly records are recorded as 0% uptime.
 	 */
-	private async aggregateDaily(): Promise<void> {
+	private async aggregateDaily(abortSignal: AbortSignal): Promise<void> {
 		const monitors = cache.getAllMonitors();
 
 		for (const monitor of monitors) {
@@ -341,6 +376,11 @@ export class AggregationJob {
 					query: lastAggregatedQuery,
 					query_params: { monitorId: monitor.id },
 					format: "JSONEachRow",
+					abort_signal: abortSignal,
+					clickhouse_settings: {
+						max_execution_time: this.CH_SELECT_MAX_EXEC_S,
+						wait_end_of_query: 1,
+					},
 				});
 				const lastAggregatedData = await lastAggregatedResult.json<{ last_date: string | null }>();
 
@@ -364,6 +404,11 @@ export class AggregationJob {
 						query: firstHourQuery,
 						query_params: { monitorId: monitor.id },
 						format: "JSONEachRow",
+						abort_signal: abortSignal,
+						clickhouse_settings: {
+							max_execution_time: this.CH_SELECT_MAX_EXEC_S,
+							wait_end_of_query: 1,
+						},
 					});
 					const firstHourData = await firstHourResult.json<{ first_hour: string | null }>();
 
@@ -457,9 +502,14 @@ export class AggregationJob {
 					LEFT JOIN daily_stats ds ON ad.date = ds.date
 				`;
 
-				await clickhouse.exec({
+				await clickhouse.command({
 					query,
 					query_params: { monitorId: monitor.id },
+					abort_signal: abortSignal,
+					clickhouse_settings: {
+						max_execution_time: this.CH_INSERT_MAX_EXEC_S,
+						wait_end_of_query: 1,
+					},
 				});
 
 				Logger.debug("Daily aggregation completed", {

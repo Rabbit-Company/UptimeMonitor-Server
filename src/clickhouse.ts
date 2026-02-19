@@ -16,7 +16,7 @@ export const clickhouse = createClient(config.clickhouse);
 export async function initClickHouse(): Promise<void> {
 	try {
 		// Raw pulses - kept for 1 day
-		await clickhouse.exec({
+		await clickhouse.command({
 			query: `
 				CREATE TABLE IF NOT EXISTS pulses (
 					monitor_id LowCardinality(String),
@@ -35,7 +35,7 @@ export async function initClickHouse(): Promise<void> {
 		});
 
 		// Hourly aggregates - kept for 90 days
-		await clickhouse.exec({
+		await clickhouse.command({
 			query: `
 				CREATE TABLE IF NOT EXISTS pulses_hourly (
 					monitor_id LowCardinality(String),
@@ -62,7 +62,7 @@ export async function initClickHouse(): Promise<void> {
 		});
 
 		// Daily aggregates - kept forever
-		await clickhouse.exec({
+		await clickhouse.command({
 			query: `
 				CREATE TABLE IF NOT EXISTS pulses_daily (
 					monitor_id LowCardinality(String),

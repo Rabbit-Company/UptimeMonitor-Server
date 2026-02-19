@@ -99,7 +99,22 @@ export function registerMonitorRoutes(app: Web, getServer: () => Server): void {
 			if (idx === -1) return ctx.json({ error: "Monitor not found in config file" }, 404);
 			monitors.splice(idx, 1);
 
-			// Clean up references in status pages
+			// Clean up references
+			if (Array.isArray(raw.monitors)) {
+				for (const m of raw.monitors as any[]) {
+					if (Array.isArray(m.children)) {
+						m.children = m.children.filter((c: string) => c !== id);
+					}
+				}
+			}
+			if (Array.isArray(raw.groups)) {
+				for (const g of raw.groups as any[]) {
+					if (Array.isArray(g.children)) {
+						g.children = g.children.filter((c: string) => c !== id);
+					}
+				}
+			}
+
 			if (Array.isArray(raw.status_pages)) {
 				for (const p of raw.status_pages as any[]) {
 					if (Array.isArray(p.items)) p.items = p.items.filter((i: string) => i !== id);
@@ -128,7 +143,7 @@ function serialize(input: any): Record<string, unknown> {
 		maxRetries: input.maxRetries,
 		resendNotification: input.resendNotification,
 	};
-	if (input.groupId) r.groupId = input.groupId;
+	if (input.children?.length) r.children = input.children;
 	if (input.notificationChannels?.length) r.notificationChannels = input.notificationChannels;
 	if (input.dependencies?.length) r.dependencies = input.dependencies;
 	if (input.pulseMonitors?.length) r.pulseMonitors = input.pulseMonitors;
@@ -147,7 +162,7 @@ function toResponse(m: any) {
 		interval: m.interval,
 		maxRetries: m.maxRetries,
 		resendNotification: m.resendNotification,
-		groupId: m.groupId,
+		children: m.children || [],
 		notificationChannels: m.notificationChannels || [],
 		dependencies: m.dependencies || [],
 		pulseMonitors: m.pulseMonitors || [],
@@ -178,8 +193,7 @@ function validate(input: any, isUpdate: boolean): string[] {
 			e.push("resendNotification must be a non-negative number");
 	}
 
-	if (input.groupId !== undefined && input.groupId !== null && (typeof input.groupId !== "string" || !input.groupId.trim()))
-		e.push("groupId must be a non-empty string if provided");
+	if (input.children !== undefined && !Array.isArray(input.children)) e.push("children must be an array");
 	if (input.notificationChannels !== undefined && !Array.isArray(input.notificationChannels)) e.push("notificationChannels must be an array");
 	if (input.dependencies !== undefined && !Array.isArray(input.dependencies)) e.push("dependencies must be an array");
 	if (input.pulseMonitors !== undefined && !Array.isArray(input.pulseMonitors)) e.push("pulseMonitors must be an array");

@@ -1,6 +1,6 @@
 # Groups & Strategies
 
-Groups let you organize monitors hierarchically and define how their combined health is calculated.
+Groups let you organize monitors and other groups hierarchically and define how their combined health is calculated. Both groups and monitors can hold children, allowing flexible tree structures.
 
 ## Basic Group
 
@@ -12,9 +12,12 @@ strategy = "percentage"
 degradedThreshold = 50
 interval = 60
 resendNotification = 0
+children = ["api-prod", "web-prod", "db-prod"]
 ```
 
 ## Group Strategies
+
+Strategies and `degradedThreshold` are only used by groups to calculate their status from children. Monitors do not need strategies (They always derive their own status from their pulses).
 
 ### any-up
 
@@ -30,6 +33,7 @@ strategy = "any-up"
 degradedThreshold = 0  # Not used for any-up
 interval = 60
 resendNotification = 0
+children = ["lb-1", "lb-2", "lb-3"]
 ```
 
 | Children Status | Group Status |
@@ -53,6 +57,7 @@ strategy = "all-up"
 degradedThreshold = 0  # Not used for all-up
 interval = 60
 resendNotification = 0
+children = ["payment-gateway", "payment-db", "payment-queue"]
 ```
 
 | Children Status | Group Status |
@@ -76,6 +81,7 @@ strategy = "percentage"
 degradedThreshold = 50  # Below 50% = DOWN, 50-99% = DEGRADED, 100% = UP
 interval = 60
 resendNotification = 0
+children = ["api-1", "api-2", "api-3", "api-4"]
 ```
 
 | Children Status | Percentage | Group Status    |
@@ -88,7 +94,7 @@ resendNotification = 0
 
 ## Nested Groups
 
-Groups can contain other groups for hierarchical organization.
+Groups can contain other groups for hierarchical organization. Structure is defined **top-down**. A parent lists its children using the `children` array.
 
 ```toml
 # Top-level group
@@ -99,25 +105,26 @@ strategy = "percentage"
 degradedThreshold = 75
 interval = 60
 resendNotification = 0
+children = ["production", "staging"]
 
 # Child groups
 [[groups]]
 id = "production"
 name = "Production"
-parentId = "all-services"
 strategy = "percentage"
 degradedThreshold = 50
 interval = 60
 resendNotification = 0
+children = ["api-prod", "web-prod", "db-prod"]
 
 [[groups]]
 id = "staging"
 name = "Staging"
-parentId = "all-services"
 strategy = "any-up"
 degradedThreshold = 0
 interval = 60
 resendNotification = 0
+children = ["api-staging", "web-staging"]
 ```
 
 **Hierarchy:**
@@ -133,50 +140,76 @@ all-services (percentage, 75%)
     └── web-staging (monitor)
 ```
 
-## Dependencies vs Group Hierarchy
+## Shared Children
 
-The group hierarchy (`parentId`) and `dependencies` serve different purposes:
-
-- **Group hierarchy** (`parentId`) is for **status aggregation** - calculating whether a group is up, down, or degraded based on its children. It also determines how monitors are organized on status pages.
-- **Dependencies** is for **notification suppression** - when a dependency is down, notifications for the dependent entity are suppressed to avoid alert storms.
-
-These are orthogonal. A group can have a `parentId` for status aggregation and completely different `dependencies` for notification suppression. That said, it's common for them to overlap.
+A monitor or group can appear in multiple parents' `children` arrays. This allows the same monitor to be part of several groups simultaneously.
 
 ```toml
-# This group is a child of "infrastructure" for status purposes,
-# but depends on "network" for notification suppression
 [[groups]]
+id = "production"
+name = "Production Services"
+strategy = "percentage"
+degradedThreshold = 50
+interval = 60
+resendNotification = 0
+children = ["shared-db"]
+
+[[groups]]
+id = "infrastructure"
+name = "Infrastructure"
+strategy = "all-up"
+degradedThreshold = 0
+interval = 60
+resendNotification = 0
+children = ["shared-db", "cdn-global"]
+```
+
+In this example, the `shared-db` monitor belongs to both the `production` and `infrastructure` groups.
+
+## Monitors with Children
+
+Monitors can also have children. This allows you to define dependency trees where a monitor holds other monitors or groups beneath it. Note that monitors do **not** have `strategy` or `degradedThreshold`. These are only used by groups for uptime aggregation. Monitors always derive their own status from their own pulses.
+
+```toml
+[[monitors]]
 id = "server-1"
 name = "Server 1"
+token = "secret-server-1"
+interval = 30
+maxRetries = 0
+resendNotification = 0
+children = ["app-1", "app-2", "app-3"]
+```
+
+## Dependencies vs Children Hierarchy
+
+The children hierarchy (`children`) and `dependencies` serve different purposes:
+
+- **Children hierarchy** (`children`) is for **status aggregation** - calculating whether a group is up, down, or degraded based on its children. It also determines how monitors and groups are organized on status pages.
+- **Dependencies** is for **notification suppression** - when a dependency is down, notifications for the dependent entity are suppressed to avoid alert storms.
+
+These are orthogonal. A group can have `children` for status aggregation and completely different `dependencies` for notification suppression. That said, it is common for them to overlap.
+
+```toml
+# This group holds server monitors as children for status purposes,
+# but depends on "network" for notification suppression
+[[groups]]
+id = "servers"
+name = "Servers"
 strategy = "all-up"
 degradedThreshold = 50
 interval = 30
 resendNotification = 0
-parentId = "infrastructure"
+children = ["server-1", "server-2"]
 dependencies = ["network"]
 notificationChannels = ["discord"]
 ```
 
 See [Dependencies](dependencies.md) for full documentation and examples.
 
-## Assigning Monitors to Groups
-
-Use the `groupId` field on monitors:
-
-```toml
-[[monitors]]
-id = "api-prod"
-name = "Production API"
-token = "secret"
-interval = 30
-maxRetries = 0
-resendNotification = 0
-groupId = "production"  # This monitor belongs to the "production" group
-```
-
 ## Group Uptime Calculation
 
-Group uptime is computed from child uptimes using the same strategy:
+Group uptime is computed from child uptimes using the group's strategy:
 
 | Strategy     | Uptime Calculation       |
 | ------------ | ------------------------ |
@@ -193,156 +226,4 @@ Group uptime is computed from child uptimes using the same strategy:
 
 ## Group History
 
-Groups don't store their own pulses-history is computed from children in real-time.
-
-```bash
-# Get raw history (~24h)
-curl http://localhost:3000/v1/groups/production/history
-
-# Get hourly history (~90 days)
-curl http://localhost:3000/v1/groups/production/history/hourly
-
-# Get daily history (forever)
-curl http://localhost:3000/v1/groups/production/history/daily
-```
-
-**Response includes the strategy used:**
-
-```json
-{
-	"groupId": "production",
-	"type": "hourly",
-	"strategy": "percentage",
-	"data": [
-		{
-			"timestamp": "2025-01-15T10:00:00Z",
-			"uptime": 99.5,
-			"latency_min": 30,
-			"latency_max": 150,
-			"latency_avg": 65.3
-		}
-	]
-}
-```
-
-## Group Notifications
-
-Groups can have their own notification channels:
-
-```toml
-[[groups]]
-id = "production"
-name = "Production"
-strategy = "percentage"
-degradedThreshold = 50
-interval = 60
-resendNotification = 12
-notificationChannels = ["critical", "ops-team"]
-```
-
-When a group goes down (based on its strategy), notifications are sent to all configured channels.
-
-### Resend Notifications for Groups
-
-The `resendNotification` field works the same as for monitors:
-
-```toml
-[missingPulseDetector]
-interval = 5
-
-[[groups]]
-id = "production"
-strategy = "percentage"
-degradedThreshold = 50
-interval = 60
-resendNotification = 12  # Remind every 12 checks while down
-notificationChannels = ["critical"]
-```
-
-With `interval = 5` and `resendNotification = 12`:
-
-- "Group Down" notification sent immediately
-- "Still Down" reminder every 5 × 12 = 60 seconds
-- "Recovered" notification when group is up again
-
-## Status Page Display
-
-Groups are displayed on status pages with their children:
-
-```toml
-[[status_pages]]
-id = "public"
-name = "Status"
-slug = "status"
-items = ["all-services"]  # Shows the group and all nested children
-```
-
-**API Response:**
-
-```json
-{
-	"name": "Status",
-	"slug": "status",
-	"items": [
-		{
-			"id": "all-services",
-			"type": "group",
-			"name": "All Services",
-			"status": "degraded",
-			"uptime24h": 98.5,
-			"children": [
-				{
-					"id": "production",
-					"type": "group",
-					"name": "Production",
-					"status": "up",
-					"children": [
-						{
-							"id": "api-prod",
-							"type": "monitor",
-							"name": "Production API",
-							"status": "up"
-						}
-					]
-				}
-			]
-		}
-	]
-}
-```
-
-## Best Practices
-
-### 1. Match strategy to criticality
-
-| Service Type             | Recommended Strategy               |
-| ------------------------ | ---------------------------------- |
-| Redundant load balancers | `any-up`                           |
-| Payment processing chain | `all-up`                           |
-| General services         | `percentage` with 50-75% threshold |
-
-### 2. Set meaningful thresholds
-
-For `percentage` strategy:
-
-- **75-90%**: For services with built-in redundancy
-- **50%**: For services where half availability is acceptable
-- **25%**: For non-critical services
-
-### 3. Don't nest too deeply
-
-While nesting is supported, keep it to 2-3 levels for clarity:
-
-```
-all-services
-├── production
-│   └── (monitors)
-├── staging
-│   └── (monitors)
-└── infrastructure
-    └── (monitors)
-```
-
-### 4. Use groups for logical organization
-
-Even if you use `percentage` with 100% threshold (similar to `all-up`), groups help organize your status page and provide aggregate uptime statistics.
+Groups do not store their own pulses. History is computed from children in real-time.

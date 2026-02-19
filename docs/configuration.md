@@ -74,14 +74,14 @@ Enable REST API endpoints for managing monitors, groups, status pages, notificat
 
 ```toml
 [adminAPI]
-enabled = false
-token = "your-secure-admin-token-here"
+enabled = true
+token = "your-admin-token"
 ```
 
-| Field     | Default        | Description                                            |
-| --------- | -------------- | ------------------------------------------------------ |
-| `enabled` | `false`        | Set to `true` to activate admin endpoints              |
-| `token`   | Auto-generated | Bearer token for authenticating all admin API requests |
+| Field     | Required | Description                                          |
+| --------- | -------- | ---------------------------------------------------- |
+| `enabled` | Yes      | Set to `true` to activate admin endpoints            |
+| `token`   | Yes      | Bearer token used to authenticate all admin requests |
 
 ### Logger
 
@@ -101,50 +101,21 @@ level = 4
 | 6     | VERBOSE |
 | 7     | SILLY   |
 
-### Missing Pulse Detector
-
-```toml
-[missingPulseDetector]
-interval = 5
-```
-
-| Field      | Default | Description                                        |
-| ---------- | ------- | -------------------------------------------------- |
-| `interval` | `5`     | How often (in seconds) to check for missing pulses |
-
-### Self-Monitoring
-
-Automatically backfills data when the monitor itself was down.
-
-```toml
-[selfMonitoring]
-enabled = true
-id = "self-monitor"
-interval = 3
-backfillOnRecovery = true
-latencyStrategy = "last-known"
-```
-
-| Field                | Default        | Description                                                  |
-| -------------------- | -------------- | ------------------------------------------------------------ |
-| `enabled`            | `false`        | Enable self-monitoring                                       |
-| `id`                 | `self-monitor` | Monitor ID for self-monitoring                               |
-| `interval`           | `3`            | Health check interval in seconds                             |
-| `backfillOnRecovery` | `false`        | Create synthetic pulses for the downtime period              |
-| `latencyStrategy`    | `last-known`   | Strategy for synthetic pulse latency: `last-known` or `null` |
-
 ## Monitors
+
+Define the services you want to track:
 
 ```toml
 [[monitors]]
 id = "api-prod"
 name = "Production API"
-token = "tk_prod_api_abc123"
+token = "secret-token"
 interval = 30
-maxRetries = 0
+maxRetries = 2
 resendNotification = 12
-groupId = "production"
+children = ["sub-service-1", "sub-service-2"]
 notificationChannels = ["critical"]
+pulseMonitors = ["US-WEST-1"]
 # dependencies = ["database"]        # Suppress notifications if dependency is down
 ```
 
@@ -156,7 +127,7 @@ notificationChannels = ["critical"]
 | `interval`             | Yes      | -       | Pulse interval in seconds (see [Pulses](pulses.md))                                                                                        |
 | `maxRetries`           | Yes      | -       | Missed pulses before marking down (see [Pulses](pulses.md))                                                                                |
 | `resendNotification`   | Yes      | -       | Resend notification every N down checks (0 = never)                                                                                        |
-| `groupId`              | No       | -       | Parent group ID                                                                                                                            |
+| `children`             | No       | `[]`    | Array of child monitor/group IDs held by this monitor                                                                                      |
 | `notificationChannels` | No       | `[]`    | Array of notification channel IDs                                                                                                          |
 | `pulseMonitors`        | No       | `[]`    | Array of PulseMonitor IDs for automated checking                                                                                           |
 | `dependencies`         | No       | `[]`    | Array of monitor/group IDs. If any dependency is down, notifications for this monitor are suppressed (see [Dependencies](dependencies.md)) |
@@ -220,7 +191,7 @@ See [PulseMonitor Integration](pulsemonitor.md) for all supported protocols.
 
 ## Groups
 
-Organize monitors hierarchically with health strategies:
+Organize monitors and other groups hierarchically with health strategies. Structure is defined **top-down** - each group lists its children:
 
 ```toml
 [[groups]]
@@ -230,7 +201,7 @@ strategy = "percentage"
 degradedThreshold = 50
 interval = 60
 resendNotification = 12
-parentId = "all-services"
+children = ["api-prod", "web-prod", "db-prod"]
 notificationChannels = ["critical"]
 # dependencies = ["network"]       # Suppress notifications if dependency is down
 ```
@@ -243,17 +214,11 @@ notificationChannels = ["critical"]
 | `degradedThreshold`    | Yes      | -       | Percentage threshold (0-100) for degraded status                                                                                         |
 | `interval`             | Yes      | -       | Used for uptime calculations                                                                                                             |
 | `resendNotification`   | No       | `0`     | Resend notification every N down checks                                                                                                  |
-| `parentId`             | No       | -       | Parent group ID for nesting                                                                                                              |
+| `children`             | No       | `[]`    | Array of child monitor/group IDs held by this group                                                                                      |
 | `notificationChannels` | No       | `[]`    | Array of notification channel IDs                                                                                                        |
 | `dependencies`         | No       | `[]`    | Array of monitor/group IDs. If any dependency is down, notifications for this group are suppressed (see [Dependencies](dependencies.md)) |
 
-### Strategy Reference
-
-| Strategy     | UP              | DEGRADED       | DOWN              |
-| ------------ | --------------- | -------------- | ----------------- |
-| `any-up`     | ≥1 child up     | -              | All children down |
-| `all-up`     | All children up | -              | Any child down    |
-| `percentage` | 100% up         | ≥threshold% up | <threshold% up    |
+See [Groups & Strategies](groups.md) for detailed documentation on strategies, nested groups, and uptime calculation.
 
 ## Status Pages
 
@@ -262,60 +227,19 @@ notificationChannels = ["critical"]
 id = "public"
 name = "Public Status"
 slug = "status"
-items = ["production", "third-party"]
+items = ["production", "infrastructure"]
 # password = "optional-password"
 ```
 
-| Field      | Required | Description                                                         |
-| ---------- | -------- | ------------------------------------------------------------------- |
-| `id`       | Yes      | Unique identifier                                                   |
-| `name`     | Yes      | Display name                                                        |
-| `slug`     | Yes      | URL path (lowercase, hyphens, numbers only)                         |
-| `items`    | Yes      | Array of monitor and/or group IDs                                   |
-| `password` | No       | Optional password to protect the status page (minimum 8 characters) |
+| Field      | Required | Description                                         |
+| ---------- | -------- | --------------------------------------------------- |
+| `id`       | Yes      | Unique identifier                                   |
+| `name`     | Yes      | Display name                                        |
+| `slug`     | Yes      | URL path (lowercase, hyphens)                       |
+| `items`    | Yes      | Array of monitor/group IDs to display               |
+| `password` | No       | Password to protect the page (minimum 8 characters) |
 
-### Accessing Status Pages
-
-```
-GET /v1/status/:slug
-GET /v1/status/:slug/summary
-```
-
-#### Public status pages
-
-If no `password` is configured, the status page is publicly accessible and does not require authentication.
-
-#### Password-protected status pages
-
-If a `password` is configured, requests must include an `Authorization` header using a Bearer token.
-
-The Bearer token must be the **BLAKE2b-512 hash of the password**.
-
-## PulseMonitors
-
-Define remote monitoring agents:
-
-```toml
-[[PulseMonitors]]
-id = "US-WEST-1"
-name = "US West (Oregon)"
-token = "tk_pulse_us_west"
-
-[[PulseMonitors]]
-id = "EU-CENTRAL-1"
-name = "EU Central (Frankfurt)"
-token = "tk_pulse_eu_central"
-```
-
-| Field   | Required | Description                                |
-| ------- | -------- | ------------------------------------------ |
-| `id`    | Yes      | Unique identifier (referenced by monitors) |
-| `name`  | Yes      | Display name                               |
-| `token` | Yes      | WebSocket authentication token             |
-
-## Notifications
-
-See [Notifications Guide](notifications.md) for complete setup.
+## Notification Channels
 
 ```toml
 [notifications.channels.critical]
@@ -328,15 +252,48 @@ enabled = true
 webhookUrl = "https://discord.com/api/webhooks/..."
 ```
 
-## Hot Reloading
+See [Notifications](notifications.md) for all provider configurations.
 
-Reload configuration without restart:
+## PulseMonitors
 
-```bash
-curl http://localhost:3000/v1/reload/your-reload-token
+```toml
+[[PulseMonitors]]
+id = "US-WEST-1"
+name = "US West (Oregon)"
+token = "tk_pulse_us_west"
 ```
 
-The reload token is shown in logs at startup if not explicitly configured.
+See [PulseMonitor Integration](pulsemonitor.md) for setup and protocol configuration.
+
+## Self-Monitoring
+
+```toml
+[selfMonitoring]
+enabled = true
+id = "self-monitor"
+interval = 3
+backfillOnRecovery = true
+latencyStrategy = "last-known"
+```
+
+| Field                | Default        | Description                                                |
+| -------------------- | -------------- | ---------------------------------------------------------- |
+| `enabled`            | `false`        | Enable self-monitoring                                     |
+| `id`                 | `self-monitor` | Monitor ID for self-checks                                 |
+| `interval`           | `3`            | Check interval in seconds                                  |
+| `backfillOnRecovery` | `true`         | Backfill synthetic pulses after recovery                   |
+| `latencyStrategy`    | `last-known`   | Strategy for synthetic pulse latency: `last-known`, `null` |
+
+## Missing Pulse Detector
+
+```toml
+[missingPulseDetector]
+interval = 5
+```
+
+| Field      | Default | Description                            |
+| ---------- | ------- | -------------------------------------- |
+| `interval` | `5`     | Check interval in seconds (default: 5) |
 
 ## Environment Variables
 

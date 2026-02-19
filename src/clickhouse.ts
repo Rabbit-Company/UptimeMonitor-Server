@@ -525,8 +525,11 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 
 			cache.setStatus(monitorId, statusData);
 
-			if (monitor.groupId) {
-				await updateGroupStatus(monitor.groupId);
+			const parentIds = cache.getParentIds(monitorId);
+			for (const parentId of parentIds) {
+				if (cache.hasGroup(parentId)) {
+					await updateGroupStatus(parentId);
+				}
 			}
 			return;
 		}
@@ -561,8 +564,11 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 
 		cache.setStatus(monitorId, statusData);
 
-		if (monitor.groupId) {
-			await updateGroupStatus(monitor.groupId);
+		const parentIds = cache.getParentIds(monitorId);
+		for (const parentId of parentIds) {
+			if (cache.hasGroup(parentId)) {
+				await updateGroupStatus(parentId);
+			}
 		}
 	} catch (err: any) {
 		Logger.error("updateMonitorStatus failed", { monitorId, "error.message": err?.message });
@@ -895,8 +901,11 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		}
 	}
 
-	if (group.parentId) {
-		await updateGroupStatus(group.parentId);
+	const parentIds = cache.getParentIds(groupId);
+	for (const parentId of parentIds) {
+		if (cache.hasGroup(parentId)) {
+			await updateGroupStatus(parentId);
+		}
 	}
 }
 

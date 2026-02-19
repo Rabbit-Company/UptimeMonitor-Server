@@ -233,8 +233,8 @@ export interface Monitor {
 	maxRetries: number;
 	/** Resend notification after this many consecutive down checks (0 = never) */
 	resendNotification: number;
-	/** Optional group ID this monitor belongs to */
-	groupId?: string;
+	/** Array of monitor/group IDs this monitor includes */
+	children?: string[];
 	/** Array of monitor/group IDs this monitor depends on for notification suppression */
 	dependencies?: string[];
 	/** Notification channel IDs to use for this monitor */
@@ -270,8 +270,8 @@ export interface Group {
 	degradedThreshold: number;
 	/** Uses this interval when calculating uptime of a group */
 	interval: number;
-	/** Optional parent group ID */
-	parentId?: string;
+	/** Array of monitor/group IDs this monitor includes */
+	children?: string[];
 	/** Resend "still-down" notification after this many consecutive down checks (0 = never resend) */
 	resendNotification: number;
 	/** Array of monitor/group IDs this group depends on for notification suppression */

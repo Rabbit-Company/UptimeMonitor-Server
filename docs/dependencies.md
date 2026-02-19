@@ -1,56 +1,26 @@
 # Dependencies & Notification Suppression
 
-When infrastructure fails, you typically don't want a flood of notifications for every service affected by the same root cause. For example, if a server goes down, you shouldn't get separate alerts for the server _and_ each of the three apps running on it - just one notification for the server is enough.
-
-Dependencies let you define these relationships so that only the **highest-level** entity that is down triggers a notification.
+Dependencies let you define relationships between monitors and groups so that when upstream infrastructure fails, you only get notified about the **root cause** and not every downstream service that's affected.
 
 ## How It Works
 
-Both monitors and groups support an optional `dependencies` array. This is a list of monitor or group IDs that the entity depends on. When a notification would normally be sent (down, still-down, or recovered), the system first checks whether any of the listed dependencies are currently down. If so, the notification is **suppressed**.
-
-This means:
-
-- **Down notifications** are suppressed if a dependency is already down
-- **Still-down reminders** are suppressed if a dependency is still down
-- **Recovery notifications** are suppressed if the user never saw a down notification (because it was suppressed)
-- **Status tracking is unaffected** - uptime calculations, group health, and status pages all continue to work normally. Only notifications are suppressed.
-
-## Configuration
-
-### Monitor Dependencies
+Add a `dependencies` array to any monitor or group. When any listed dependency has a status of "down", notifications for that entity are suppressed.
 
 ```toml
 [[monitors]]
-id = "app-1"
-name = "App 1"
-token = "token-app-1"
+id = "web-app"
+name = "Web Application"
+token = "token-web-app"
 interval = 30
 maxRetries = 0
 resendNotification = 0
-groupId = "server-1"
-dependencies = ["server-1"]   # Suppress notifications if server-1 is down
+dependencies = ["server-1"]
 notificationChannels = ["discord"]
 ```
 
-### Group Dependencies
-
-```toml
-[[groups]]
-id = "server-1"
-name = "Server 1"
-strategy = "all-up"
-degradedThreshold = 50
-interval = 30
-resendNotification = 0
-dependencies = ["network"]   # Suppress notifications if network group is down
-notificationChannels = ["discord"]
-```
-
-### Field Reference
-
-| Field          | Type       | Default     | Description                                                                                                           |
-| -------------- | ---------- | ----------- | --------------------------------------------------------------------------------------------------------------------- |
-| `dependencies` | `string[]` | `[]` (none) | Array of monitor or group IDs. If any listed ID has a status of "down", notifications for this entity are suppressed. |
+| Field          | Type     | Description                                                                                                        |
+| -------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| `dependencies` | string[] | Array of monitor/group IDs. If any listed ID has a status of "down", notifications for this entity are suppressed. |
 
 ## Example: Multi-Layer Infrastructure
 
@@ -81,6 +51,7 @@ strategy = "all-up"
 degradedThreshold = 50
 interval = 30
 resendNotification = 0
+children = ["server-1"]
 dependencies = ["internet"]
 notificationChannels = ["discord"]
 
@@ -92,7 +63,7 @@ strategy = "all-up"
 degradedThreshold = 50
 interval = 30
 resendNotification = 0
-parentId = "network"
+children = ["app-1", "app-2", "app-3"]
 dependencies = ["network"]
 notificationChannels = ["discord"]
 
@@ -104,7 +75,6 @@ token = "token-app-1"
 interval = 30
 maxRetries = 0
 resendNotification = 0
-groupId = "server-1"
 dependencies = ["server-1"]
 notificationChannels = ["discord"]
 
@@ -115,7 +85,6 @@ token = "token-app-2"
 interval = 30
 maxRetries = 0
 resendNotification = 0
-groupId = "server-1"
 dependencies = ["server-1"]
 notificationChannels = ["discord"]
 
@@ -126,7 +95,6 @@ token = "token-app-3"
 interval = 30
 maxRetries = 0
 resendNotification = 0
-groupId = "server-1"
 dependencies = ["server-1"]
 notificationChannels = ["discord"]
 ```
@@ -149,18 +117,18 @@ notificationChannels = ["discord"]
 
 When everything comes back up, only the Internet monitor sends a recovery notification. The downstream entities were never announced as down, so their recovery notifications are also suppressed.
 
-## Dependencies vs Group Hierarchy
+## Dependencies vs Children Hierarchy
 
-It's important to understand that `dependencies` and the group hierarchy (`groupId` / `parentId`) serve different purposes:
+It's important to understand that `dependencies` and the children hierarchy (`children`) serve different purposes:
 
-| Concept             | Purpose                                                                               | Config Field                              |
-| ------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------- |
-| **Group hierarchy** | Status aggregation - calculating group health from children, organizing status pages  | `groupId` (monitors), `parentId` (groups) |
-| **Dependencies**    | Notification suppression - preventing alert storms when upstream infrastructure fails | `dependencies` (monitors and groups)      |
+| Concept                | Purpose                                                                               | Config Field                         |
+| ---------------------- | ------------------------------------------------------------------------------------- | ------------------------------------ |
+| **Children hierarchy** | Status aggregation - calculating group health from children, organizing status pages  | `children` (monitors and groups)     |
+| **Dependencies**       | Notification suppression - preventing alert storms when upstream infrastructure fails | `dependencies` (monitors and groups) |
 
-These are orthogonal. A monitor might belong to a group for display purposes but depend on a completely different entity for notification suppression. You can use both, either, or neither.
+These are orthogonal. A monitor might be a child of a group for display purposes but depend on a completely different entity for notification suppression. You can use both, either, or neither.
 
-That said, it's common for `dependencies` to mirror the group hierarchy, as in the example above where apps depend on their parent group.
+That said, it's common for `dependencies` to mirror the children hierarchy, as in the example above where apps depend on their parent group.
 
 ## Multiple Dependencies
 
@@ -190,9 +158,3 @@ The configuration validates dependencies at load time:
 - **Cross-type references are allowed**: A monitor can depend on a group, and a group can depend on a monitor
 
 Invalid configurations will cause the server to exit with a descriptive error message at startup.
-
-## Edge Cases
-
-- **Startup / grace period**: During the initial grace period after server startup, no notifications are sent anyway, so dependency suppression is not relevant
-- **Unknown status**: If a dependency has no status yet (e.g., it hasn't been checked), it's treated as "not down" - no suppression occurs
-- **Hot reload**: Dependencies are re-validated when configuration is hot-reloaded via the `/v1/reload/:token` endpoint

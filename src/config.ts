@@ -537,6 +537,22 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		}
 	}
 
+	let children: string[] | undefined;
+	if (monitor.children !== undefined) {
+		if (!isArray(monitor.children)) {
+			errors.push(`monitors[${index}].children must be an array if provided`);
+		} else {
+			children = [];
+			for (let i = 0; i < monitor.children.length; i++) {
+				if (!isString(monitor.children[i]) || (monitor.children[i] as string).trim().length === 0) {
+					errors.push(`monitors[${index}].children[${i}] must be a non-empty string`);
+				} else {
+					children.push(monitor.children[i] as string);
+				}
+			}
+		}
+	}
+
 	let dependencies: string[] | undefined;
 	if (monitor.dependencies !== undefined) {
 		if (!isArray(monitor.dependencies)) {
@@ -610,7 +626,7 @@ function validateMonitor(monitor: unknown, index: number): Monitor {
 		interval: monitor.interval as number,
 		maxRetries: monitor.maxRetries as number,
 		resendNotification: monitor.resendNotification as number,
-		groupId: monitor.groupId as string | undefined,
+		children,
 		dependencies,
 		notificationChannels,
 		pulseMonitors,
@@ -651,11 +667,6 @@ function validateGroup(group: unknown, index: number): Group {
 		errors.push(`group[${index}].interval must be a positive number`);
 	}
 
-	// Validate optional parentId
-	if (group.parentId !== undefined && (!isString(group.parentId) || group.parentId.trim().length === 0)) {
-		errors.push(`groups[${index}].parentId must be a non-empty string if provided`);
-	}
-
 	// Validate degradedThreshold
 	if (!isNumber(group.degradedThreshold)) {
 		errors.push(`groups[${index}].degradedThreshold must be a number`);
@@ -667,6 +678,22 @@ function validateGroup(group: unknown, index: number): Group {
 	if (group.resendNotification !== undefined) {
 		if (!isNumber(group.resendNotification) || group.resendNotification < 0) {
 			errors.push(`groups[${index}].resendNotification must be a non-negative number`);
+		}
+	}
+
+	let children: string[] | undefined;
+	if (group.children !== undefined) {
+		if (!isArray(group.children)) {
+			errors.push(`groups[${index}].children must be an array if provided`);
+		} else {
+			children = [];
+			for (let i = 0; i < group.children.length; i++) {
+				if (!isString(group.children[i]) || (group.children[i] as string).trim().length === 0) {
+					errors.push(`groups[${index}].children[${i}] must be a non-empty string`);
+				} else {
+					children.push(group.children[i] as string);
+				}
+			}
 		}
 	}
 
@@ -698,8 +725,8 @@ function validateGroup(group: unknown, index: number): Group {
 		strategy: group.strategy as "any-up" | "percentage" | "all-up",
 		degradedThreshold: group.degradedThreshold as number,
 		interval: group.interval as number,
-		parentId: group.parentId as string | undefined,
 		resendNotification: (group.resendNotification as number | undefined) ?? 0,
+		children,
 		dependencies,
 		notificationChannels,
 	};
@@ -1534,14 +1561,21 @@ function validateReferences(config: Config): void {
 
 	// Validate monitor group references
 	for (const monitor of config.monitors) {
-		if (monitor.groupId && !validGroupIds.has(monitor.groupId)) {
-			errors.push(`Monitor '${monitor.id}' references non-existent group: ${monitor.groupId}`);
-		}
-
 		if (monitor.notificationChannels) {
 			for (const channelId of monitor.notificationChannels) {
 				if (!validNotificationChannelIds.has(channelId)) {
 					errors.push(`Monitor '${monitor.id}' references non-existent notification channel: ${channelId}`);
+				}
+			}
+		}
+
+		if (monitor.children) {
+			for (const childId of monitor.children) {
+				if (!allValidIds.has(childId)) {
+					errors.push(`Monitor '${monitor.id}' references non-existent child: ${childId}`);
+				}
+				if (childId === monitor.id) {
+					errors.push(`Monitor '${monitor.id}' cannot be its own child`);
 				}
 			}
 		}
@@ -1573,19 +1607,21 @@ function validateReferences(config: Config): void {
 
 	// Validate group parent references
 	for (const group of config.groups) {
-		if (group.parentId) {
-			if (!validGroupIds.has(group.parentId)) {
-				errors.push(`Group '${group.id}' references non-existent parent group: ${group.parentId}`);
-			}
-			if (group.parentId === group.id) {
-				errors.push(`Group '${group.id}' cannot be its own parent`);
-			}
-		}
-
 		if (group.notificationChannels) {
 			for (const channelId of group.notificationChannels) {
 				if (!validNotificationChannelIds.has(channelId)) {
 					errors.push(`Group '${group.id}' references non-existent notification channel: ${channelId}`);
+				}
+			}
+		}
+
+		if (group.children) {
+			for (const childId of group.children) {
+				if (!allValidIds.has(childId)) {
+					errors.push(`Group '${group.id}' references non-existent child: ${childId}`);
+				}
+				if (childId === group.id) {
+					errors.push(`Group '${group.id}' cannot be its own child`);
 				}
 			}
 		}
@@ -1619,32 +1655,44 @@ function validateReferences(config: Config): void {
 function detectCircularReferences(config: Config): void {
 	const errors: string[] = [];
 
-	// Check for circular group parent references
+	const childrenGraph = new Map<string, string[]>();
+	for (const monitor of config.monitors) {
+		if (monitor.children?.length) {
+			childrenGraph.set(monitor.id, monitor.children);
+		}
+	}
+	for (const group of config.groups) {
+		if (group.children?.length) {
+			childrenGraph.set(group.id, group.children);
+		}
+	}
+
 	const visited = new Set<string>();
 	const recursionStack = new Set<string>();
 
-	function checkCircular(groupId: string, path: string[] = []): void {
-		if (recursionStack.has(groupId)) {
-			errors.push(`Circular reference detected in groups: ${[...path, groupId].join(" -> ")}`);
+	function checkCircular(id: string, path: string[] = []): void {
+		if (recursionStack.has(id)) {
+			errors.push(`Circular children reference detected: ${[...path, id].join(" -> ")}`);
 			return;
 		}
+		if (visited.has(id)) return;
 
-		if (visited.has(groupId)) return;
+		visited.add(id);
+		recursionStack.add(id);
 
-		visited.add(groupId);
-		recursionStack.add(groupId);
-
-		const group = config.groups.find((g) => g.id === groupId);
-		if (group?.parentId) {
-			checkCircular(group.parentId, [...path, groupId]);
+		const children = childrenGraph.get(id);
+		if (children) {
+			for (const childId of children) {
+				checkCircular(childId, [...path, id]);
+			}
 		}
 
-		recursionStack.delete(groupId);
+		recursionStack.delete(id);
 	}
 
-	for (const group of config.groups) {
-		if (!visited.has(group.id)) {
-			checkCircular(group.id);
+	for (const id of childrenGraph.keys()) {
+		if (!visited.has(id)) {
+			checkCircular(id);
 		}
 	}
 

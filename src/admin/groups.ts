@@ -96,16 +96,21 @@ export function registerGroupRoutes(app: Web, getServer: () => Server): void {
 			// Clean up references
 			if (Array.isArray(raw.monitors)) {
 				for (const m of raw.monitors as any[]) {
-					if (m.groupId === id) delete m.groupId;
+					if (Array.isArray(m.children)) {
+						m.children = m.children.filter((c: string) => c !== id);
+					}
 				}
 			}
+			for (const g of raw.groups as any[]) {
+				if (Array.isArray(g.children)) {
+					g.children = g.children.filter((c: string) => c !== id);
+				}
+			}
+
 			if (Array.isArray(raw.status_pages)) {
 				for (const p of raw.status_pages as any[]) {
 					if (Array.isArray(p.items)) p.items = p.items.filter((i: string) => i !== id);
 				}
-			}
-			for (const g of groups) {
-				if ((g as any).parentId === id) delete (g as any).parentId;
 			}
 
 			const v = validateConfig(raw);
@@ -132,7 +137,7 @@ function serialize(input: any): Record<string, unknown> {
 		interval: input.interval,
 		resendNotification: input.resendNotification ?? 0,
 	};
-	if (input.parentId) r.parentId = input.parentId;
+	if (input.children?.length) r.children = input.children;
 	if (input.notificationChannels?.length) r.notificationChannels = input.notificationChannels;
 	if (input.dependencies?.length) r.dependencies = input.dependencies;
 	return r;
@@ -146,7 +151,7 @@ function toResponse(g: any) {
 		degradedThreshold: g.degradedThreshold,
 		interval: g.interval,
 		resendNotification: g.resendNotification,
-		parentId: g.parentId,
+		children: g.children || [],
 		notificationChannels: g.notificationChannels || [],
 		dependencies: g.dependencies || [],
 	};
@@ -172,8 +177,7 @@ function validate(input: any, isUpdate: boolean): string[] {
 
 	if (input.resendNotification !== undefined && (typeof input.resendNotification !== "number" || input.resendNotification < 0))
 		e.push("resendNotification must be a non-negative number");
-	if (input.parentId !== undefined && input.parentId !== null && (typeof input.parentId !== "string" || !input.parentId.trim()))
-		e.push("parentId must be a non-empty string if provided");
+	if (input.children !== undefined && !Array.isArray(input.children)) e.push("children must be an array");
 	if (input.notificationChannels !== undefined && !Array.isArray(input.notificationChannels)) e.push("notificationChannels must be an array");
 	if (input.dependencies !== undefined && !Array.isArray(input.dependencies)) e.push("dependencies must be an array");
 

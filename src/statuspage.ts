@@ -10,8 +10,9 @@ export function buildStatusTree(itemIds: string[]): StatusData[] {
 
 		const item: StatusData = { ...cached };
 
-		if (item.type === "group") {
-			item.children = buildStatusTree(cache.getDirectChildIds(id));
+		const childIds = cache.getDirectChildIds(id);
+		if (childIds.length > 0) {
+			item.children = buildStatusTree(childIds);
 		}
 
 		result.push(item);

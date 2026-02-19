@@ -14,8 +14,8 @@ class CacheManager {
 	private notificationChannels: Map<string, NotificationChannel> = new Map();
 
 	// Relationship caches
-	private monitorsByGroup: Map<string, Monitor[]> = new Map();
-	private groupsByParent: Map<string, Group[]> = new Map();
+	private childrenByParent: Map<string, string[]> = new Map();
+	private parentsByChild: Map<string, string[]> = new Map();
 	private monitorsByPulseMonitor: Map<string, Monitor[]> = new Map();
 
 	// Reverse index caches
@@ -123,29 +123,30 @@ class CacheManager {
 	 * Build relationship caches
 	 */
 	private buildRelationships(): void {
-		this.monitorsByGroup.clear();
-		this.groupsByParent.clear();
+		this.childrenByParent.clear();
+		this.parentsByChild.clear();
 		this.monitorsByPulseMonitor.clear();
 
-		// Monitors by group
 		for (const monitor of this.monitors.values()) {
-			if (monitor.groupId) {
-				const existing = this.monitorsByGroup.get(monitor.groupId) || [];
-				existing.push(monitor);
-				this.monitorsByGroup.set(monitor.groupId, existing);
+			if (monitor.children?.length) {
+				this.childrenByParent.set(monitor.id, monitor.children);
 			}
 		}
 
-		// Groups by parent
 		for (const group of this.groups.values()) {
-			if (group.parentId) {
-				const existing = this.groupsByParent.get(group.parentId) || [];
-				existing.push(group);
-				this.groupsByParent.set(group.parentId, existing);
+			if (group.children?.length) {
+				this.childrenByParent.set(group.id, group.children);
 			}
 		}
 
-		// Monitors by PulseMonitor
+		for (const [parentId, childIds] of this.childrenByParent.entries()) {
+			for (const childId of childIds) {
+				const existing = this.parentsByChild.get(childId) || [];
+				existing.push(parentId);
+				this.parentsByChild.set(childId, existing);
+			}
+		}
+
 		for (const monitor of this.monitors.values()) {
 			if (monitor.pulseMonitors) {
 				for (const pulseMonitorId of monitor.pulseMonitors) {
@@ -182,24 +183,21 @@ class CacheManager {
 	 * Get all monitor IDs for a status page item (recursively handles groups)
 	 */
 	private getAllMonitorIdsForItem(itemId: string): string[] {
-		// If it's a monitor, return just that ID
 		if (this.monitors.has(itemId)) {
-			return [itemId];
+			const monitorIds = [itemId];
+			const childIds = this.childrenByParent.get(itemId) || [];
+			for (const childId of childIds) {
+				monitorIds.push(...this.getAllMonitorIdsForItem(childId));
+			}
+			return monitorIds;
 		}
 
-		// If it's a group, get all monitors in it (recursively)
 		if (this.groups.has(itemId)) {
 			const monitorIds: string[] = [];
-			const directMonitors = this.monitorsByGroup.get(itemId) || [];
-			for (const monitor of directMonitors) {
-				monitorIds.push(monitor.id);
+			const childIds = this.childrenByParent.get(itemId) || [];
+			for (const childId of childIds) {
+				monitorIds.push(...this.getAllMonitorIdsForItem(childId));
 			}
-
-			const childGroups = this.groupsByParent.get(itemId) || [];
-			for (const childGroup of childGroups) {
-				monitorIds.push(...this.getAllMonitorIdsForItem(childGroup.id));
-			}
-
 			return monitorIds;
 		}
 
@@ -309,14 +307,6 @@ class CacheManager {
 		return Array.from(this.groups.values());
 	}
 
-	getMonitorsByGroup(groupId: string): Monitor[] {
-		return this.monitorsByGroup.get(groupId) || [];
-	}
-
-	getChildGroups(parentId: string): Group[] {
-		return this.groupsByParent.get(parentId) || [];
-	}
-
 	getStatusPage(id: string): StatusPage | undefined {
 		return this.statusPages.get(id);
 	}
@@ -375,16 +365,32 @@ class CacheManager {
 	/**
 	 * Get all direct children (monitors and groups) of a group
 	 */
-	getDirectChildren(groupId: string): { monitors: Monitor[]; groups: Group[] } {
-		return {
-			monitors: this.getMonitorsByGroup(groupId),
-			groups: this.getChildGroups(groupId),
-		};
+	getDirectChildren(parentId: string): { monitors: Monitor[]; groups: Group[] } {
+		const childIds = this.childrenByParent.get(parentId) || [];
+		const monitors: Monitor[] = [];
+		const groups: Group[] = [];
+
+		for (const id of childIds) {
+			const monitor = this.monitors.get(id);
+			if (monitor) {
+				monitors.push(monitor);
+				continue;
+			}
+			const group = this.groups.get(id);
+			if (group) {
+				groups.push(group);
+			}
+		}
+
+		return { monitors, groups };
 	}
 
-	getDirectChildIds(groupId: string): string[] {
-		const { monitors, groups } = this.getDirectChildren(groupId);
-		return [...monitors.map((m) => m.id), ...groups.map((g) => g.id)];
+	getDirectChildIds(parentId: string): string[] {
+		return this.childrenByParent.get(parentId) || [];
+	}
+
+	getParentIds(childId: string): string[] {
+		return this.parentsByChild.get(childId) || [];
 	}
 
 	hasMonitor(id: string): boolean {
@@ -460,8 +466,7 @@ class CacheManager {
 			groups: this.groups.size,
 			statusPages: this.statusPages.size,
 			notificationChannels: this.notificationChannels.size,
-			monitorsByGroup: this.monitorsByGroup.size,
-			groupsByParent: this.groupsByParent.size,
+			childrenByParent: this.childrenByParent.size,
 			monitorsByPulseMonitor: this.monitorsByPulseMonitor.size,
 			statusPageMonitorIndex: this.statusPageSlugsByMonitor.size,
 			statusData: this.statusCache.size,

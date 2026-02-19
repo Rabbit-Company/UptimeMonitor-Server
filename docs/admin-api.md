@@ -105,7 +105,7 @@ curl -H "Authorization: Bearer <token>" \
 			"interval": 60,
 			"maxRetries": 0,
 			"resendNotification": 12,
-			"groupId": "3e99b0b2-fbe3-43a9-87a6-81c0f4faa024",
+			"children": ["sub-service-1", "sub-service-2"],
 			"notificationChannels": ["critical"],
 			"dependencies": ["0f0198e8-0150-4f66-9005-e0c288530761"],
 			"pulseMonitors": ["EU-CENTRAL-1"],
@@ -154,7 +154,6 @@ curl -X POST -H "Authorization: Bearer <token>" \
     "interval": 30,
     "maxRetries": 2,
     "resendNotification": 0,
-    "groupId": "staging",
     "notificationChannels": ["critical"]
   }' \
   http://localhost:3000/v1/admin/monitors
@@ -175,7 +174,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 
 | Field                  | Type     | Description                                             |
 | ---------------------- | -------- | ------------------------------------------------------- |
-| `groupId`              | string   | Parent group ID                                         |
+| `children`             | string[] | Array of child monitor/group IDs                        |
 | `notificationChannels` | string[] | Array of notification channel IDs                       |
 | `dependencies`         | string[] | Array of monitor/group IDs for notification suppression |
 | `pulseMonitors`        | string[] | Array of PulseMonitor IDs                               |
@@ -208,7 +207,7 @@ curl -X PUT -H "Authorization: Bearer <token>" \
   -d '{
     "name": "Staging API v2",
     "interval": 60,
-    "groupId": null
+    "children": null
   }' \
   http://localhost:3000/v1/admin/monitors/api-staging
 ```
@@ -217,7 +216,7 @@ curl -X PUT -H "Authorization: Bearer <token>" \
 
 - The `id` field cannot be changed
 - Only included fields are updated; omitted fields remain unchanged
-- Set a field to `null` to remove optional fields (e.g., `groupId`, `custom1`)
+- Set a field to `null` to remove optional fields (e.g., `children`, `custom1`)
 - If changing `token`, it must not conflict with another monitor's token
 
 **Success Response (200):**
@@ -231,7 +230,7 @@ curl -X PUT -H "Authorization: Bearer <token>" \
 
 ### DELETE /v1/admin/monitors/:id
 
-Delete a monitor. References to this monitor in status pages are automatically cleaned up.
+Delete a monitor. References to this monitor are automatically cleaned up.
 
 ```bash
 curl -X DELETE -H "Authorization: Bearer <token>" \
@@ -250,6 +249,7 @@ curl -X DELETE -H "Authorization: Bearer <token>" \
 **Side effects:**
 
 - The monitor ID is removed from all status page `items` arrays
+- The monitor ID is removed from `children` arrays in all monitors and groups
 
 ---
 
@@ -276,7 +276,7 @@ curl -H "Authorization: Bearer <token>" \
 			"degradedThreshold": 50,
 			"interval": 60,
 			"resendNotification": 12,
-			"parentId": "all-services",
+			"children": ["api-prod", "web-prod", "db-prod"],
 			"notificationChannels": [],
 			"dependencies": []
 		}
@@ -304,7 +304,8 @@ curl -X POST -H "Authorization: Bearer <token>" \
     "name": "EU Services",
     "strategy": "percentage",
     "degradedThreshold": 50,
-    "interval": 60
+    "interval": 60,
+    "children": ["eu-api", "eu-web"]
   }' \
   http://localhost:3000/v1/admin/groups
 ```
@@ -324,7 +325,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 | Field                  | Type     | Default | Description                                             |
 | ---------------------- | -------- | ------- | ------------------------------------------------------- |
 | `resendNotification`   | number   | `0`     | Resend notification every N down checks                 |
-| `parentId`             | string   | -       | Parent group ID for nesting                             |
+| `children`             | string[] | `[]`    | Array of child monitor/group IDs                        |
 | `notificationChannels` | string[] | `[]`    | Array of notification channel IDs                       |
 | `dependencies`         | string[] | `[]`    | Array of monitor/group IDs for notification suppression |
 
@@ -351,6 +352,7 @@ curl -X PUT -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "degradedThreshold": 75,
+    "children": ["eu-api", "eu-web", "eu-db"],
     "notificationChannels": ["critical"]
   }' \
   http://localhost:3000/v1/admin/groups/eu-services
@@ -390,9 +392,8 @@ curl -X DELETE -H "Authorization: Bearer <token>" \
 
 **Side effects:**
 
-- Monitors with `groupId` referencing this group have their `groupId` removed
 - The group ID is removed from all status page `items` arrays
-- Other groups with `parentId` referencing this group have their `parentId` removed
+- The group ID is removed from `children` arrays in all monitors and groups
 
 ---
 

@@ -183,11 +183,32 @@ For protected pages, the `Authorization` header must contain a **BLAKE2b-512 has
 
 ## History Endpoints
 
+All history endpoints are scoped under a status page slug. The monitor or group must belong to the specified status page (either as a direct item or nested within a group's children hierarchy). If the status page is password-protected, authentication is required.
+
+**Authentication:**
+
+- If the status page is password-protected, an `Authorization` header must be provided.
+- If the status page is public, no authentication is required.
+
+For protected pages, the `Authorization` header must contain a **BLAKE2b-512 hash of the configured password**, sent as a `Bearer` token.
+
+**Common Errors:**
+
+- `401 Unauthorized` – Password is required, missing, or invalid
+- `404 Not Found` – Status page does not exist, or monitor/group is not on this status page
+
 ### Monitor History
 
-#### GET /v1/monitors/:id/history
+#### GET /v1/status/:slug/monitors/:id/history
 
 Raw pulse data (~24 hours due to TTL).
+
+**Path Parameters:**
+
+| Parameter | Description      |
+| --------- | ---------------- |
+| `slug`    | Status page slug |
+| `id`      | Monitor ID       |
 
 **Response:**
 
@@ -210,19 +231,26 @@ Raw pulse data (~24 hours due to TTL).
 }
 ```
 
-#### GET /v1/monitors/:id/history/hourly
+#### GET /v1/status/:slug/monitors/:id/history/hourly
 
 Hourly aggregated data (~90 days).
 
-#### GET /v1/monitors/:id/history/daily
+#### GET /v1/status/:slug/monitors/:id/history/daily
 
 Daily aggregated data (kept forever).
 
 ### Group History
 
-#### GET /v1/groups/:id/history
+#### GET /v1/status/:slug/groups/:id/history
 
 Raw group history computed from children (~24 hours).
+
+**Path Parameters:**
+
+| Parameter | Description      |
+| --------- | ---------------- |
+| `slug`    | Status page slug |
+| `id`      | Group ID         |
 
 **Response:**
 
@@ -243,11 +271,11 @@ Raw group history computed from children (~24 hours).
 }
 ```
 
-#### GET /v1/groups/:id/history/hourly
+#### GET /v1/status/:slug/groups/:id/history/hourly
 
 Hourly aggregated group data (~90 days).
 
-#### GET /v1/groups/:id/history/daily
+#### GET /v1/status/:slug/groups/:id/history/daily
 
 Daily aggregated group data (kept forever).
 
@@ -532,13 +560,13 @@ When subscribed, you receive events:
 
 ## Caching
 
-| Endpoint                          | Cache TTL  |
-| --------------------------------- | ---------- |
-| `/v1/status/:slug`                | 30 seconds |
-| `/v1/status/:slug/summary`        | 30 seconds |
-| `/v1/monitors/:id/history`        | 30 seconds |
-| `/v1/monitors/:id/history/hourly` | 5 minutes  |
-| `/v1/monitors/:id/history/daily`  | 15 minutes |
-| `/v1/groups/:id/history`          | 30 seconds |
-| `/v1/groups/:id/history/hourly`   | 5 minutes  |
-| `/v1/groups/:id/history/daily`    | 15 minutes |
+| Endpoint                                       | Cache TTL  |
+| ---------------------------------------------- | ---------- |
+| `/v1/status/:slug`                             | 30 seconds |
+| `/v1/status/:slug/summary`                     | 30 seconds |
+| `/v1/status/:slug/monitors/:id/history`        | 30 seconds |
+| `/v1/status/:slug/monitors/:id/history/hourly` | 5 minutes  |
+| `/v1/status/:slug/monitors/:id/history/daily`  | 15 minutes |
+| `/v1/status/:slug/groups/:id/history`          | 30 seconds |
+| `/v1/status/:slug/groups/:id/history/hourly`   | 5 minutes  |
+| `/v1/status/:slug/groups/:id/history/daily`    | 15 minutes |

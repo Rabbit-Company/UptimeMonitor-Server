@@ -123,7 +123,7 @@ curl http://localhost:3000/v1/status/status
 Custom metrics are aggregated with min, max, and avg values:
 
 ```bash
-curl http://localhost:3000/v1/monitors/game-server/history/hourly
+curl http://localhost:3000/v1/status/public/monitors/game-server/history/hourly
 ```
 
 **Response:**

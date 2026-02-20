@@ -318,13 +318,22 @@ export const openapi = {
 				},
 			},
 		},
-		"/v1/monitors/{id}/history": {
+		"/v1/status/{slug}/monitors/{id}/history": {
 			get: {
 				tags: ["Monitor History"],
 				summary: "Get raw monitor history",
-				description: "Returns all raw pulse data for a monitor. Data is retained for approximately 24 hours due to TTL. Cached for 30 seconds.",
+				description:
+					"Returns all raw pulse data for a monitor within a status page. Data is retained for approximately 24 hours due to TTL. Cached for 30 seconds. The monitor must belong to the specified status page. Password-protected pages require a BLAKE2b-512 hash of the password as a Bearer token.",
 				operationId: "getMonitorHistoryRaw",
+				security: [{ bearerAuth: [] }, {}],
 				parameters: [
+					{
+						name: "slug",
+						in: "path",
+						required: true,
+						description: "Status page URL slug",
+						schema: { type: "string" },
+					},
 					{
 						name: "id",
 						in: "path",
@@ -342,16 +351,41 @@ export const openapi = {
 							},
 						},
 					},
+					"401": {
+						description: "Password required or invalid",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
+					"404": {
+						description: "Status page not found or monitor not on this status page",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
 				},
 			},
 		},
-		"/v1/monitors/{id}/history/hourly": {
+		"/v1/status/{slug}/monitors/{id}/history/hourly": {
 			get: {
 				tags: ["Monitor History"],
 				summary: "Get hourly monitor history",
-				description: "Returns hourly aggregated data for a monitor. Data is retained for approximately 90 days. Cached for 5 minutes.",
+				description:
+					"Returns hourly aggregated data for a monitor within a status page. Data is retained for approximately 90 days. Cached for 5 minutes. The monitor must belong to the specified status page. Password-protected pages require a BLAKE2b-512 hash of the password as a Bearer token.",
 				operationId: "getMonitorHistoryHourly",
+				security: [{ bearerAuth: [] }, {}],
 				parameters: [
+					{
+						name: "slug",
+						in: "path",
+						required: true,
+						description: "Status page URL slug",
+						schema: { type: "string" },
+					},
 					{
 						name: "id",
 						in: "path",
@@ -369,16 +403,41 @@ export const openapi = {
 							},
 						},
 					},
+					"401": {
+						description: "Password required or invalid",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
+					"404": {
+						description: "Status page not found or monitor not on this status page",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
 				},
 			},
 		},
-		"/v1/monitors/{id}/history/daily": {
+		"/v1/status/{slug}/monitors/{id}/history/daily": {
 			get: {
 				tags: ["Monitor History"],
 				summary: "Get daily monitor history",
-				description: "Returns daily aggregated data for a monitor. Data is kept forever. Cached for 15 minutes.",
+				description:
+					"Returns daily aggregated data for a monitor within a status page. Data is kept forever. Cached for 15 minutes. The monitor must belong to the specified status page. Password-protected pages require a BLAKE2b-512 hash of the password as a Bearer token.",
 				operationId: "getMonitorHistoryDaily",
+				security: [{ bearerAuth: [] }, {}],
 				parameters: [
+					{
+						name: "slug",
+						in: "path",
+						required: true,
+						description: "Status page URL slug",
+						schema: { type: "string" },
+					},
 					{
 						name: "id",
 						in: "path",
@@ -396,17 +455,41 @@ export const openapi = {
 							},
 						},
 					},
+					"401": {
+						description: "Password required or invalid",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
+					"404": {
+						description: "Status page not found or monitor not on this status page",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
 				},
 			},
 		},
-		"/v1/groups/{id}/history": {
+		"/v1/status/{slug}/groups/{id}/history": {
 			get: {
 				tags: ["Group History"],
 				summary: "Get raw group history",
 				description:
-					"Returns raw group history computed from child monitors/groups. Data is retained for approximately 24 hours due to TTL. Cached for 30 seconds.",
+					"Returns raw group history computed from child monitors/groups within a status page. Data is retained for approximately 24 hours due to TTL. Cached for 30 seconds. The group must belong to the specified status page. Password-protected pages require a BLAKE2b-512 hash of the password as a Bearer token.",
 				operationId: "getGroupHistoryRaw",
+				security: [{ bearerAuth: [] }, {}],
 				parameters: [
+					{
+						name: "slug",
+						in: "path",
+						required: true,
+						description: "Status page URL slug",
+						schema: { type: "string" },
+					},
 					{
 						name: "id",
 						in: "path",
@@ -424,16 +507,41 @@ export const openapi = {
 							},
 						},
 					},
+					"401": {
+						description: "Password required or invalid",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
+					"404": {
+						description: "Status page not found or group not on this status page",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
 				},
 			},
 		},
-		"/v1/groups/{id}/history/hourly": {
+		"/v1/status/{slug}/groups/{id}/history/hourly": {
 			get: {
 				tags: ["Group History"],
 				summary: "Get hourly group history",
-				description: "Returns hourly aggregated group data. Data is retained for approximately 90 days. Cached for 5 minutes.",
+				description:
+					"Returns hourly aggregated group data within a status page. Data is retained for approximately 90 days. Cached for 5 minutes. The group must belong to the specified status page. Password-protected pages require a BLAKE2b-512 hash of the password as a Bearer token.",
 				operationId: "getGroupHistoryHourly",
+				security: [{ bearerAuth: [] }, {}],
 				parameters: [
+					{
+						name: "slug",
+						in: "path",
+						required: true,
+						description: "Status page URL slug",
+						schema: { type: "string" },
+					},
 					{
 						name: "id",
 						in: "path",
@@ -451,16 +559,41 @@ export const openapi = {
 							},
 						},
 					},
+					"401": {
+						description: "Password required or invalid",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
+					"404": {
+						description: "Status page not found or group not on this status page",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
 				},
 			},
 		},
-		"/v1/groups/{id}/history/daily": {
+		"/v1/status/{slug}/groups/{id}/history/daily": {
 			get: {
 				tags: ["Group History"],
 				summary: "Get daily group history",
-				description: "Returns daily aggregated group data. Data is kept forever. Cached for 15 minutes.",
+				description:
+					"Returns daily aggregated group data within a status page. Data is kept forever. Cached for 15 minutes. The group must belong to the specified status page. Password-protected pages require a BLAKE2b-512 hash of the password as a Bearer token.",
 				operationId: "getGroupHistoryDaily",
+				security: [{ bearerAuth: [] }, {}],
 				parameters: [
+					{
+						name: "slug",
+						in: "path",
+						required: true,
+						description: "Status page URL slug",
+						schema: { type: "string" },
+					},
 					{
 						name: "id",
 						in: "path",
@@ -475,6 +608,22 @@ export const openapi = {
 						content: {
 							"application/json": {
 								schema: { $ref: "#/components/schemas/GroupHistory" },
+							},
+						},
+					},
+					"401": {
+						description: "Password required or invalid",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+							},
+						},
+					},
+					"404": {
+						description: "Status page not found or group not on this status page",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
 							},
 						},
 					},

@@ -18,8 +18,9 @@ class CacheManager {
 	private parentsByChild: Map<string, string[]> = new Map();
 	private monitorsByPulseMonitor: Map<string, Monitor[]> = new Map();
 
-	// Reverse index caches
+	// Status pages caches
 	private statusPageSlugsByMonitor: Map<string, string[]> = new Map();
+	private itemsOnStatusPage: Map<string, Set<string>> = new Map();
 
 	// Status cache
 	public statusCache: Map<string, StatusData> = new Map();
@@ -163,17 +164,33 @@ class CacheManager {
 	 */
 	private buildStatusPageMonitorIndex(): void {
 		this.statusPageSlugsByMonitor.clear();
+		this.itemsOnStatusPage.clear();
 
 		for (const page of this.statusPages.values()) {
+			const slugItemSet = new Set<string>();
+
+			const walk = (id: string) => {
+				if (slugItemSet.has(id)) return;
+				slugItemSet.add(id);
+				const childIds = this.childrenByParent.get(id) || [];
+				for (const childId of childIds) {
+					walk(childId);
+				}
+			};
+
 			for (const itemId of page.items) {
-				// Get all monitors for this item (could be a monitor ID or group ID)
-				const monitorIds = this.getAllMonitorIdsForItem(itemId);
-				for (const monitorId of monitorIds) {
-					const existing = this.statusPageSlugsByMonitor.get(monitorId) || [];
+				walk(itemId);
+			}
+
+			this.itemsOnStatusPage.set(page.slug, slugItemSet);
+
+			for (const id of slugItemSet) {
+				if (this.monitors.has(id)) {
+					const existing = this.statusPageSlugsByMonitor.get(id) || [];
 					if (!existing.includes(page.slug)) {
 						existing.push(page.slug);
 					}
-					this.statusPageSlugsByMonitor.set(monitorId, existing);
+					this.statusPageSlugsByMonitor.set(id, existing);
 				}
 			}
 		}
@@ -360,6 +377,10 @@ class CacheManager {
 		}
 
 		return providedPassword === statusPage.password;
+	}
+
+	isItemOnStatusPage(slug: string, itemId: string): boolean {
+		return this.itemsOnStatusPage.get(slug)?.has(itemId) ?? false;
 	}
 
 	/**

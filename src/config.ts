@@ -778,6 +778,18 @@ function validateStatusPage(page: unknown, index: number): StatusPage {
 		}
 	}
 
+	if (page.leafItems !== undefined) {
+		if (!isArray(page.leafItems)) {
+			errors.push(`status_pages[${index}].leafItems must be an array if provided`);
+		} else {
+			for (let i = 0; i < page.leafItems.length; i++) {
+				if (!isString(page.leafItems[i]) || (page.leafItems[i] as string).trim().length === 0) {
+					errors.push(`status_pages[${index}].leafItems[${i}] must be a non-empty string`);
+				}
+			}
+		}
+	}
+
 	if (errors.length > 0) {
 		throw new ConfigValidationError(errors);
 	}
@@ -796,6 +808,10 @@ function validateStatusPage(page: unknown, index: number): StatusPage {
 		hasher.update(result.password);
 
 		result.hashedPassword = hasher.digest("hex");
+	}
+
+	if (page.leafItems !== undefined) {
+		result.leafItems = page.leafItems as string[];
 	}
 
 	return result;

@@ -308,6 +308,8 @@ export interface StatusPage {
 	slug: string;
 	/** Array of monitor or group IDs displayed on the page */
 	items: string[];
+	/** Array of monitor/group IDs that should be treated as leaf nodes (children not expanded) */
+	leafItems?: string[];
 	/** Optional password to protect the status page */
 	password?: string;
 	hashedPassword?: string;

@@ -227,6 +227,7 @@ id = "public"
 name = "Public Status Page"
 slug = "status"
 items = ["all-services", "third-party"]  # show main group and third-party services
+# leafItems = ["third-party"]   # These items show aggregated data but children are hidden
 
 [[status_pages]]
 id = "internal"

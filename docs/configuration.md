@@ -228,16 +228,18 @@ id = "public"
 name = "Public Status"
 slug = "status"
 items = ["production", "infrastructure"]
+# leafItems = ["europe"]
 # password = "optional-password"
 ```
 
-| Field      | Required | Description                                         |
-| ---------- | -------- | --------------------------------------------------- |
-| `id`       | Yes      | Unique identifier                                   |
-| `name`     | Yes      | Display name                                        |
-| `slug`     | Yes      | URL path (lowercase, hyphens)                       |
-| `items`    | Yes      | Array of monitor/group IDs to display               |
-| `password` | No       | Password to protect the page (minimum 8 characters) |
+| Field       | Required | Description                                                                |
+| ----------- | -------- | -------------------------------------------------------------------------- |
+| `id`        | Yes      | Unique identifier                                                          |
+| `name`      | Yes      | Display name                                                               |
+| `slug`      | Yes      | URL path (lowercase, hyphens)                                              |
+| `items`     | Yes      | Array of monitor/group IDs to display                                      |
+| `leafItems` | No       | Array of IDs to treat as leaf nodes (children not expanded on status page) |
+| `password`  | No       | Password to protect the page (minimum 8 characters)                        |
 
 ## Notification Channels
 

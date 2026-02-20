@@ -168,10 +168,12 @@ class CacheManager {
 
 		for (const page of this.statusPages.values()) {
 			const slugItemSet = new Set<string>();
+			const leafItemSet = new Set<string>(page.leafItems || []);
 
 			const walk = (id: string) => {
 				if (slugItemSet.has(id)) return;
 				slugItemSet.add(id);
+				if (leafItemSet.has(id)) return;
 				const childIds = this.childrenByParent.get(id) || [];
 				for (const childId of childIds) {
 					walk(childId);

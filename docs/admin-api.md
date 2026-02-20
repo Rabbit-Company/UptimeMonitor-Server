@@ -459,9 +459,10 @@ curl -X POST -H "Authorization: Bearer <token>" \
 
 **Optional fields:**
 
-| Field      | Type   | Description                                         |
-| ---------- | ------ | --------------------------------------------------- |
-| `password` | string | Password to protect the page (minimum 8 characters) |
+| Field       | Type     | Description                                         |
+| ----------- | -------- | --------------------------------------------------- |
+| `leafItems` | string[] | IDs treated as leaf nodes (children not expanded)   |
+| `password`  | string   | Password to protect the page (minimum 8 characters) |
 
 **Success Response (201):**
 

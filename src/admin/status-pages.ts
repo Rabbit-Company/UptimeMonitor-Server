@@ -121,6 +121,7 @@ function serialize(input: any): Record<string, unknown> {
 		slug: input.slug,
 		items: input.items,
 	};
+	if (input.leafItems?.length) r.leafItems = input.leafItems;
 	if (input.password) r.password = input.password;
 	return r;
 }
@@ -131,6 +132,7 @@ function toResponse(p: any) {
 		name: p.name,
 		slug: p.slug,
 		items: p.items,
+		leafItems: p.leafItems || [],
 		password: p.password,
 	};
 }
@@ -160,6 +162,19 @@ function validate(input: any, isUpdate: boolean): string[] {
 	if (input.password !== undefined && input.password !== null) {
 		if (typeof input.password !== "string" || !input.password.trim()) e.push("password must be a non-empty string if provided");
 		else if (input.password.length < 8) e.push("password must be at least 8 characters");
+	}
+
+	if (input.leafItems !== undefined && input.leafItems !== null) {
+		if (!Array.isArray(input.leafItems)) {
+			e.push("leafItems must be an array");
+		} else {
+			for (const item of input.leafItems) {
+				if (typeof item !== "string" || !item.trim()) {
+					e.push("each leafItems entry must be a non-empty string");
+					break;
+				}
+			}
+		}
 	}
 
 	return e;

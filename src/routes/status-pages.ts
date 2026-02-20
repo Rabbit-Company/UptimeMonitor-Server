@@ -15,7 +15,8 @@ export function registerStatusPageRoutes(app: Web): void {
 		const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
 		if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-		const statusData: StatusData[] = buildStatusTree(statusPage.items);
+		const leafItems = statusPage.leafItems?.length ? new Set(statusPage.leafItems) : undefined;
+		const statusData: StatusData[] = buildStatusTree(statusPage.items, leafItems);
 		return ctx.json({
 			name: statusPage.name,
 			slug: statusPage.slug,

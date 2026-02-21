@@ -7,6 +7,7 @@ import { registerGroupRoutes } from "./groups";
 import { registerStatusPageRoutes } from "./status-pages";
 import { registerPulseMonitorRoutes } from "./pulse-monitors";
 import { registerNotificationRoutes } from "./notifications";
+import { registerAdminReportRoutes } from "./reports";
 
 export function registerAdminAPI(app: Web, getServer: () => Server): void {
 	registerMonitorRoutes(app, getServer);
@@ -14,6 +15,7 @@ export function registerAdminAPI(app: Web, getServer: () => Server): void {
 	registerStatusPageRoutes(app, getServer);
 	registerPulseMonitorRoutes(app, getServer);
 	registerNotificationRoutes(app, getServer);
+	registerAdminReportRoutes(app);
 
 	app.get("/v1/admin/config", adminBearerAuth(), (ctx) => {
 		return ctx.json(config);

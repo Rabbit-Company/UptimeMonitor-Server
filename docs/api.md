@@ -104,6 +104,7 @@ For protected pages, the `Authorization` header must contain a **BLAKE2b-512 has
 {
 	"name": "Public Status",
 	"slug": "status",
+	"reports": false,
 	"items": [
 		{
 			"id": "production",
@@ -281,6 +282,113 @@ Daily aggregated group data (kept forever).
 
 ---
 
+## Report Endpoints
+
+Report endpoints allow exporting monitor and group history data in **CSV** or **JSON** format. These endpoints are only available on status pages that have `reports` enabled in their configuration.
+
+See the [Reports documentation](reports.md) for full details on configuration, CSV format, and examples.
+
+**Enabling Reports:**
+
+```toml
+[[status_pages]]
+id = "main"
+name = "Status"
+slug = "status"
+items = ["my-service"]
+reports = true
+```
+
+**Authentication:**
+
+- If the status page is password-protected, an `Authorization` header must be provided.
+- If the status page is public, no authentication is required.
+
+For protected pages, the `Authorization` header must contain a **BLAKE2b-512 hash of the configured password**, sent as a `Bearer` token.
+
+**Format Parameter:**
+
+All report endpoints accept a `format` query parameter (`json` or `csv`). Defaults to `json`.
+
+**Common Errors:**
+
+- `401 Unauthorized` – Password is required, missing, or invalid
+- `404 Not Found` – Status page does not exist, reports are not enabled, or monitor/group is not on this status page
+
+### Monitor Reports
+
+#### GET /v1/status/:slug/monitors/:id/reports
+
+Raw pulse data as CSV or JSON (~24 hours due to TTL).
+
+**Path Parameters:**
+
+| Parameter | Description      |
+| --------- | ---------------- |
+| `slug`    | Status page slug |
+| `id`      | Monitor ID       |
+
+**Query Parameters:**
+
+| Parameter | Type   | Default | Description     |
+| --------- | ------ | ------- | --------------- |
+| `format`  | string | `json`  | `json` or `csv` |
+
+**JSON Response:** Same structure as the history endpoint.
+
+**CSV Response:**
+
+```csv
+Timestamp,Uptime (%),Latency Min (ms),Latency Max (ms),Latency Avg (ms)
+2025-01-15T10:00:00Z,100,40,65,52.3
+```
+
+If the monitor has custom metrics configured, additional columns are appended using the format `Name Min/Max/Avg (unit)`.
+
+#### GET /v1/status/:slug/monitors/:id/reports/hourly
+
+Hourly aggregated data as CSV or JSON (~90 days).
+
+#### GET /v1/status/:slug/monitors/:id/reports/daily
+
+Daily aggregated data as CSV or JSON (kept forever).
+
+### Group Reports
+
+#### GET /v1/status/:slug/groups/:id/reports
+
+Raw group data as CSV or JSON (~24 hours due to TTL).
+
+**Path Parameters:**
+
+| Parameter | Description      |
+| --------- | ---------------- |
+| `slug`    | Status page slug |
+| `id`      | Group ID         |
+
+**Query Parameters:**
+
+| Parameter | Type   | Default | Description     |
+| --------- | ------ | ------- | --------------- |
+| `format`  | string | `json`  | `json` or `csv` |
+
+**JSON Response:** Same structure as the group history endpoint.
+
+**CSV Response:**
+
+```csv
+Timestamp,Uptime (%),Latency Min (ms),Latency Max (ms),Latency Avg (ms)
+2025-01-15T10:00:00Z,100,35,120,67.5
+```
+
+#### GET /v1/status/:slug/groups/:id/reports/hourly
+
+Hourly aggregated group data as CSV or JSON (~90 days).
+
+#### GET /v1/status/:slug/groups/:id/reports/daily
+
+Daily aggregated group data as CSV or JSON (kept forever).
+
 ## Configuration
 
 ### GET /v1/reload/:token
@@ -338,14 +446,16 @@ See the [Admin API Reference](admin-api.md) for complete documentation of all en
 
 **Quick overview:**
 
-| Resource              | Endpoints                                                                          |
-| --------------------- | ---------------------------------------------------------------------------------- |
-| Configuration         | `GET /v1/admin/config`                                                             |
-| Monitors              | `GET/POST /v1/admin/monitors`, `GET/PUT/DELETE /v1/admin/monitors/:id`             |
-| Groups                | `GET/POST /v1/admin/groups`, `GET/PUT/DELETE /v1/admin/groups/:id`                 |
-| Status Pages          | `GET/POST /v1/admin/status-pages`, `GET/PUT/DELETE /v1/admin/status-pages/:id`     |
-| Notification Channels | `GET/POST /v1/admin/notifications`, `GET/PUT/DELETE /v1/admin/notifications/:id`   |
-| Pulse Monitors        | `GET/POST /v1/admin/pulse-monitors`, `GET/PUT/DELETE /v1/admin/pulse-monitors/:id` |
+| Resource              | Endpoints                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| Configuration         | `GET /v1/admin/config`                                                                  |
+| Monitors              | `GET/POST /v1/admin/monitors`, `GET/PUT/DELETE /v1/admin/monitors/:id`                  |
+| Groups                | `GET/POST /v1/admin/groups`, `GET/PUT/DELETE /v1/admin/groups/:id`                      |
+| Status Pages          | `GET/POST /v1/admin/status-pages`, `GET/PUT/DELETE /v1/admin/status-pages/:id`          |
+| Notification Channels | `GET/POST /v1/admin/notifications`, `GET/PUT/DELETE /v1/admin/notifications/:id`        |
+| Pulse Monitors        | `GET/POST /v1/admin/pulse-monitors`, `GET/PUT/DELETE /v1/admin/pulse-monitors/:id`      |
+| Reports (Monitors)    | `GET /v1/admin/monitors/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily` |
+| Reports (Groups)      | `GET /v1/admin/groups/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily`   |
 
 To enable, add to `config.toml`:
 
@@ -570,3 +680,9 @@ When subscribed, you receive events:
 | `/v1/status/:slug/groups/:id/history`          | 30 seconds |
 | `/v1/status/:slug/groups/:id/history/hourly`   | 5 minutes  |
 | `/v1/status/:slug/groups/:id/history/daily`    | 15 minutes |
+| `/v1/status/:slug/monitors/:id/reports`        | 30 seconds |
+| `/v1/status/:slug/monitors/:id/reports/hourly` | 5 minutes  |
+| `/v1/status/:slug/monitors/:id/reports/daily`  | 15 minutes |
+| `/v1/status/:slug/groups/:id/reports`          | 30 seconds |
+| `/v1/status/:slug/groups/:id/reports/hourly`   | 5 minutes  |
+| `/v1/status/:slug/groups/:id/reports/daily`    | 15 minutes |

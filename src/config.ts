@@ -790,6 +790,12 @@ function validateStatusPage(page: unknown, index: number): StatusPage {
 		}
 	}
 
+	if (page.reports !== undefined) {
+		if (typeof page.reports !== "boolean") {
+			errors.push(`status_pages[${index}].reports must be a boolean if provided`);
+		}
+	}
+
 	if (errors.length > 0) {
 		throw new ConfigValidationError(errors);
 	}
@@ -812,6 +818,10 @@ function validateStatusPage(page: unknown, index: number): StatusPage {
 
 	if (page.leafItems !== undefined) {
 		result.leafItems = page.leafItems as string[];
+	}
+
+	if (page.reports !== undefined) {
+		result.reports = page.reports as boolean;
 	}
 
 	return result;

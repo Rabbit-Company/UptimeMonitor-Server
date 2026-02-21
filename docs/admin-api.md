@@ -418,7 +418,8 @@ curl -H "Authorization: Bearer <token>" \
 			"name": "Public Status Page",
 			"slug": "status",
 			"items": ["all-services", "third-party"],
-			"password": "Password123"
+			"password": "Password123",
+			"reports": false
 		}
 	]
 }
@@ -463,6 +464,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 | ----------- | -------- | --------------------------------------------------- |
 | `leafItems` | string[] | IDs treated as leaf nodes (children not expanded)   |
 | `password`  | string   | Password to protect the page (minimum 8 characters) |
+| `reports`   | boolean  | Enable report export endpoints (default: false)     |
 
 **Success Response (201):**
 

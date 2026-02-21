@@ -3,7 +3,7 @@ export const openapi = {
 	info: {
 		title: "UptimeMonitor Server API",
 		description: "API for UptimeMonitor Server - a push-based uptime monitoring system with status pages, history tracking, and real-time WebSocket updates.",
-		version: "0.3.0",
+		version: "0.4.0",
 		license: {
 			name: "GPL-3.0",
 			url: "https://github.com/Rabbit-Company/UptimeMonitor-Server/blob/main/LICENSE",
@@ -20,12 +20,15 @@ export const openapi = {
 		{ name: "Status Pages", description: "Public-facing status page data" },
 		{ name: "Monitor History", description: "Historical data for individual monitors" },
 		{ name: "Group History", description: "Historical data for monitor groups" },
+		{ name: "Monitor Reports", description: "Export monitor history data as CSV or JSON" },
+		{ name: "Group Reports", description: "Export group history data as CSV or JSON" },
 		{ name: "Configuration", description: "Server configuration management" },
 		{ name: "Admin: Monitors", description: "Admin CRUD operations for monitors" },
 		{ name: "Admin: Groups", description: "Admin CRUD operations for groups" },
 		{ name: "Admin: Status Pages", description: "Admin CRUD operations for status pages" },
 		{ name: "Admin: Notifications", description: "Admin CRUD operations for notification channels" },
 		{ name: "Admin: Pulse Monitors", description: "Admin CRUD operations for PulseMonitor instances" },
+		{ name: "Admin: Reports", description: "Admin export endpoints for monitor and group history data" },
 		{ name: "Admin: Configuration", description: "Admin configuration access" },
 	],
 	paths: {
@@ -227,6 +230,7 @@ export const openapi = {
 									properties: {
 										name: { type: "string", example: "Public Status" },
 										slug: { type: "string", example: "status" },
+										reports: { type: "boolean", example: false },
 										items: {
 											type: "array",
 											items: { $ref: "#/components/schemas/StatusData" },
@@ -626,6 +630,237 @@ export const openapi = {
 								schema: { $ref: "#/components/schemas/Error" },
 							},
 						},
+					},
+				},
+			},
+		},
+		"/v1/status/{slug}/monitors/{id}/reports": {
+			get: {
+				tags: ["Monitor Reports"],
+				summary: "Export raw monitor report",
+				description:
+					"Export raw pulse data for a monitor as CSV or JSON. Requires reports to be enabled on the status page. Data is retained for approximately 24 hours due to TTL. Cached for 30 seconds. If the status page is password-protected, authentication is required.",
+				operationId: "getMonitorReportRaw",
+				security: [{ bearerAuth: [] }, {}],
+				parameters: [
+					{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
+					{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Raw monitor report data. Returns JSON (application/json) or CSV (text/csv) depending on the `format` parameter.",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/MonitorHistory" } },
+							"text/csv": { schema: { type: "string", description: "CSV file with headers and data rows" } },
+						},
+					},
+					"401": {
+						description: "Password required or invalid",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found, reports not enabled, or item not on this status page",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/status/{slug}/monitors/{id}/reports/hourly": {
+			get: {
+				tags: ["Monitor Reports"],
+				summary: "Export hourly monitor report",
+				description:
+					"Export hourly aggregated data for a monitor as CSV or JSON. Requires reports to be enabled on the status page. Data is retained for approximately 90 days. Cached for 5 minutes. If the status page is password-protected, authentication is required.",
+				operationId: "getMonitorReportHourly",
+				security: [{ bearerAuth: [] }, {}],
+				parameters: [
+					{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
+					{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Hourly aggregated monitor report. Returns JSON or CSV depending on the `format` parameter.",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/MonitorHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Password required or invalid",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found, reports not enabled, or item not on this status page",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+
+		"/v1/status/{slug}/monitors/{id}/reports/daily": {
+			get: {
+				tags: ["Monitor Reports"],
+				summary: "Export daily monitor report",
+				description:
+					"Export daily aggregated data for a monitor as CSV or JSON. Requires reports to be enabled on the status page. Data is kept forever. Cached for 15 minutes. If the status page is password-protected, authentication is required.",
+				operationId: "getMonitorReportDaily",
+				security: [{ bearerAuth: [] }, {}],
+				parameters: [
+					{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
+					{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Daily aggregated monitor report. Returns JSON or CSV depending on the `format` parameter.",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/MonitorHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Password required or invalid",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found, reports not enabled, or item not on this status page",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/status/{slug}/groups/{id}/reports": {
+			get: {
+				tags: ["Group Reports"],
+				summary: "Export raw group report",
+				description:
+					"Export raw group history computed from child monitors/groups as CSV or JSON. Requires reports to be enabled on the status page. Data is retained for approximately 24 hours due to TTL. Cached for 30 seconds. If the status page is password-protected, authentication is required.",
+				operationId: "getGroupReportRaw",
+				security: [{ bearerAuth: [] }, {}],
+				parameters: [
+					{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
+					{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Raw group report data. Returns JSON or CSV depending on the `format` parameter.",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/GroupHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Password required or invalid",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found, reports not enabled, or item not on this status page",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+
+		"/v1/status/{slug}/groups/{id}/reports/hourly": {
+			get: {
+				tags: ["Group Reports"],
+				summary: "Export hourly group report",
+				description:
+					"Export hourly aggregated group data as CSV or JSON. Requires reports to be enabled on the status page. Data is retained for approximately 90 days. Cached for 5 minutes. If the status page is password-protected, authentication is required.",
+				operationId: "getGroupReportHourly",
+				security: [{ bearerAuth: [] }, {}],
+				parameters: [
+					{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
+					{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Hourly aggregated group report. Returns JSON or CSV depending on the `format` parameter.",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/GroupHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Password required or invalid",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found, reports not enabled, or item not on this status page",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+
+		"/v1/status/{slug}/groups/{id}/reports/daily": {
+			get: {
+				tags: ["Group Reports"],
+				summary: "Export daily group report",
+				description:
+					"Export daily aggregated group data as CSV or JSON. Requires reports to be enabled on the status page. Data is kept forever. Cached for 15 minutes. If the status page is password-protected, authentication is required.",
+				operationId: "getGroupReportDaily",
+				security: [{ bearerAuth: [] }, {}],
+				parameters: [
+					{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
+					{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Daily aggregated group report. Returns JSON or CSV depending on the `format` parameter.",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/GroupHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Password required or invalid",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found, reports not enabled, or item not on this status page",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 					},
 				},
 			},
@@ -1603,6 +1838,222 @@ export const openapi = {
 				},
 			},
 		},
+		"/v1/admin/monitors/{id}/reports": {
+			get: {
+				tags: ["Admin: Reports"],
+				summary: "Export raw monitor report",
+				description: "Export raw pulse data for any monitor as CSV or JSON. Cached for 30 seconds.",
+				operationId: "adminGetMonitorReportRaw",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Raw monitor report data",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/MonitorHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Resource not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/monitors/{id}/reports/hourly": {
+			get: {
+				tags: ["Admin: Reports"],
+				summary: "Export hourly monitor report",
+				description: "Export hourly aggregated data for any monitor as CSV or JSON. Cached for 5 minutes.",
+				operationId: "adminGetMonitorReportHourly",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Hourly aggregated monitor report",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/MonitorHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Resource not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/monitors/{id}/reports/daily": {
+			get: {
+				tags: ["Admin: Reports"],
+				summary: "Export daily monitor report",
+				description: "Export daily aggregated data for any monitor as CSV or JSON. Cached for 15 minutes.",
+				operationId: "adminGetMonitorReportDaily",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Daily aggregated monitor report",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/MonitorHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Resource not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/groups/{id}/reports": {
+			get: {
+				tags: ["Admin: Reports"],
+				summary: "Export raw group report",
+				description: "Export raw group history for any group as CSV or JSON. Cached for 30 seconds.",
+				operationId: "adminGetGroupReportRaw",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Raw group report data",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/GroupHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Resource not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/groups/{id}/reports/hourly": {
+			get: {
+				tags: ["Admin: Reports"],
+				summary: "Export hourly group report",
+				description: "Export hourly aggregated group data for any group as CSV or JSON. Cached for 5 minutes.",
+				operationId: "adminGetGroupReportHourly",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Hourly aggregated group report",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/GroupHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Resource not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/groups/{id}/reports/daily": {
+			get: {
+				tags: ["Admin: Reports"],
+				summary: "Export daily group report",
+				description: "Export daily aggregated group data for any group as CSV or JSON. Cached for 15 minutes.",
+				operationId: "adminGetGroupReportDaily",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+					{
+						name: "format",
+						in: "query",
+						required: false,
+						description: "Response format. Defaults to JSON.",
+						schema: { type: "string", enum: ["json", "csv"], default: "json" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Daily aggregated group report",
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/GroupHistory" } },
+							"text/csv": { schema: { type: "string" } },
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Resource not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
 	},
 	components: {
 		securitySchemes: {
@@ -1867,6 +2318,7 @@ export const openapi = {
 						example: ["europe"],
 					},
 					password: { type: "string", description: "Password for protection (omitted if not set)" },
+					reports: { type: "boolean", description: "Whether report export endpoints are enabled (default: false)", example: false },
 				},
 			},
 			AdminStatusPageCreate: {
@@ -1879,6 +2331,7 @@ export const openapi = {
 					items: { type: "array", items: { type: "string" }, description: "Non-empty array of monitor/group IDs", example: ["production", "api-prod"] },
 					leafItems: { type: "array", items: { type: "string" }, nullable: true, description: "Set to null to remove" },
 					password: { type: "string", description: "Password to protect the page (minimum 8 characters)" },
+					reports: { type: "boolean", description: "Enable report export endpoints (default: false)" },
 				},
 			},
 			AdminStatusPageUpdate: {
@@ -1888,6 +2341,7 @@ export const openapi = {
 					slug: { type: "string", description: "Must not conflict with another status page" },
 					items: { type: "array", items: { type: "string" }, description: "Must be non-empty" },
 					password: { type: "string", nullable: true, description: "Set to null to remove password protection (minimum 8 characters if set)" },
+					reports: { type: "boolean", description: "Enable or disable report export endpoints" },
 				},
 			},
 			AdminNotificationChannel: {

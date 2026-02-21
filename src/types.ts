@@ -313,6 +313,8 @@ export interface StatusPage {
 	/** Optional password to protect the status page */
 	password?: string;
 	hashedPassword?: string;
+	/** Whether report endpoints are enabled for this status page (default: false) */
+	reports?: boolean;
 }
 
 /**
@@ -763,3 +765,5 @@ export interface GroupHistoryRecord {
 	/** Average latency across children */
 	latency_avg?: number;
 }
+
+export type ReportFormat = "csv" | "json";

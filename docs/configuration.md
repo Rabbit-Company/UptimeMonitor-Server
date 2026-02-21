@@ -230,6 +230,7 @@ slug = "status"
 items = ["production", "infrastructure"]
 # leafItems = ["europe"]
 # password = "optional-password"
+# reports = false
 ```
 
 | Field       | Required | Description                                                                |
@@ -240,6 +241,7 @@ items = ["production", "infrastructure"]
 | `items`     | Yes      | Array of monitor/group IDs to display                                      |
 | `leafItems` | No       | Array of IDs to treat as leaf nodes (children not expanded on status page) |
 | `password`  | No       | Password to protect the page (minimum 8 characters)                        |
+| `reports`   | No       | Enable report export endpoints for this status page                        |
 
 ## Notification Channels
 

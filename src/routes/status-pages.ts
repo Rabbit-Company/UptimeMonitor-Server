@@ -20,6 +20,7 @@ export function registerStatusPageRoutes(app: Web): void {
 		return ctx.json({
 			name: statusPage.name,
 			slug: statusPage.slug,
+			reports: statusPage.reports ?? false,
 			items: statusData,
 			lastUpdated: new Date(),
 		});

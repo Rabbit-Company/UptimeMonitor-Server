@@ -123,6 +123,7 @@ function serialize(input: any): Record<string, unknown> {
 	};
 	if (input.leafItems?.length) r.leafItems = input.leafItems;
 	if (input.password) r.password = input.password;
+	if (input.reports !== undefined) r.reports = input.reports;
 	return r;
 }
 
@@ -134,6 +135,7 @@ function toResponse(p: any) {
 		items: p.items,
 		leafItems: p.leafItems || [],
 		password: p.password,
+		reports: p.reports || false,
 	};
 }
 
@@ -175,6 +177,10 @@ function validate(input: any, isUpdate: boolean): string[] {
 				}
 			}
 		}
+	}
+
+	if (input.reports !== undefined && input.reports !== null) {
+		if (typeof input.reports !== "boolean") e.push("reports must be a boolean if provided");
 	}
 
 	return e;

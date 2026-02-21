@@ -368,7 +368,7 @@ class CacheManager {
 		return statusPage?.password;
 	}
 
-	verifyStatusPagePassword(slug: string, providedPassword: string | null): boolean {
+	verifyStatusPagePassword(slug: string, providedPassword: string): boolean {
 		const statusPage = this.statusPagesBySlug.get(slug);
 		if (!statusPage) {
 			return false;
@@ -378,7 +378,8 @@ class CacheManager {
 			return true;
 		}
 
-		return providedPassword === statusPage.password;
+		if (providedPassword.length !== statusPage.hashedPassword!.length) return false;
+		return crypto.timingSafeEqual(Buffer.from(providedPassword), Buffer.from(statusPage.hashedPassword!));
 	}
 
 	isItemOnStatusPage(slug: string, itemId: string): boolean {

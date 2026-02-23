@@ -126,7 +126,7 @@ export class SelfMonitor {
 		try {
 			const lastHealthyQuery = `
 				SELECT
-					formatDateTime(MAX(timestamp), '%Y-%m-%dT%H:%i:%sZ') AS last_healthy
+					MAX(timestamp) AS last_healthy
 				FROM pulses
 				WHERE monitor_id = {monitorId:String}
 			`;
@@ -137,6 +137,9 @@ export class SelfMonitor {
 					monitorId: this.config.id,
 				},
 				format: "JSONEachRow",
+				clickhouse_settings: {
+					date_time_output_format: "iso",
+				},
 			});
 
 			const data = await result.json<{ last_healthy: string | null }>();
@@ -237,6 +240,9 @@ export class SelfMonitor {
 							monitorId: monitor.id,
 						},
 						format: "JSONEachRow",
+						clickhouse_settings: {
+							date_time_output_format: "iso",
+						},
 					});
 
 					const data = await result.json<{
@@ -259,12 +265,12 @@ export class SelfMonitor {
 										custom1: lastPulse.custom1,
 										custom2: lastPulse.custom2,
 										custom3: lastPulse.custom3,
-								  }
+									}
 								: {
 										custom1: null,
 										custom2: null,
 										custom3: null,
-								  };
+									};
 
 						const pulseInterval = monitor.interval * 1000;
 
@@ -302,7 +308,7 @@ export class SelfMonitor {
 							syntheticPulses.push({
 								monitor_id: monitor.id,
 								latency,
-								timestamp: formatDateTimeISOCompact(new Date(currentTime), { includeMilliseconds: true }),
+								timestamp: new Date(currentTime).toISOString(),
 								synthetic: true,
 								custom1: customMetrics.custom1,
 								custom2: customMetrics.custom2,
@@ -321,7 +327,7 @@ export class SelfMonitor {
 							syntheticPulses.push({
 								monitor_id: monitor.id,
 								latency,
-								timestamp: formatDateTimeISOCompact(new Date(currentIntervalStart), { includeMilliseconds: true }),
+								timestamp: new Date(currentIntervalStart).toISOString(),
 								synthetic: true,
 								custom1: customMetrics.custom1,
 								custom2: customMetrics.custom2,
@@ -346,6 +352,9 @@ export class SelfMonitor {
 									table: "pulses",
 									values: batch,
 									format: "JSONEachRow",
+									clickhouse_settings: {
+										date_time_input_format: "best_effort",
+									},
 								});
 							}
 

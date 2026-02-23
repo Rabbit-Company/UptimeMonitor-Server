@@ -112,7 +112,7 @@ export class AggregationJob {
 				// Find the last aggregated hour for this monitor
 				const lastAggregatedQuery = `
 					SELECT
-						formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS last_hour
+						timestamp AS last_hour
 					FROM pulses_hourly
 					WHERE monitor_id = {monitorId:String}
 					ORDER BY timestamp DESC
@@ -124,6 +124,7 @@ export class AggregationJob {
 					format: "JSONEachRow",
 					abort_signal: abortSignal,
 					clickhouse_settings: {
+						date_time_output_format: "iso",
 						max_execution_time: this.CH_SELECT_MAX_EXEC_S,
 						wait_end_of_query: 1,
 					},
@@ -140,7 +141,7 @@ export class AggregationJob {
 					// No aggregated data yet - find first pulse
 					const firstPulseQuery = `
 						SELECT
-							formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
+							timestamp AS first_pulse
 						FROM pulses
 						WHERE monitor_id = {monitorId:String}
 						ORDER BY timestamp ASC
@@ -152,6 +153,7 @@ export class AggregationJob {
 						format: "JSONEachRow",
 						abort_signal: abortSignal,
 						clickhouse_settings: {
+							date_time_output_format: "iso",
 							max_execution_time: this.CH_SELECT_MAX_EXEC_S,
 							wait_end_of_query: 1,
 						},
@@ -378,6 +380,7 @@ export class AggregationJob {
 					format: "JSONEachRow",
 					abort_signal: abortSignal,
 					clickhouse_settings: {
+						date_time_output_format: "iso",
 						max_execution_time: this.CH_SELECT_MAX_EXEC_S,
 						wait_end_of_query: 1,
 					},
@@ -394,7 +397,7 @@ export class AggregationJob {
 					// No aggregated data yet - find first hourly record
 					const firstHourQuery = `
 						SELECT
-							formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS first_hour
+							timestamp AS first_hour
 						FROM pulses_hourly
 						WHERE monitor_id = {monitorId:String}
 						ORDER BY timestamp ASC
@@ -406,6 +409,7 @@ export class AggregationJob {
 						format: "JSONEachRow",
 						abort_signal: abortSignal,
 						clickhouse_settings: {
+							date_time_output_format: "iso",
 							max_execution_time: this.CH_SELECT_MAX_EXEC_S,
 							wait_end_of_query: 1,
 						},

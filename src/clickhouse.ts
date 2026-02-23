@@ -7,6 +7,7 @@ import { cache } from "./cache";
 import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
 import { server } from ".";
 import { groupStateTracker } from "./group-state-tracker";
+import { initIncidentTables } from "./incidents";
 
 export const updateQueue = new Set<string>();
 export const BATCH_INTERVAL = 5000; // 5 seconds
@@ -87,6 +88,8 @@ export async function initClickHouse(): Promise<void> {
 			`,
 		});
 
+		await initIncidentTables();
+
 		Logger.info("ClickHouse tables initialized");
 	} catch (err: any) {
 		Logger.error("ClickHouse initialization failed", { "error.message": err?.message });
@@ -114,7 +117,7 @@ export async function storePulse(
 				{
 					monitor_id: monitorId,
 					latency,
-					timestamp: formatDateTimeISOCompact(timestamp, { includeMilliseconds: true }),
+					timestamp: timestamp.toISOString(),
 					synthetic,
 					custom1: customMetrics.custom1,
 					custom2: customMetrics.custom2,
@@ -122,6 +125,9 @@ export async function storePulse(
 				},
 			],
 			format: "JSONEachRow",
+			clickhouse_settings: {
+				date_time_input_format: "best_effort",
+			},
 		});
 	} catch (err: any) {
 		Logger.error("Storing pulse failed", { monitorId, "error.message": err?.message });
@@ -172,7 +178,7 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 		// Get the timestamp of first pulse
 		const firstPulseQuery = `
 			SELECT
-				formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
+				timestamp AS first_pulse
 			FROM pulses
 			WHERE monitor_id = {monitorId:String}
 			ORDER BY timestamp ASC
@@ -183,6 +189,9 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 			query: firstPulseQuery,
 			query_params: { monitorId },
 			format: "JSONEachRow",
+			clickhouse_settings: {
+				date_time_output_format: "iso",
+			},
 		});
 		const firstPulseData = await firstPulseResult.json<{ first_pulse: string | null }>();
 
@@ -310,7 +319,7 @@ export async function getMonitorHistoryRaw(monitorId: string): Promise<PulseRaw[
 export async function getMonitorHistoryHourly(monitorId: string): Promise<PulseHourly[]> {
 	const query = `
 		SELECT
-			formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS timestamp,
+			timestamp,
 			uptime,
 			latency_min,
 			latency_max,
@@ -334,6 +343,9 @@ export async function getMonitorHistoryHourly(monitorId: string): Promise<PulseH
 			query,
 			query_params: { monitorId },
 			format: "JSONEachRow",
+			clickhouse_settings: {
+				date_time_output_format: "iso",
+			},
 		});
 		const data = await result.json<PulseHourly>();
 
@@ -445,7 +457,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		let firstPulse = prevStatus?.firstPulse;
 		if (!firstPulse) {
 			const query = `
-				SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
+				SELECT ts AS first_pulse
 				FROM
 				(
 					SELECT ts FROM
@@ -471,7 +483,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				ORDER BY ts ASC
 				LIMIT 1
 			`;
-			const result = await clickhouse.query({ query, query_params: { monitorId }, format: "JSONEachRow" });
+			const result = await clickhouse.query({
+				query,
+				query_params: { monitorId },
+				format: "JSONEachRow",
+				clickhouse_settings: { date_time_output_format: "iso" },
+			});
 			const data = await result.json<{ first_pulse: string | null }>();
 			if (data[0]?.first_pulse) firstPulse = new Date(data[0].first_pulse);
 		}
@@ -479,7 +496,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		// Get latest pulse with custom metrics
 		const latestQuery = `
 			SELECT
-				formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%sZ') AS last_check,
+				timestamp AS last_check,
 				latency,
 				custom1,
 				custom2,
@@ -489,7 +506,12 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			ORDER BY timestamp DESC
 			LIMIT 1
 		`;
-		const latestResult = await clickhouse.query({ query: latestQuery, query_params: { monitorId }, format: "JSONEachRow" });
+		const latestResult = await clickhouse.query({
+			query: latestQuery,
+			query_params: { monitorId },
+			format: "JSONEachRow",
+			clickhouse_settings: { date_time_output_format: "iso" },
+		});
 		const latestData = await latestResult.json<{
 			last_check: string;
 			latency: number | null;
@@ -1004,7 +1026,7 @@ export async function getGroupHistoryRaw(groupId: string): Promise<GroupHistoryR
 		// Get the earliest first pulse among all monitors
 		const firstPulseQuery = `
 			SELECT
-				formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%sZ') AS first_pulse
+				timestamp AS first_pulse
 			FROM pulses
 			WHERE monitor_id IN ({monitorIds:Array(String)})
 			ORDER BY timestamp ASC
@@ -1015,6 +1037,9 @@ export async function getGroupHistoryRaw(groupId: string): Promise<GroupHistoryR
 			query: firstPulseQuery,
 			query_params: { monitorIds },
 			format: "JSONEachRow",
+			clickhouse_settings: {
+				date_time_output_format: "iso",
+			},
 		});
 		const firstPulseData = await firstPulseResult.json<{ first_pulse: string | null }>();
 
@@ -1181,7 +1206,7 @@ export async function getGroupHistoryHourly(groupId: string): Promise<GroupHisto
 		// Get all hourly data for all child monitors
 		const query = `
 			SELECT
-				formatDateTime(timestamp, '%Y-%m-%dT%H:00:00Z') AS timestamp,
+				timestamp AS timestamp,
 				monitor_id,
 				uptime,
 				latency_min,
@@ -1196,6 +1221,9 @@ export async function getGroupHistoryHourly(groupId: string): Promise<GroupHisto
 			query,
 			query_params: { monitorIds },
 			format: "JSONEachRow",
+			clickhouse_settings: {
+				date_time_output_format: "iso",
+			},
 		});
 
 		const data = await result.json<{

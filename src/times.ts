@@ -9,6 +9,14 @@ export function isInGracePeriod(): boolean {
 }
 
 /**
+ * Output Example: `2026-02`
+ */
+export function getCurrentMonth(): string {
+	const now = new Date();
+	return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
 	Output Example: `2001-10-15 20:56` or `2001-10-15 20:56:27`
 */
 export function formatDateTimeLocal(date: Date | string | number, options: { includeSeconds?: boolean } = {}): string {

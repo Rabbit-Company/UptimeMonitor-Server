@@ -767,3 +767,33 @@ export interface GroupHistoryRecord {
 }
 
 export type ReportFormat = "csv" | "json";
+
+export type IncidentStatus = "investigating" | "identified" | "monitoring" | "resolved";
+export type IncidentSeverity = "minor" | "major" | "critical";
+
+export interface Incident {
+	id: string;
+	status_page_id: string;
+	title: string;
+	status: IncidentStatus;
+	severity: IncidentSeverity;
+	affected_monitors: string[];
+	created_at: string;
+	updated_at: string;
+	resolved_at: string | null;
+}
+
+export interface IncidentUpdate {
+	id: string;
+	incident_id: string;
+	status: IncidentStatus;
+	message: string;
+	created_at: string;
+}
+
+export interface IncidentWithUpdates extends Incident {
+	updates: IncidentUpdate[];
+}
+
+export const VALID_STATUSES: IncidentStatus[] = ["investigating", "identified", "monitoring", "resolved"];
+export const VALID_SEVERITIES: IncidentSeverity[] = ["minor", "major", "critical"];

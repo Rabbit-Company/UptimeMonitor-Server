@@ -22,6 +22,7 @@ export const openapi = {
 		{ name: "Group History", description: "Historical data for monitor groups" },
 		{ name: "Monitor Reports", description: "Export monitor history data as CSV or JSON" },
 		{ name: "Group Reports", description: "Export group history data as CSV or JSON" },
+		{ name: "Incidents", description: "Incident reports for status pages" },
 		{ name: "Configuration", description: "Server configuration management" },
 		{ name: "Admin: Monitors", description: "Admin CRUD operations for monitors" },
 		{ name: "Admin: Groups", description: "Admin CRUD operations for groups" },
@@ -29,6 +30,7 @@ export const openapi = {
 		{ name: "Admin: Notifications", description: "Admin CRUD operations for notification channels" },
 		{ name: "Admin: Pulse Monitors", description: "Admin CRUD operations for PulseMonitor instances" },
 		{ name: "Admin: Reports", description: "Admin export endpoints for monitor and group history data" },
+		{ name: "Admin: Incidents", description: "Admin CRUD operations for incidents" },
 		{ name: "Admin: Configuration", description: "Admin configuration access" },
 	],
 	paths: {
@@ -860,6 +862,65 @@ export const openapi = {
 					},
 					"404": {
 						description: "Status page not found, reports not enabled, or item not on this status page",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/status/{slug}/incidents": {
+			get: {
+				tags: ["Incidents"],
+				summary: "Get incidents for a status page",
+				description:
+					"Returns all incidents for a status page in a given month, with all timeline updates inlined. Defaults to the current month. Paginate by changing the month parameter. Password-protected pages require a BLAKE2b-512 hash of the password as a Bearer token.",
+				operationId: "getStatusPageIncidents",
+				security: [{ bearerAuth: [] }, {}],
+				parameters: [
+					{
+						name: "slug",
+						in: "path",
+						required: true,
+						description: "Status page URL slug",
+						schema: { type: "string" },
+					},
+					{
+						name: "month",
+						in: "query",
+						required: false,
+						description: "Month to retrieve incidents for (YYYY-MM format). Defaults to current month.",
+						schema: { type: "string", pattern: "^\\d{4}-(0[1-9]|1[0-2])$", example: "2025-06" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Incidents for the requested month",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["statusPageId", "month", "incidents"],
+									properties: {
+										statusPageId: { type: "string", example: "main" },
+										month: { type: "string", example: "2025-06" },
+										incidents: {
+											type: "array",
+											items: { $ref: "#/components/schemas/IncidentWithUpdates" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"400": {
+						description: "Invalid month format",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"401": {
+						description: "Password required or invalid",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found",
 						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 					},
 				},
@@ -2054,6 +2115,282 @@ export const openapi = {
 				},
 			},
 		},
+		"/v1/admin/incidents": {
+			get: {
+				tags: ["Admin: Incidents"],
+				summary: "List all incidents",
+				description: "Returns all incidents. Optionally filter by status_page_id query parameter.",
+				operationId: "adminListIncidents",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{
+						name: "status_page_id",
+						in: "query",
+						required: false,
+						description: "Filter incidents by status page ID",
+						schema: { type: "string" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "List of incidents",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["incidents"],
+									properties: {
+										incidents: {
+											type: "array",
+											items: { $ref: "#/components/schemas/Incident" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			post: {
+				tags: ["Admin: Incidents"],
+				summary: "Create an incident",
+				description:
+					"Create a new incident with an initial timeline update message. The incident is associated with a status page and optionally linked to affected monitors.",
+				operationId: "adminCreateIncident",
+				security: [{ adminBearerAuth: [] }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminIncidentCreate" },
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "Incident created",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									properties: {
+										success: { type: "boolean", enum: [true] },
+										message: { type: "string" },
+										id: { type: "string" },
+										incident: { $ref: "#/components/schemas/IncidentWithUpdates" },
+									},
+								},
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/incidents/{id}": {
+			get: {
+				tags: ["Admin: Incidents"],
+				summary: "Get an incident",
+				description: "Returns a single incident with all its timeline updates.",
+				operationId: "adminGetIncident",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Incident ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Incident details with updates",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/IncidentWithUpdates" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Incident not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			put: {
+				tags: ["Admin: Incidents"],
+				summary: "Update an incident",
+				description:
+					"Update incident metadata (title, severity, affected_monitors). Status cannot be changed directly — use the updates endpoint to post a new timeline entry which changes the status.",
+				operationId: "adminUpdateIncident",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Incident ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminIncidentUpdate" },
+						},
+					},
+				},
+				responses: {
+					"200": {
+						description: "Incident updated",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									properties: {
+										success: { type: "boolean", enum: [true] },
+										message: { type: "string" },
+										incident: { $ref: "#/components/schemas/IncidentWithUpdates" },
+									},
+								},
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Incident not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			delete: {
+				tags: ["Admin: Incidents"],
+				summary: "Delete an incident",
+				description: "Delete an incident and all its timeline updates.",
+				operationId: "adminDeleteIncident",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Incident ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Incident deleted",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Incident 'abc123' deleted" },
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Incident not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/incidents/{id}/updates": {
+			post: {
+				tags: ["Admin: Incidents"],
+				summary: "Add a timeline update",
+				description:
+					"Add a timeline update to an incident. This also updates the parent incident's status and updated_at timestamp. If the new status is 'resolved', the incident's resolved_at is set.",
+				operationId: "adminAddIncidentUpdate",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Incident ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: {
+								type: "object",
+								required: ["status", "message"],
+								properties: {
+									status: {
+										type: "string",
+										enum: ["investigating", "identified", "monitoring", "resolved"],
+										description: "New status for the incident",
+									},
+									message: { type: "string", description: "Update message body" },
+								},
+							},
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "Update added",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									properties: {
+										success: { type: "boolean", enum: [true] },
+										message: { type: "string" },
+										updateId: { type: "string" },
+										incident: { $ref: "#/components/schemas/IncidentWithUpdates" },
+									},
+								},
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Incident not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/incidents/{id}/updates/{updateId}": {
+			delete: {
+				tags: ["Admin: Incidents"],
+				summary: "Delete a timeline update",
+				description: "Delete a specific timeline update from an incident.",
+				operationId: "adminDeleteIncidentUpdate",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{ name: "id", in: "path", required: true, description: "Incident ID", schema: { type: "string" } },
+					{ name: "updateId", in: "path", required: true, description: "Update ID", schema: { type: "string" } },
+				],
+				responses: {
+					"200": {
+						description: "Update deleted",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Update 'xyz789' deleted from incident 'abc123'" },
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Incident update not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
 	},
 	components: {
 		securitySchemes: {
@@ -2168,6 +2505,81 @@ export const openapi = {
 						type: "array",
 						items: { $ref: "#/components/schemas/HistoryRecord" },
 					},
+				},
+			},
+			Incident: {
+				type: "object",
+				required: ["id", "status_page_id", "title", "status", "severity", "affected_monitors", "created_at", "updated_at"],
+				properties: {
+					id: { type: "string", example: "a1b2c3d4e5f6a1b2c3d4e5f6" },
+					status_page_id: { type: "string", example: "main" },
+					title: { type: "string", example: "Database connectivity issues" },
+					status: { type: "string", enum: ["investigating", "identified", "monitoring", "resolved"], example: "investigating" },
+					severity: { type: "string", enum: ["minor", "major", "critical"], example: "major" },
+					affected_monitors: { type: "array", items: { type: "string" }, example: ["api-prod", "web-app"] },
+					created_at: { type: "string", format: "date-time", example: "2025-06-15T10:30:00.000Z" },
+					updated_at: { type: "string", format: "date-time", example: "2025-06-15T11:00:00.000Z" },
+					resolved_at: { type: "string", format: "date-time", nullable: true, example: null },
+				},
+			},
+			IncidentUpdate: {
+				type: "object",
+				required: ["id", "incident_id", "status", "message", "created_at"],
+				properties: {
+					id: { type: "string", example: "f6e5d4c3b2a1f6e5d4c3b2a1" },
+					incident_id: { type: "string", example: "a1b2c3d4e5f6a1b2c3d4e5f6" },
+					status: { type: "string", enum: ["investigating", "identified", "monitoring", "resolved"], example: "identified" },
+					message: { type: "string", example: "We have identified the root cause as a failed database migration." },
+					created_at: { type: "string", format: "date-time", example: "2025-06-15T10:45:00.000Z" },
+				},
+			},
+			IncidentWithUpdates: {
+				type: "object",
+				required: ["id", "status_page_id", "title", "status", "severity", "affected_monitors", "created_at", "updated_at", "updates"],
+				properties: {
+					id: { type: "string" },
+					status_page_id: { type: "string" },
+					title: { type: "string" },
+					status: { type: "string", enum: ["investigating", "identified", "monitoring", "resolved"] },
+					severity: { type: "string", enum: ["minor", "major", "critical"] },
+					affected_monitors: { type: "array", items: { type: "string" } },
+					created_at: { type: "string", format: "date-time" },
+					updated_at: { type: "string", format: "date-time" },
+					resolved_at: { type: "string", format: "date-time", nullable: true },
+					updates: {
+						type: "array",
+						items: { $ref: "#/components/schemas/IncidentUpdate" },
+						description: "All timeline updates for this incident, ordered chronologically",
+					},
+				},
+			},
+			AdminIncidentCreate: {
+				type: "object",
+				required: ["status_page_id", "title", "status", "severity", "message"],
+				properties: {
+					status_page_id: { type: "string", description: "ID of the status page this incident belongs to", example: "main" },
+					title: { type: "string", description: "Short incident title", example: "Database connectivity issues" },
+					status: { type: "string", enum: ["investigating", "identified", "monitoring", "resolved"], example: "investigating" },
+					severity: { type: "string", enum: ["minor", "major", "critical"], example: "major" },
+					message: {
+						type: "string",
+						description: "Initial timeline update message",
+						example: "We are investigating reports of degraded database performance.",
+					},
+					affected_monitors: {
+						type: "array",
+						items: { type: "string" },
+						description: "Optional list of affected monitor/group IDs (must be on the status page)",
+						example: ["api-prod"],
+					},
+				},
+			},
+			AdminIncidentUpdate: {
+				type: "object",
+				properties: {
+					title: { type: "string", example: "Database connectivity issues - resolved" },
+					severity: { type: "string", enum: ["minor", "major", "critical"] },
+					affected_monitors: { type: "array", items: { type: "string" } },
 				},
 			},
 			AdminSuccess: {

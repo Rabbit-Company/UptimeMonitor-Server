@@ -857,33 +857,317 @@ curl -X DELETE -H "Authorization: Bearer <token>" \
 
 ---
 
+## Incidents
+
+Unlike other admin resources, incidents are stored in ClickHouse (not `config.toml`). They are not part of the configuration file and do not trigger a config reload. Incidents are associated with a status page and optionally linked to affected monitors or groups on that page.
+
+Each incident has a timeline of updates that track its progression. The incident's `status` is driven by its timeline updates. To change an incident's status, add a new update via the updates endpoint.
+
+### GET /v1/admin/incidents
+
+List all incidents. Optionally filter by status page.
+
+```bash
+curl -H "Authorization: Bearer " \
+  http://localhost:3000/v1/admin/incidents
+```
+
+**Query Parameters:**
+
+| Parameter        | Type   | Description                        |
+| ---------------- | ------ | ---------------------------------- |
+| `status_page_id` | string | Filter incidents by status page ID |
+
+**Response:**
+
+```json
+{
+	"incidents": [
+		{
+			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status_page_id": "main",
+			"title": "Database connectivity issues",
+			"status": "investigating",
+			"severity": "major",
+			"affected_monitors": ["api-prod", "web-app"],
+			"created_at": "2026-02-15T10:30:00.000Z",
+			"updated_at": "2026-02-15T10:30:00.000Z",
+			"resolved_at": null
+		}
+	]
+}
+```
+
+### GET /v1/admin/incidents/:id
+
+Get a single incident with all its timeline updates.
+
+```bash
+curl -H "Authorization: Bearer " \
+  http://localhost:3000/v1/admin/incidents/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+**Response:**
+
+```json
+{
+	"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+	"status_page_id": "main",
+	"title": "Database connectivity issues",
+	"status": "identified",
+	"severity": "major",
+	"affected_monitors": ["api-prod"],
+	"created_at": "2026-02-15T10:30:00.000Z",
+	"updated_at": "2026-02-15T10:45:00.000Z",
+	"resolved_at": null,
+	"updates": [
+		{
+			"id": "f6e5d4c3-b2a1-0987-fedc-ba9876543210",
+			"incident_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status": "investigating",
+			"message": "We are investigating reports of degraded database performance.",
+			"created_at": "2026-02-15T10:30:00.000Z"
+		},
+		{
+			"id": "11223344-5566-7788-99aa-bbccddeeff00",
+			"incident_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status": "identified",
+			"message": "We have identified the root cause as a failed database migration.",
+			"created_at": "2026-02-15T10:45:00.000Z"
+		}
+	]
+}
+```
+
+**Errors:**
+
+- `404 Not Found` - Incident does not exist
+
+### POST /v1/admin/incidents
+
+Create a new incident with an initial timeline update message.
+
+```bash
+curl -X POST -H "Authorization: Bearer " \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status_page_id": "main",
+    "title": "Database connectivity issues",
+    "status": "investigating",
+    "severity": "major",
+    "message": "We are investigating reports of degraded database performance.",
+    "affected_monitors": ["api-prod"]
+  }' \
+  http://localhost:3000/v1/admin/incidents
+```
+
+**Required fields:**
+
+| Field            | Type   | Description                                                                |
+| ---------------- | ------ | -------------------------------------------------------------------------- |
+| `status_page_id` | string | ID of the status page this incident belongs to                             |
+| `title`          | string | Short incident title                                                       |
+| `status`         | string | Initial status: `investigating`, `identified`, `monitoring`, or `resolved` |
+| `severity`       | string | Severity level: `minor`, `major`, or `critical`                            |
+| `message`        | string | Initial timeline update message                                            |
+
+**Optional fields:**
+
+| Field               | Type     | Description                                                            |
+| ------------------- | -------- | ---------------------------------------------------------------------- |
+| `affected_monitors` | string[] | IDs of affected monitors/groups (must be on the specified status page) |
+
+**Success Response (201):**
+
+```json
+{
+	"success": true,
+	"message": "Incident 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' created",
+	"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+	"incident": {
+		"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		"status_page_id": "main",
+		"title": "Database connectivity issues",
+		"status": "investigating",
+		"severity": "major",
+		"affected_monitors": ["api-prod"],
+		"created_at": "2026-02-15T10:30:00.000Z",
+		"updated_at": "2026-02-15T10:30:00.000Z",
+		"resolved_at": null,
+		"updates": [
+			{
+				"id": "f6e5d4c3-b2a1-0987-fedc-ba9876543210",
+				"incident_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+				"status": "investigating",
+				"message": "We are investigating reports of degraded database performance.",
+				"created_at": "2026-02-15T10:30:00.000Z"
+			}
+		]
+	}
+}
+```
+
+**Errors:**
+
+- `400 Bad Request` - Validation failed (missing fields, invalid status/severity, affected monitor not on status page)
+- `404 Not Found` - Status page does not exist
+
+### PUT /v1/admin/incidents/:id
+
+Update incident metadata. Status cannot be changed directly. Use the updates endpoint to post a new timeline entry which changes the status.
+
+```bash
+curl -X PUT -H "Authorization: Bearer " \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Database connectivity issues - resolved",
+    "severity": "critical",
+    "affected_monitors": ["api-prod", "web-app"]
+  }' \
+  http://localhost:3000/v1/admin/incidents/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+**Optional fields (send only what you want to change):**
+
+| Field               | Type     | Description                                                         |
+| ------------------- | -------- | ------------------------------------------------------------------- |
+| `title`             | string   | Updated incident title                                              |
+| `severity`          | string   | `minor`, `major`, or `critical`                                     |
+| `affected_monitors` | string[] | Updated list of affected monitor/group IDs (must be on status page) |
+
+**Success Response (200):**
+
+```json
+{
+	"success": true,
+	"message": "Incident 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' updated",
+	"incident": {}
+}
+```
+
+**Errors:**
+
+- `400 Bad Request` - Validation failed (including if you try to set `status` directly)
+- `404 Not Found` - Incident does not exist
+
+### DELETE /v1/admin/incidents/:id
+
+Delete an incident and all its timeline updates.
+
+```bash
+curl -X DELETE -H "Authorization: Bearer " \
+  http://localhost:3000/v1/admin/incidents/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+**Success Response (200):**
+
+```json
+{
+	"success": true,
+	"message": "Incident 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' deleted"
+}
+```
+
+### POST /v1/admin/incidents/:id/updates
+
+Add a timeline update to an incident. This also updates the parent incident's `status` and `updated_at` timestamp. If the new status is `resolved`, the incident's `resolved_at` is set.
+
+```bash
+curl -X POST -H "Authorization: Bearer " \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "identified",
+    "message": "We have identified the root cause as a failed database migration."
+  }' \
+  http://localhost:3000/v1/admin/incidents/a1b2c3d4-e5f6-7890-abcd-ef1234567890/updates
+```
+
+**Required fields:**
+
+| Field     | Type   | Description                                                            |
+| --------- | ------ | ---------------------------------------------------------------------- |
+| `status`  | string | New status: `investigating`, `identified`, `monitoring`, or `resolved` |
+| `message` | string | Update message body                                                    |
+
+**Success Response (201):**
+
+```json
+{
+	"success": true,
+	"message": "Update added to incident 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'",
+	"updateId": "11223344-5566-7788-99aa-bbccddeeff00",
+	"incident": {}
+}
+```
+
+**Errors:**
+
+- `400 Bad Request` - Validation failed (missing or invalid status/message)
+- `404 Not Found` - Incident does not exist
+
+### DELETE /v1/admin/incidents/:id/updates/:updateId
+
+Delete a specific timeline update from an incident. If the deleted update was the most recent one, the incident's status and `resolved_at` are synced to match the new most-recent update.
+
+```bash
+curl -X DELETE -H "Authorization: Bearer " \
+  http://localhost:3000/v1/admin/incidents/a1b2c3d4-e5f6-7890-abcd-ef1234567890/updates/11223344-5566-7788-99aa-bbccddeeff00
+```
+
+**Success Response (200):**
+
+```json
+{
+	"success": true,
+	"message": "Update '11223344-5566-7788-99aa-bbccddeeff00' deleted from incident 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'",
+	"incident": {}
+}
+```
+
+**Errors:**
+
+- `404 Not Found` - Incident or update does not exist
+
+### WebSocket Events
+
+All incident operations broadcast real-time events to WebSocket subscribers of the relevant status page. The following actions are emitted: `incident-created`, `incident-updated`, `incident-update-added`, `incident-update-deleted`, `incident-deleted`. See the [WebSocket API section](api.md#websocket-api) in the API Reference for event payload formats.
+
+---
+
 ## Endpoint Summary
 
-| Method   | Endpoint                       | Description                    |
-| -------- | ------------------------------ | ------------------------------ |
-| `GET`    | `/v1/admin/config`             | Get full configuration         |
-| `GET`    | `/v1/admin/monitors`           | List all monitors              |
-| `GET`    | `/v1/admin/monitors/:id`       | Get a monitor                  |
-| `POST`   | `/v1/admin/monitors`           | Create a monitor               |
-| `PUT`    | `/v1/admin/monitors/:id`       | Update a monitor               |
-| `DELETE` | `/v1/admin/monitors/:id`       | Delete a monitor               |
-| `GET`    | `/v1/admin/groups`             | List all groups                |
-| `GET`    | `/v1/admin/groups/:id`         | Get a group                    |
-| `POST`   | `/v1/admin/groups`             | Create a group                 |
-| `PUT`    | `/v1/admin/groups/:id`         | Update a group                 |
-| `DELETE` | `/v1/admin/groups/:id`         | Delete a group                 |
-| `GET`    | `/v1/admin/status-pages`       | List all status pages          |
-| `GET`    | `/v1/admin/status-pages/:id`   | Get a status page              |
-| `POST`   | `/v1/admin/status-pages`       | Create a status page           |
-| `PUT`    | `/v1/admin/status-pages/:id`   | Update a status page           |
-| `DELETE` | `/v1/admin/status-pages/:id`   | Delete a status page           |
-| `GET`    | `/v1/admin/notifications`      | List all notification channels |
-| `GET`    | `/v1/admin/notifications/:id`  | Get a notification channel     |
-| `POST`   | `/v1/admin/notifications`      | Create a notification channel  |
-| `PUT`    | `/v1/admin/notifications/:id`  | Update a notification channel  |
-| `DELETE` | `/v1/admin/notifications/:id`  | Delete a notification channel  |
-| `GET`    | `/v1/admin/pulse-monitors`     | List all PulseMonitors         |
-| `GET`    | `/v1/admin/pulse-monitors/:id` | Get a PulseMonitor             |
-| `POST`   | `/v1/admin/pulse-monitors`     | Create a PulseMonitor          |
-| `PUT`    | `/v1/admin/pulse-monitors/:id` | Update a PulseMonitor          |
-| `DELETE` | `/v1/admin/pulse-monitors/:id` | Delete a PulseMonitor          |
+| Method   | Endpoint                                    | Description                    |
+| -------- | ------------------------------------------- | ------------------------------ |
+| `GET`    | `/v1/admin/config`                          | Get full configuration         |
+| `GET`    | `/v1/admin/monitors`                        | List all monitors              |
+| `GET`    | `/v1/admin/monitors/:id`                    | Get a monitor                  |
+| `POST`   | `/v1/admin/monitors`                        | Create a monitor               |
+| `PUT`    | `/v1/admin/monitors/:id`                    | Update a monitor               |
+| `DELETE` | `/v1/admin/monitors/:id`                    | Delete a monitor               |
+| `GET`    | `/v1/admin/groups`                          | List all groups                |
+| `GET`    | `/v1/admin/groups/:id`                      | Get a group                    |
+| `POST`   | `/v1/admin/groups`                          | Create a group                 |
+| `PUT`    | `/v1/admin/groups/:id`                      | Update a group                 |
+| `DELETE` | `/v1/admin/groups/:id`                      | Delete a group                 |
+| `GET`    | `/v1/admin/status-pages`                    | List all status pages          |
+| `GET`    | `/v1/admin/status-pages/:id`                | Get a status page              |
+| `POST`   | `/v1/admin/status-pages`                    | Create a status page           |
+| `PUT`    | `/v1/admin/status-pages/:id`                | Update a status page           |
+| `DELETE` | `/v1/admin/status-pages/:id`                | Delete a status page           |
+| `GET`    | `/v1/admin/notifications`                   | List all notification channels |
+| `GET`    | `/v1/admin/notifications/:id`               | Get a notification channel     |
+| `POST`   | `/v1/admin/notifications`                   | Create a notification channel  |
+| `PUT`    | `/v1/admin/notifications/:id`               | Update a notification channel  |
+| `DELETE` | `/v1/admin/notifications/:id`               | Delete a notification channel  |
+| `GET`    | `/v1/admin/pulse-monitors`                  | List all PulseMonitors         |
+| `GET`    | `/v1/admin/pulse-monitors/:id`              | Get a PulseMonitor             |
+| `POST`   | `/v1/admin/pulse-monitors`                  | Create a PulseMonitor          |
+| `PUT`    | `/v1/admin/pulse-monitors/:id`              | Update a PulseMonitor          |
+| `DELETE` | `/v1/admin/pulse-monitors/:id`              | Delete a PulseMonitor          |
+| `GET`    | `/v1/admin/incidents`                       | List all incidents             |
+| `GET`    | `/v1/admin/incidents/:id`                   | Get an incident                |
+| `POST`   | `/v1/admin/incidents`                       | Create an incident             |
+| `PUT`    | `/v1/admin/incidents/:id`                   | Update an incident             |
+| `DELETE` | `/v1/admin/incidents/:id`                   | Delete an incident             |
+| `POST`   | `/v1/admin/incidents/:id/updates`           | Add a timeline update          |
+| `DELETE` | `/v1/admin/incidents/:id/updates/:updateId` | Delete a timeline update       |

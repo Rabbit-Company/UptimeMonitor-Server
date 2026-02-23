@@ -389,6 +389,92 @@ Hourly aggregated group data as CSV or JSON (~90 days).
 
 Daily aggregated group data as CSV or JSON (kept forever).
 
+---
+
+## Incidents
+
+Incidents allow communicating outages and maintenance events on a status page. Each incident has a timeline of updates tracking its progression from investigation through resolution.
+
+**Authentication:**
+
+- If the status page is password-protected, an `Authorization` header must be provided.
+- If the status page is public, no authentication is required.
+
+For protected pages, the `Authorization` header must contain a **BLAKE2b-512 hash of the configured password**, sent as a `Bearer` token.
+
+### GET /v1/status/:slug/incidents
+
+Returns all incidents for a status page in a given month, with all timeline updates inlined. Cached for 30 seconds.
+
+**Path Parameters:**
+
+| Parameter | Description      |
+| --------- | ---------------- |
+| `slug`    | Status page slug |
+
+**Query Parameters:**
+
+| Parameter | Type   | Default       | Description                                        |
+| --------- | ------ | ------------- | -------------------------------------------------- |
+| `month`   | string | Current month | Month to retrieve incidents for (`YYYY-MM` format) |
+
+**Response:**
+
+```json
+{
+	"statusPageId": "main",
+	"month": "2026-02",
+	"incidents": [
+		{
+			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status_page_id": "main",
+			"title": "Database connectivity issues",
+			"status": "resolved",
+			"severity": "major",
+			"affected_monitors": ["api-prod", "web-app"],
+			"created_at": "2026-02-15T10:30:00.000Z",
+			"updated_at": "2026-02-15T12:00:00.000Z",
+			"resolved_at": "2026-02-15T12:00:00.000Z",
+			"updates": [
+				{
+					"id": "f6e5d4c3-b2a1-0987-fedc-ba9876543210",
+					"incident_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+					"status": "investigating",
+					"message": "We are investigating reports of degraded database performance.",
+					"created_at": "2026-02-15T10:30:00.000Z"
+				},
+				{
+					"id": "11223344-5566-7788-99aa-bbccddeeff00",
+					"incident_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+					"status": "identified",
+					"message": "We have identified the root cause as a failed database migration.",
+					"created_at": "2026-02-15T10:45:00.000Z"
+				},
+				{
+					"id": "aabbccdd-eeff-0011-2233-445566778899",
+					"incident_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+					"status": "resolved",
+					"message": "The migration has been rolled back and service is restored.",
+					"created_at": "2026-02-15T12:00:00.000Z"
+				}
+			]
+		}
+	]
+}
+```
+
+**Incident Statuses:** `investigating`, `identified`, `monitoring`, `resolved`
+
+**Severity Levels:** `minor`, `major`, `critical`
+
+**Errors:**
+
+- `400 Bad Request` – Invalid month format (must be `YYYY-MM`)
+- `401 Unauthorized` – Password is required, missing, or invalid
+- `404 Not Found` – Status page does not exist
+
+---
+
 ## Configuration
 
 ### GET /v1/reload/:token
@@ -446,16 +532,17 @@ See the [Admin API Reference](admin-api.md) for complete documentation of all en
 
 **Quick overview:**
 
-| Resource              | Endpoints                                                                               |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| Configuration         | `GET /v1/admin/config`                                                                  |
-| Monitors              | `GET/POST /v1/admin/monitors`, `GET/PUT/DELETE /v1/admin/monitors/:id`                  |
-| Groups                | `GET/POST /v1/admin/groups`, `GET/PUT/DELETE /v1/admin/groups/:id`                      |
-| Status Pages          | `GET/POST /v1/admin/status-pages`, `GET/PUT/DELETE /v1/admin/status-pages/:id`          |
-| Notification Channels | `GET/POST /v1/admin/notifications`, `GET/PUT/DELETE /v1/admin/notifications/:id`        |
-| Pulse Monitors        | `GET/POST /v1/admin/pulse-monitors`, `GET/PUT/DELETE /v1/admin/pulse-monitors/:id`      |
-| Reports (Monitors)    | `GET /v1/admin/monitors/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily` |
-| Reports (Groups)      | `GET /v1/admin/groups/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily`   |
+| Resource              | Endpoints                                                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configuration         | `GET /v1/admin/config`                                                                                                                             |
+| Monitors              | `GET/POST /v1/admin/monitors`, `GET/PUT/DELETE /v1/admin/monitors/:id`                                                                             |
+| Groups                | `GET/POST /v1/admin/groups`, `GET/PUT/DELETE /v1/admin/groups/:id`                                                                                 |
+| Status Pages          | `GET/POST /v1/admin/status-pages`, `GET/PUT/DELETE /v1/admin/status-pages/:id`                                                                     |
+| Notification Channels | `GET/POST /v1/admin/notifications`, `GET/PUT/DELETE /v1/admin/notifications/:id`                                                                   |
+| Pulse Monitors        | `GET/POST /v1/admin/pulse-monitors`, `GET/PUT/DELETE /v1/admin/pulse-monitors/:id`                                                                 |
+| Reports (Monitors)    | `GET /v1/admin/monitors/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily`                                                            |
+| Reports (Groups)      | `GET /v1/admin/groups/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily`                                                              |
+| Incidents             | `GET/POST /v1/admin/incidents`, `GET/PUT/DELETE .../incidents/:id`, `POST .../incidents/:id/updates`, `DELETE .../incidents/:id/updates/:updateId` |
 
 To enable, add to `config.toml`:
 
@@ -656,6 +743,132 @@ When subscribed, you receive events:
 		"downtime": 300000
 	},
 	"timestamp": "2025-01-15T10:30:00.000Z"
+}
+```
+
+**Incident Created:**
+
+```json
+{
+	"action": "incident-created",
+	"data": {
+		"slug": "status",
+		"incident": {
+			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status_page_id": "main",
+			"title": "Database connectivity issues",
+			"status": "investigating",
+			"severity": "major",
+			"affected_monitors": ["api-prod"],
+			"created_at": "2026-02-15T10:30:00.000Z",
+			"updated_at": "2026-02-15T10:30:00.000Z",
+			"resolved_at": null,
+			"updates": [
+				{
+					"id": "f6e5d4c3-b2a1-0987-fedc-ba9876543210",
+					"incident_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+					"status": "investigating",
+					"message": "We are investigating reports of degraded database performance.",
+					"created_at": "2026-02-15T10:30:00.000Z"
+				}
+			]
+		}
+	},
+	"timestamp": "2026-02-15T10:30:00.000Z"
+}
+```
+
+**Incident Updated:**
+
+```json
+{
+	"action": "incident-updated",
+	"data": {
+		"slug": "status",
+		"incident": {
+			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status_page_id": "main",
+			"title": "Database connectivity issues - update",
+			"status": "investigating",
+			"severity": "critical",
+			"affected_monitors": ["api-prod", "web-app"],
+			"created_at": "2026-02-15T10:30:00.000Z",
+			"updated_at": "2026-02-15T10:35:00.000Z",
+			"resolved_at": null,
+			"updates": []
+		}
+	},
+	"timestamp": "2026-02-15T10:35:00.000Z"
+}
+```
+
+**Incident Update Added:**
+
+```json
+{
+	"action": "incident-update-added",
+	"data": {
+		"slug": "status",
+		"incident": {
+			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status_page_id": "main",
+			"title": "Database connectivity issues",
+			"status": "identified",
+			"severity": "major",
+			"affected_monitors": ["api-prod"],
+			"created_at": "2026-02-15T10:30:00.000Z",
+			"updated_at": "2026-02-15T10:45:00.000Z",
+			"resolved_at": null,
+			"updates": []
+		},
+		"update": {
+			"id": "11223344-5566-7788-99aa-bbccddeeff00",
+			"incident_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status": "identified",
+			"message": "We have identified the root cause as a failed database migration.",
+			"created_at": "2026-02-15T10:45:00.000Z"
+		}
+	},
+	"timestamp": "2026-02-15T10:45:00.000Z"
+}
+```
+
+**Incident Update Deleted:**
+
+```json
+{
+	"action": "incident-update-deleted",
+	"data": {
+		"slug": "status",
+		"incidentId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		"updateId": "11223344-5566-7788-99aa-bbccddeeff00",
+		"incident": {
+			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+			"status_page_id": "main",
+			"title": "Database connectivity issues",
+			"status": "investigating",
+			"severity": "major",
+			"affected_monitors": ["api-prod"],
+			"created_at": "2026-02-15T10:30:00.000Z",
+			"updated_at": "2026-02-15T10:50:00.000Z",
+			"resolved_at": null,
+			"updates": []
+		}
+	},
+	"timestamp": "2026-02-15T10:50:00.000Z"
+}
+```
+
+**Incident Deleted:**
+
+```json
+{
+	"action": "incident-deleted",
+	"data": {
+		"slug": "status",
+		"incidentId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	},
+	"timestamp": "2026-02-15T11:00:00.000Z"
 }
 ```
 

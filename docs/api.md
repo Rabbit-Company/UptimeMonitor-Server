@@ -534,7 +534,7 @@ See the [Admin API Reference](admin-api.md) for complete documentation of all en
 
 | Resource              | Endpoints                                                                                                                                          |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Configuration         | `GET /v1/admin/config`                                                                                                                             |
+| Configuration         | `GET/POST /v1/admin/config`                                                                                                                        |
 | Monitors              | `GET/POST /v1/admin/monitors`, `GET/PUT/DELETE /v1/admin/monitors/:id`                                                                             |
 | Groups                | `GET/POST /v1/admin/groups`, `GET/PUT/DELETE /v1/admin/groups/:id`                                                                                 |
 | Status Pages          | `GET/POST /v1/admin/status-pages`, `GET/PUT/DELETE /v1/admin/status-pages/:id`                                                                     |

@@ -71,14 +71,75 @@ All endpoints may return these errors:
 
 ### GET /v1/admin/config
 
-Returns the entire current configuration object.
+Returns the entire current configuration as read from `config.toml`.
+
+**Query Parameters:**
+
+| Parameter | Type   | Default | Description                       |
+| --------- | ------ | ------- | --------------------------------- |
+| `format`  | string | `json`  | Response format: `json` or `toml` |
+
+**JSON example:**
 
 ```bash
 curl -H "Authorization: Bearer <token>" \
   http://localhost:3000/v1/admin/config
 ```
 
-**Response:** The full parsed `config.toml` as JSON, including all monitors, groups, status pages, notifications, pulse monitors, and server settings.
+**TOML example:**
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+  "http://localhost:3000/v1/admin/config?format=toml"
+```
+
+**Response:** The full parsed `config.toml`, including all monitors, groups, status pages, notifications, pulse monitors and server settings.
+
+### POST /v1/admin/config
+
+Replace the entire configuration. The body is validated, written to `config.toml`, and hot-reloaded. On reload failure, the previous configuration is automatically restored.
+
+**Query Parameters:**
+
+| Parameter | Type   | Default | Description                           |
+| --------- | ------ | ------- | ------------------------------------- |
+| `format`  | string | `json`  | Request body format: `json` or `toml` |
+
+**JSON example:**
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d @config.json \
+  http://localhost:3000/v1/admin/config
+```
+
+**TOML example:**
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/toml" \
+  -d @config.toml \
+  "http://localhost:3000/v1/admin/config?format=toml"
+```
+
+**Success Response:**
+
+```json
+{ "success": true }
+```
+
+**Error Responses:**
+
+| Status | Description                                             |
+| ------ | ------------------------------------------------------- |
+| `400`  | Invalid request body or configuration validation failed |
+| `401`  | Unauthorized                                            |
+| `500`  | Config write or reload failed                           |
+
+> **Tip:** You can GET the config, modify it, and POST it back to make bulk changes safely. Both endpoints use the same key format, so round-tripping works without any transformation.
 
 ---
 
@@ -1139,6 +1200,7 @@ All incident operations broadcast real-time events to WebSocket subscribers of t
 | Method   | Endpoint                                    | Description                    |
 | -------- | ------------------------------------------- | ------------------------------ |
 | `GET`    | `/v1/admin/config`                          | Get full configuration         |
+| `POST`   | `/v1/admin/config`                          | Replace full configuration     |
 | `GET`    | `/v1/admin/monitors`                        | List all monitors              |
 | `GET`    | `/v1/admin/monitors/:id`                    | Get a monitor                  |
 | `POST`   | `/v1/admin/monitors`                        | Create a monitor               |

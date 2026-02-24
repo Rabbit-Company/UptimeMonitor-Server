@@ -19,7 +19,11 @@ export function statusPageBearerAuth() {
 			const slug = ctx.params["slug"]!;
 			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
 			if (!statusPage) return false;
-			if (token.length !== statusPage.hashedPassword!.length) return false;
+
+			if (token.length !== statusPage.hashedPassword!.length) {
+				return !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(token));
+			}
+
 			return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(statusPage.hashedPassword!));
 		},
 	});

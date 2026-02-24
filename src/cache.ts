@@ -378,7 +378,10 @@ class CacheManager {
 			return true;
 		}
 
-		if (providedPassword.length !== statusPage.hashedPassword!.length) return false;
+		if (providedPassword.length !== statusPage.hashedPassword!.length) {
+			return !crypto.timingSafeEqual(Buffer.from(providedPassword), Buffer.from(providedPassword));
+		}
+
 		return crypto.timingSafeEqual(Buffer.from(providedPassword), Buffer.from(statusPage.hashedPassword!));
 	}
 

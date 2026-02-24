@@ -28,7 +28,10 @@ export function adminBearerAuth() {
 			if (!config.adminAPI.enabled) return false;
 
 			const expected = config.adminAPI.token;
-			if (token.length !== expected.length) return false;
+
+			if (token.length !== expected.length) {
+				return !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(token));
+			}
 
 			return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
 		},

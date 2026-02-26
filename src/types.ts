@@ -1,5 +1,6 @@
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import type { IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
+import type { LokiConfig } from "@rabbit-company/web-middleware/logger";
 
 /**
  * Configuration options for the logger.
@@ -7,6 +8,8 @@ import type { IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extra
 export interface LoggerConfig {
 	/** Logging level (0 = ERROR, 1 = WARN, 2 = AUDIT, 3 = INFO, 4 = HTTP, 5 = DEBUG, 6 = VERBOSE, 7 = SILLY) */
 	level?: number;
+	/** Grafana Loki transport configuration */
+	loki?: LokiConfig;
 }
 
 /**

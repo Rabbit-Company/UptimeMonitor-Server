@@ -101,6 +101,44 @@ level = 4
 | 6     | VERBOSE |
 | 7     | SILLY   |
 
+#### Loki Transport (Grafana)
+
+Ship logs to a [Grafana Loki](https://grafana.com/oss/loki/) instance for centralized log aggregation:
+
+```toml
+[logger]
+level = 4
+
+[logger.loki]
+url = "http://loki:3100"
+
+# Optional tuning (shown with defaults)
+# batchSize = 50
+# batchTimeout = 5000
+# maxQueueSize = 10000
+
+[logger.loki.labels]
+app = "uptime-monitor"
+env = "production"
+
+[logger.loki.basicAuth]
+username = "loki-user"
+password = "loki-pass"
+
+```
+
+| Field          | Required | Default | Description                                                |
+| -------------- | -------- | ------- | ---------------------------------------------------------- |
+| `url`          | Yes      | -       | Loki push API base URL (`http://loki:3100`)                |
+| `tenantID`     | No       | -       | Required when multi-tenant is enabled in Loki              |
+| `labels`       | No       | `{}`    | Static labels attached to every log entry                  |
+| `basicAuth`    | No       | -       | Basic-auth credentials (`username` + `password`)           |
+| `batchSize`    | No       | `50`    | Number of log entries per batch                            |
+| `batchTimeout` | No       | `5000`  | Max milliseconds to wait before sending a partial batch    |
+| `maxQueueSize` | No       | `10000` | Max log entries held in memory while batches are in-flight |
+
+When `[logger.loki]` is omitted, logs are only written to the console (the default behavior).
+
 ## Monitors
 
 Define the services you want to track:

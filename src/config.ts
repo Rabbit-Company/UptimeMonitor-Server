@@ -16,7 +16,7 @@ import type {
 	AdminAPIConfig,
 } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
-import { Logger } from "./logger";
+import { configureLoki, Logger } from "./logger";
 import { type IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
 
 export const defaultReloadToken = generateSecureToken();
@@ -72,6 +72,86 @@ function validateLoggerConfig(config: unknown): LoggerConfig {
 			errors.push("logger.level must be a valid number (0-7)");
 		} else {
 			result.level = cfg.level;
+		}
+	}
+
+	// Validate Loki transport config
+	if (cfg.loki !== undefined) {
+		if (!isObject(cfg.loki)) {
+			errors.push("logger.loki must be an object");
+		} else {
+			const loki = cfg.loki as Record<string, unknown>;
+
+			if (!isString(loki.url) || loki.url.trim().length === 0) {
+				errors.push("logger.loki.url is required and must be a non-empty string");
+			}
+
+			if (loki.tenantID !== undefined) {
+				if (!isString(loki.tenantID) || loki.tenantID.trim().length === 0) {
+					errors.push("logger.loki.tenantID must be a non-empty string when provided");
+				}
+			}
+
+			if (loki.labels !== undefined) {
+				if (!isObject(loki.labels)) {
+					errors.push("logger.loki.labels must be an object of string key-value pairs");
+				} else {
+					for (const [key, value] of Object.entries(loki.labels)) {
+						if (!isString(value)) {
+							errors.push(`logger.loki.labels.${key} must be a string`);
+						}
+					}
+				}
+			}
+
+			if (loki.basicAuth !== undefined) {
+				if (!isObject(loki.basicAuth)) {
+					errors.push("logger.loki.basicAuth must be an object with username and password");
+				} else {
+					const auth = loki.basicAuth as Record<string, unknown>;
+					if (!isString(auth.username) || auth.username.trim().length === 0) {
+						errors.push("logger.loki.basicAuth.username is required");
+					}
+					if (!isString(auth.password) || auth.password.trim().length === 0) {
+						errors.push("logger.loki.basicAuth.password is required");
+					}
+				}
+			}
+
+			if (loki.batchSize !== undefined) {
+				if (!isNumber(loki.batchSize) || loki.batchSize < 1) {
+					errors.push("logger.loki.batchSize must be a positive number");
+				}
+			}
+
+			if (loki.batchTimeout !== undefined) {
+				if (!isNumber(loki.batchTimeout) || loki.batchTimeout < 100) {
+					errors.push("logger.loki.batchTimeout must be a number >= 100 (ms)");
+				}
+			}
+
+			if (loki.maxQueueSize !== undefined) {
+				if (!isNumber(loki.maxQueueSize) || loki.maxQueueSize < 1) {
+					errors.push("logger.loki.maxQueueSize must be a positive number");
+				}
+			}
+
+			if (errors.length === 0) {
+				result.loki = {
+					url: loki.url as string,
+					tenantID: loki.tenantID as string | undefined,
+					labels: loki.labels as Record<string, string> | undefined,
+					basicAuth: loki.basicAuth
+						? {
+								username: (loki.basicAuth as Record<string, unknown>).username as string,
+								password: (loki.basicAuth as Record<string, unknown>).password as string,
+							}
+						: undefined,
+					batchSize: loki.batchSize as number | undefined,
+					batchTimeout: loki.batchTimeout as number | undefined,
+					maxQueueSize: loki.maxQueueSize as number | undefined,
+				};
+			}
 		}
 	}
 
@@ -1990,6 +2070,7 @@ function loadConfig(exitOnError: boolean = true): Config {
 		validateNotificationChannelProviders(config);
 
 		Logger.setLevel(logger.level || 4);
+		configureLoki(logger.loki);
 
 		Logger.info(`Configuration loaded successfully from ${configPath}`, {
 			monitors: config.monitors.length,

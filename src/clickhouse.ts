@@ -110,28 +110,24 @@ export async function storePulse(
 	synthetic: boolean = false,
 	customMetrics: CustomMetrics = { custom1: null, custom2: null, custom3: null },
 ): Promise<void> {
-	try {
-		await clickhouse.insert({
-			table: "pulses",
-			values: [
-				{
-					monitor_id: monitorId,
-					latency,
-					timestamp: timestamp.toISOString(),
-					synthetic,
-					custom1: customMetrics.custom1,
-					custom2: customMetrics.custom2,
-					custom3: customMetrics.custom3,
-				},
-			],
-			format: "JSONEachRow",
-			clickhouse_settings: {
-				date_time_input_format: "best_effort",
+	await clickhouse.insert({
+		table: "pulses",
+		values: [
+			{
+				monitor_id: monitorId,
+				latency,
+				timestamp: timestamp.toISOString(),
+				synthetic,
+				custom1: customMetrics.custom1,
+				custom2: customMetrics.custom2,
+				custom3: customMetrics.custom3,
 			},
-		});
-	} catch (err: any) {
-		Logger.error("Storing pulse failed", { monitorId, "error.message": err?.message });
-	}
+		],
+		format: "JSONEachRow",
+		clickhouse_settings: {
+			date_time_input_format: "best_effort",
+		},
+	});
 
 	if (synthetic) return;
 

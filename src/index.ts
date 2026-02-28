@@ -68,7 +68,7 @@ app.get("/v1/reload/:token", async (ctx) => {
 		cache.reload();
 		missingPulseDetector.updateNotificationConfig(newConfig.notifications || { channels: {} });
 		groupStateTracker.updateNotificationConfig();
-		await Promise.all(cache.getAllMonitors().map((m) => updateMonitorStatus(m.id)));
+		cache.getAllMonitors().map((m) => updateMonitorStatus(m.id));
 		notifyAllPulseMonitorClients(server);
 
 		Logger.info("Configuration reloaded successfully via API", {
@@ -258,9 +258,15 @@ app.websocket({
 				return;
 			}
 
-			await storePulse(monitor.id, latency, startTime, false, customMetrics);
+			try {
+				await storePulse(monitor.id, latency, startTime, false, customMetrics);
+			} catch (err: any) {
+				Logger.error("Storing pulse failed", { monitorId: monitor.id, "error.message": err?.message });
+				ws.send(JSON.stringify({ action: "error", message: "Failed to store pulse", timestamp: new Date().toISOString() }));
+				return;
+			}
 
-			ws.send(JSON.stringify({ action: "pushed", monitorId: monitor.id, timestamp: new Date().toISOString() }));
+			ws.send(JSON.stringify({ action: "pushed", pulseId: data?.pulseId ?? null, monitorId: monitor.id, timestamp: new Date().toISOString() }));
 			return;
 		}
 

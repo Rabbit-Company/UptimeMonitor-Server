@@ -76,11 +76,12 @@ curl "http://localhost:3000/v1/push/my-token?startTime=2025-01-15T10:00:00Z&endT
 **Error Responses:**
 
 ```json
-{ "error": "Invalid token" }           // 401
-{ "error": "Invalid latency" }         // 400
+{ "error": "Invalid token" } // 401
+{ "error": "Invalid latency" } // 400
 { "error": "Invalid startTime format" } // 400
 { "error": "Timestamp too far in the future" } // 400
-{ "error": "Timestamp too far in the past" }   // 400
+{ "error": "Timestamp too far in the past" } // 400
+{ "error": "Failed to store pulse" } // 503
 ```
 
 ---
@@ -632,6 +633,7 @@ On connect, you receive:
 ```json
 {
 	"action": "push",
+	"pulseId": "db44ae6d-168b-41fb-812e-20aa918369eb",
 	"token": "my-token",
 	"latency": 125,
 	"players": 30
@@ -643,6 +645,7 @@ On connect, you receive:
 ```json
 {
 	"action": "pushed",
+	"pulseId": "db44ae6d-168b-41fb-812e-20aa918369eb",
 	"monitorId": "game-server",
 	"timestamp": "2025-01-15T10:30:00.000Z"
 }

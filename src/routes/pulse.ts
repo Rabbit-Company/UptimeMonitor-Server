@@ -3,6 +3,7 @@ import { cache } from "../cache";
 import type { Monitor, CustomMetrics } from "../types";
 import { storePulse } from "../clickhouse";
 import { Algorithm, rateLimit } from "@rabbit-company/web-middleware/rate-limit";
+import { Logger } from "../logger";
 
 export function registerPulseRoutes(app: Web): void {
 	app.get(
@@ -105,7 +106,12 @@ export function registerPulseRoutes(app: Web): void {
 			if (endTime.getTime() > now.getTime() + 60000) return ctx.json({ error: "Timestamp too far in the future" }, 400);
 			if (startTime.getTime() < now.getTime() - 600000) return ctx.json({ error: "Timestamp too far in the past" }, 400);
 
-			await storePulse(monitor.id, latency, startTime, false, customMetrics);
+			try {
+				await storePulse(monitor.id, latency, startTime, false, customMetrics);
+			} catch (err: any) {
+				Logger.error("Storing pulse failed", { monitorId: monitor.id, "error.message": err?.message });
+				return ctx.json({ error: "Failed to store pulse" }, 503);
+			}
 
 			return ctx.json({ success: true, monitorId: monitor.id });
 		},

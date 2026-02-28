@@ -201,6 +201,15 @@ export const openapi = {
 					"429": {
 						description: "Rate limit exceeded (60 requests per token, refills 12/sec)",
 					},
+					"503": {
+						description: "Failed to store pulse",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/Error" },
+								example: { error: "Failed to store pulse" },
+							},
+						},
+					},
 				},
 			},
 		},

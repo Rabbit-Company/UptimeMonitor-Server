@@ -3,7 +3,7 @@ import { Logger } from "./logger";
 import { config, reloadConfig } from "./config";
 import { cache } from "./cache";
 import type { StatusPage, CustomMetrics, Monitor } from "./types";
-import { initClickHouse, storePulse, updateMonitorStatus } from "./clickhouse";
+import { initClickHouse, storePulse } from "./clickhouse";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { aggregationJob } from "./aggregation";
 import { logger } from "@rabbit-company/web-middleware/logger";
@@ -17,6 +17,8 @@ import { groupStateTracker } from "./group-state-tracker";
 import { openapi } from "./openapi";
 import { registerAdminAPI } from "./admin";
 import { registerPublicRoutes } from "./routes";
+import { statusUpdater } from "./status-updater";
+import { pulseBuffer } from "./pulse-buffer";
 
 await initClickHouse();
 
@@ -68,7 +70,7 @@ app.get("/v1/reload/:token", async (ctx) => {
 		cache.reload();
 		missingPulseDetector.updateNotificationConfig(newConfig.notifications || { channels: {} });
 		groupStateTracker.updateNotificationConfig();
-		cache.getAllMonitors().map((m) => updateMonitorStatus(m.id));
+		statusUpdater.enqueueAll();
 		notifyAllPulseMonitorClients(server);
 
 		Logger.info("Configuration reloaded successfully via API", {
@@ -397,8 +399,19 @@ process.on("SIGINT", () => {
 	process.exit(0);
 });
 
-selfMonitor.start().catch((err) => Logger.error("SelfMonitor error", err));
-aggregationJob.start().catch((err) => Logger.error("AggregationJob error", err));
+pulseBuffer.start();
 
-await Promise.all(cache.getAllMonitors().map((monitor) => updateMonitorStatus(monitor.id)));
+try {
+	await selfMonitor.start();
+} catch (err) {
+	Logger.error("SelfMonitor startup error", {
+		error: err instanceof Error ? err.message : "Unknown error",
+	});
+}
+
+statusUpdater.enqueueAll();
+await statusUpdater.flush();
+
 missingPulseDetector.start();
+
+aggregationJob.start().catch((err) => Logger.error("AggregationJob error", err));

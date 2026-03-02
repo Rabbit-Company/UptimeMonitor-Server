@@ -8,11 +8,17 @@ import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
 import { server } from ".";
 import { groupStateTracker } from "./group-state-tracker";
 import { initIncidentTables } from "./incidents";
+import { statusUpdater } from "./status-updater";
+import { pulseBuffer } from "./pulse-buffer";
 
-export const updateQueue = new Set<string>();
-export const BATCH_INTERVAL = 5000; // 5 seconds
-
-export const clickhouse = createClient(config.clickhouse);
+export const clickhouse = createClient({
+	...config.clickhouse,
+	request_timeout: 30_000,
+	max_open_connections: 50,
+	clickhouse_settings: {
+		max_execution_time: 25,
+	},
+});
 
 export async function initClickHouse(): Promise<void> {
 	try {
@@ -96,13 +102,6 @@ export async function initClickHouse(): Promise<void> {
 	}
 }
 
-// Batch update interval
-setInterval(async () => {
-	const monitors = [...updateQueue];
-	updateQueue.clear();
-	await Promise.all(monitors.map(updateMonitorStatus));
-}, BATCH_INTERVAL);
-
 export async function storePulse(
 	monitorId: string,
 	latency: number | null,
@@ -110,30 +109,21 @@ export async function storePulse(
 	synthetic: boolean = false,
 	customMetrics: CustomMetrics = { custom1: null, custom2: null, custom3: null },
 ): Promise<void> {
-	await clickhouse.insert({
-		table: "pulses",
-		values: [
-			{
-				monitor_id: monitorId,
-				latency,
-				timestamp: timestamp.toISOString(),
-				synthetic,
-				custom1: customMetrics.custom1,
-				custom2: customMetrics.custom2,
-				custom3: customMetrics.custom3,
-			},
-		],
-		format: "JSONEachRow",
-		clickhouse_settings: {
-			date_time_input_format: "best_effort",
-		},
+	pulseBuffer.add({
+		monitor_id: monitorId,
+		latency,
+		timestamp: timestamp.toISOString(),
+		synthetic,
+		custom1: customMetrics.custom1,
+		custom2: customMetrics.custom2,
+		custom3: customMetrics.custom3,
 	});
 
 	if (synthetic) return;
 
 	missingPulseDetector.recordPulse(monitorId, timestamp);
 
-	updateQueue.add(monitorId);
+	statusUpdater.enqueue(monitorId);
 	missingPulseDetector.resetMonitor(monitorId);
 
 	const slugs = cache.getStatusPageSlugsByMonitor(monitorId);
@@ -531,15 +521,9 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 				uptime365d: 0,
 			};
 
-			if (monitor.custom1) {
-				statusData.custom1 = { config: monitor.custom1, value: undefined };
-			}
-			if (monitor.custom2) {
-				statusData.custom2 = { config: monitor.custom2, value: undefined };
-			}
-			if (monitor.custom3) {
-				statusData.custom3 = { config: monitor.custom3, value: undefined };
-			}
+			if (monitor.custom1) statusData.custom1 = { config: monitor.custom1, value: undefined };
+			if (monitor.custom2) statusData.custom2 = { config: monitor.custom2, value: undefined };
+			if (monitor.custom3) statusData.custom3 = { config: monitor.custom3, value: undefined };
 
 			cache.setStatus(monitorId, statusData);
 
@@ -570,15 +554,9 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			...uptimes,
 		};
 
-		if (monitor.custom1) {
-			statusData.custom1 = { config: monitor.custom1, value: latestData[0]!.custom1 ?? undefined };
-		}
-		if (monitor.custom2) {
-			statusData.custom2 = { config: monitor.custom2, value: latestData[0]!.custom2 ?? undefined };
-		}
-		if (monitor.custom3) {
-			statusData.custom3 = { config: monitor.custom3, value: latestData[0]!.custom3 ?? undefined };
-		}
+		if (monitor.custom1) statusData.custom1 = { config: monitor.custom1, value: latestData[0]!.custom1 ?? undefined };
+		if (monitor.custom2) statusData.custom2 = { config: monitor.custom2, value: latestData[0]!.custom2 ?? undefined };
+		if (monitor.custom3) statusData.custom3 = { config: monitor.custom3, value: latestData[0]!.custom3 ?? undefined };
 
 		cache.setStatus(monitorId, statusData);
 

@@ -1,9 +1,9 @@
 import { server } from ".";
 import { cache } from "./cache";
-import { updateMonitorStatus } from "./clickhouse";
 import { config } from "./config";
 import { Logger } from "./logger";
 import { NotificationManager } from "./notifications";
+import { statusUpdater } from "./status-updater";
 import { GRACE_PERIOD, isInGracePeriod, STARTUP_TIME } from "./times";
 import type { DowntimeInfo, MissingPulseDetectorOptions, Monitor, MonitorState, NotificationsConfig } from "./types";
 
@@ -158,7 +158,7 @@ export class MissingPulseDetector {
 
 		// Only log after grace period + one full interval
 		if (timeSinceStartup > GRACE_PERIOD + maxAllowedInterval) {
-			Logger.warn("Monitor has never received a pulse", {
+			Logger.debug("Monitor has never received a pulse", {
 				monitorId: monitor.id,
 				monitorName: monitor.name,
 				timeSinceStartup: Math.round(timeSinceStartup / 1000) + "s",
@@ -223,7 +223,7 @@ export class MissingPulseDetector {
 				this.initializeDowntime(monitor, now);
 			}
 
-			await updateMonitorStatus(monitor.id);
+			statusUpdater.enqueue(monitor.id);
 
 			if (this.shouldSendNotification(monitor, mState)) {
 				const downtimeInfo = this.getDowntimeInfo(monitor.id, now);

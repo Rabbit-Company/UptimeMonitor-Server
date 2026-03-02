@@ -24,7 +24,7 @@ export function configureLoki(lokiConfig?: LokiConfig): void {
 		tenantID: lokiConfig.tenantID,
 		labels: lokiConfig.labels ?? {},
 		basicAuth: lokiConfig.basicAuth,
-		batchSize: lokiConfig.batchSize ?? 50,
+		batchSize: lokiConfig.batchSize ?? 1000,
 		batchTimeout: lokiConfig.batchTimeout ?? 5000,
 		maxQueueSize: lokiConfig.maxQueueSize ?? 10000,
 	});

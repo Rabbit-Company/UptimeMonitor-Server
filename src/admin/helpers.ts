@@ -3,11 +3,11 @@ import { cache } from "../cache";
 import { Logger } from "../logger";
 import { missingPulseDetector } from "../missing-pulse-detector";
 import { groupStateTracker } from "../group-state-tracker";
-import { updateMonitorStatus } from "../clickhouse";
 import { notifyAllPulseMonitorClients } from "../pulsemonitor";
 import type { Server } from "@rabbit-company/web";
 import TOML from "smol-toml";
 import { bearerAuth } from "@rabbit-company/web-middleware/bearer-auth";
+import { statusUpdater } from "../status-updater";
 
 export function getConfigPath(): string {
 	return process.env["CONFIG"] || "./config.toml";
@@ -66,7 +66,7 @@ export async function writeAndReload(raw: Record<string, unknown>, getServer: ()
 		cache.reload();
 		missingPulseDetector.updateNotificationConfig(newConfig.notifications || { channels: {} });
 		groupStateTracker.updateNotificationConfig();
-		await Promise.all(cache.getAllMonitors().map((m) => updateMonitorStatus(m.id)));
+		statusUpdater.enqueueAll();
 		notifyAllPulseMonitorClients(getServer());
 	} catch (err) {
 		// Restore backup and re-reload

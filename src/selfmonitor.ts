@@ -361,7 +361,7 @@ export class SelfMonitor {
 							totalSyntheticPulses += syntheticPulses.length;
 							processedMonitors++;
 
-							Logger.info("Backfilled synthetic pulses for monitor", {
+							Logger.debug("Backfilled synthetic pulses for monitor", {
 								monitorId: monitor.id,
 								monitorName: monitor.name,
 								pulseCount: syntheticPulses.length,

@@ -358,6 +358,13 @@ class CacheManager {
 		this.statusCache.set(id, status);
 	}
 
+	setMonitorDown(monitorId: string): void {
+		const status = this.statusCache.get(monitorId);
+		if (status) {
+			status.status = "down";
+		}
+	}
+
 	isStatusPageProtected(slug: string): boolean {
 		const statusPage = this.statusPagesBySlug.get(slug);
 		return statusPage?.password !== undefined && statusPage.password.length > 0;

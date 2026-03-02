@@ -95,9 +95,9 @@ export class SelfMonitor {
 			const totalDuration = Date.now() - checkStartTime;
 			if (totalDuration > this.config.interval * 500) {
 				Logger.warn("Self-monitor health check took significant time", {
-					totalDuration: totalDuration + "ms",
-					queryLatency: latency + "ms",
-					overhead: totalDuration - latency + "ms",
+					duration_ms: totalDuration,
+					queryLatency_ms: latency,
+					overhead_ms: totalDuration - latency,
 				});
 			}
 		} catch (error) {
@@ -361,7 +361,7 @@ export class SelfMonitor {
 							totalSyntheticPulses += syntheticPulses.length;
 							processedMonitors++;
 
-							Logger.debug("Backfilled synthetic pulses for monitor", {
+							Logger.verbose("Backfilled synthetic pulses for monitor", {
 								monitorId: monitor.id,
 								monitorName: monitor.name,
 								pulseCount: syntheticPulses.length,
@@ -377,7 +377,7 @@ export class SelfMonitor {
 							});
 						}
 					} else {
-						Logger.debug("Skipping backfill - no pulse found in check window", {
+						Logger.verbose("Skipping backfill - no pulse found in check window", {
 							monitorId: monitor.id,
 							monitorName: monitor.name,
 							checkWindowSeconds: checkWindowMs / 1000,

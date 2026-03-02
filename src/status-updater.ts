@@ -65,7 +65,7 @@ class StatusUpdater {
 						Logger.info("Bulk monitor status update complete", {
 							completed: this.completed,
 							failed: this.failed,
-							duration: Date.now() - this.batchStartTime + "ms",
+							duration_ms: Date.now() - this.batchStartTime,
 						});
 						this.batchStartTime = undefined;
 					}
@@ -104,16 +104,16 @@ class StatusUpdater {
 			const duration = Date.now() - start;
 			this.completed++;
 
-			Logger.debug("Monitor status updated", {
+			Logger.verbose("Monitor status updated", {
 				monitorId,
-				duration: duration + "ms",
+				duration_ms: duration,
 				attempt,
 			});
 
 			if (duration > 1000) {
 				Logger.warn("Slow monitor status update", {
 					monitorId,
-					duration: duration + "ms",
+					duration_ms: duration,
 				});
 			}
 		} catch (err) {

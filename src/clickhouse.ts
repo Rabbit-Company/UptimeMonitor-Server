@@ -8,8 +8,9 @@ import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
 import { server } from ".";
 import { groupStateTracker } from "./group-state-tracker";
 import { initIncidentTables } from "./incidents";
-import { statusUpdater } from "./status-updater";
 import { pulseBuffer } from "./pulse-buffer";
+import { uptimeUpdater } from "./uptime-updater";
+import { propagateGroupStatus } from "./group-updater";
 
 export const clickhouse = createClient({
 	...config.clickhouse,
@@ -122,9 +123,32 @@ export async function storePulse(
 	if (synthetic) return;
 
 	missingPulseDetector.recordPulse(monitorId, timestamp);
-
-	statusUpdater.enqueue(monitorId);
 	missingPulseDetector.resetMonitor(monitorId);
+
+	const monitor = cache.getMonitor(monitorId);
+	if (monitor) {
+		const prevStatus = cache.getStatus(monitorId);
+		const uptimes = uptimeUpdater.getUptimes(monitorId);
+
+		const statusData: StatusData = {
+			id: monitorId,
+			type: "monitor",
+			name: monitor.name,
+			status: "up",
+			latency: latency ?? 0,
+			firstPulse: prevStatus?.firstPulse,
+			lastCheck: timestamp,
+			...uptimes,
+		};
+
+		if (monitor.custom1) statusData.custom1 = { config: monitor.custom1, value: customMetrics.custom1 ?? undefined };
+		if (monitor.custom2) statusData.custom2 = { config: monitor.custom2, value: customMetrics.custom2 ?? undefined };
+		if (monitor.custom3) statusData.custom3 = { config: monitor.custom3, value: customMetrics.custom3 ?? undefined };
+
+		cache.setStatus(monitorId, statusData);
+
+		propagateGroupStatus(monitorId);
+	}
 
 	const slugs = cache.getStatusPageSlugsByMonitor(monitorId);
 
@@ -527,12 +551,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 
 			cache.setStatus(monitorId, statusData);
 
-			const parentIds = cache.getParentIds(monitorId);
-			for (const parentId of parentIds) {
-				if (cache.hasGroup(parentId)) {
-					await updateGroupStatus(parentId);
-				}
-			}
+			propagateGroupStatus(monitorId);
 			return;
 		}
 
@@ -540,8 +559,7 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 		const timeSinceLastCheck = now - lastCheckTime;
 		const status: "up" | "down" = timeSinceLastCheck <= maxAllowedInterval ? "up" : "down";
 
-		// Calculate uptimes
-		const uptimes = await calculateUptimes(monitorId, monitor.interval, firstPulse);
+		const uptimes = uptimeUpdater.getUptimes(monitorId);
 
 		const statusData: StatusData = {
 			id: monitorId,
@@ -560,114 +578,9 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 
 		cache.setStatus(monitorId, statusData);
 
-		const parentIds = cache.getParentIds(monitorId);
-		for (const parentId of parentIds) {
-			if (cache.hasGroup(parentId)) {
-				await updateGroupStatus(parentId);
-			}
-		}
+		propagateGroupStatus(monitorId);
 	} catch (err: any) {
 		Logger.error("updateMonitorStatus failed", { monitorId, "error.message": err?.message });
-	}
-}
-
-async function calculateUptimes(
-	monitorId: string,
-	interval: number,
-	firstPulse: Date | undefined,
-): Promise<{ uptime1h: number; uptime24h: number; uptime7d: number; uptime30d: number; uptime90d: number; uptime365d: number }> {
-	const pulseDate = firstPulse ? formatDateTimeISOCompact(firstPulse) : "2001-10-15 00:00:00";
-
-	// For short periods (1h, 24h), use pulses table directly
-	const shortPeriodQuery = (period: string) => `
-		WITH
-			time_range AS (
-				SELECT
-					GREATEST(toDateTime('${pulseDate}'), now() - INTERVAL ${period}) AS start_time,
-					now() AS end_time
-			),
-			expected AS (
-				SELECT floor((toUnixTimestamp(end_time) - toUnixTimestamp(start_time)) / ${interval}) AS cnt FROM time_range
-			),
-			actual AS (
-				SELECT COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) AS cnt
-				FROM pulses, time_range
-				WHERE monitor_id = {monitorId:String} AND timestamp >= start_time AND timestamp < end_time
-			)
-		SELECT CASE WHEN (SELECT cnt FROM expected) = 0 THEN 100 ELSE LEAST(100, (SELECT cnt FROM actual) * 100.0 / (SELECT cnt FROM expected)) END AS uptime
-	`;
-
-	// For longer periods: get historical daily data only (excludes today)
-	// We'll combine this with the 24h uptime in JavaScript
-	const historicalDailyQuery = (days: number) => `
-		WITH
-			period_start AS (
-				SELECT GREATEST(toDate('${pulseDate}'), toDate(now() - INTERVAL ${days} DAY)) AS start_date
-			),
-			today AS (
-				SELECT toDate(now()) AS current_date
-			)
-		SELECT
-			SUM(uptime) AS total_uptime,
-			COUNT(*) AS days_with_data,
-			(SELECT current_date FROM today) - (SELECT start_date FROM period_start) AS historical_days
-		FROM pulses_daily
-		WHERE monitor_id = {monitorId:String}
-			AND timestamp >= (SELECT start_date FROM period_start)
-			AND timestamp < (SELECT current_date FROM today)
-	`;
-
-	try {
-		const [u1h, u24h, h7d, h30d, h90d, h365d] = await Promise.all([
-			clickhouse.query({ query: shortPeriodQuery("1 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: shortPeriodQuery("24 HOUR"), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: historicalDailyQuery(7), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: historicalDailyQuery(30), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: historicalDailyQuery(90), query_params: { monitorId }, format: "JSONEachRow" }),
-			clickhouse.query({ query: historicalDailyQuery(365), query_params: { monitorId }, format: "JSONEachRow" }),
-		]);
-
-		const parseShort = async (r: any) => ((await r.json()) as { uptime: number }[])[0]?.uptime ?? 0;
-		const parseHistorical = async (r: any) => {
-			const data = (await r.json()) as { total_uptime: number | null; days_with_data: number; historical_days: number }[];
-			return data[0] ?? { total_uptime: null, days_with_data: 0, historical_days: 0 };
-		};
-
-		const uptime1h = await parseShort(u1h);
-		const uptime24h = await parseShort(u24h);
-
-		const hist7d = await parseHistorical(h7d);
-		const hist30d = await parseHistorical(h30d);
-		const hist90d = await parseHistorical(h90d);
-		const hist365d = await parseHistorical(h365d);
-
-		const combineWithToday = (hist: { total_uptime: number | null; days_with_data: number; historical_days: number }): number => {
-			// If no historical data and no today data expected, return 100%
-			if (hist.historical_days <= 0 && hist.days_with_data === 0) {
-				return uptime24h;
-			}
-
-			// Only average over days that have data + today
-			const daysToAverage = hist.days_with_data + 1; // +1 for today
-
-			if (hist.total_uptime === null || hist.days_with_data === 0) {
-				return uptime24h;
-			}
-
-			return (hist.total_uptime + uptime24h) / daysToAverage;
-		};
-
-		return {
-			uptime1h,
-			uptime24h,
-			uptime7d: combineWithToday(hist7d),
-			uptime30d: combineWithToday(hist30d),
-			uptime90d: combineWithToday(hist90d),
-			uptime365d: combineWithToday(hist365d),
-		};
-	} catch (err: any) {
-		Logger.error("calculateUptimes failed", { monitorId, "error.message": err?.message });
-		return { uptime1h: 0, uptime24h: 0, uptime7d: 0, uptime30d: 0, uptime90d: 0, uptime365d: 0 };
 	}
 }
 

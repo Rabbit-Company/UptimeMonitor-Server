@@ -19,6 +19,7 @@ import { registerAdminAPI } from "./admin";
 import { registerPublicRoutes } from "./routes";
 import { statusUpdater } from "./status-updater";
 import { pulseBuffer } from "./pulse-buffer";
+import { uptimeUpdater } from "./uptime-updater";
 
 await initClickHouse();
 
@@ -408,6 +409,8 @@ try {
 		error: err instanceof Error ? err.message : "Unknown error",
 	});
 }
+
+uptimeUpdater.start();
 
 statusUpdater.enqueueAll();
 await statusUpdater.flush();

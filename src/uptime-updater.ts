@@ -377,28 +377,23 @@ class UptimeUpdater {
 	 */
 	private async bulkPulseCounts(monitorIds: string[], interval: number, period: string, abortSignal: AbortSignal): Promise<Map<string, number>> {
 		const query = `
-			WITH
-				expected AS (
-					SELECT floor(
-						(toUnixTimestamp(now()) - toUnixTimestamp(now() - INTERVAL ${period}))
-						/ ${interval}
-					) AS cnt
-				)
 			SELECT
 				monitor_id,
 				CASE
-					WHEN (SELECT cnt FROM expected) = 0 THEN 100
-					ELSE LEAST(100,
-						COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND))
-						* 100.0
-						/ (SELECT cnt FROM expected)
-					)
+					WHEN cnt = 0 THEN 100
+					ELSE LEAST(100, COUNT(DISTINCT toStartOfInterval(timestamp, INTERVAL ${interval} SECOND)) * 100.0 / cnt)
 				END AS uptime
 			FROM pulses
+			CROSS JOIN (
+				SELECT toUInt64(
+				(toUnixTimestamp(toStartOfInterval(now(), INTERVAL ${interval} SECOND)) - toUnixTimestamp(toStartOfInterval(now(), INTERVAL ${interval} SECOND) - INTERVAL ${period})) / ${interval}) AS cnt,
+				toStartOfInterval(now(), INTERVAL ${interval} SECOND) - INTERVAL ${period} AS window_start,
+				toStartOfInterval(now(), INTERVAL ${interval} SECOND) AS window_end
+			) AS bounds
 			WHERE monitor_id IN ({monitorIds:Array(String)})
-				AND timestamp >= now() - INTERVAL ${period}
-				AND timestamp < now()
-			GROUP BY monitor_id
+				AND timestamp >= bounds.window_start
+				AND timestamp < bounds.window_end
+			GROUP BY monitor_id, cnt
 		`;
 
 		const result = await queryWithTimeout(query, { monitorIds }, abortSignal);

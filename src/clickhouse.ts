@@ -1,4 +1,4 @@
-import { createClient } from "@clickhouse/client";
+import { ClickHouseLogLevel, createClient } from "@clickhouse/client";
 import { config } from "./config";
 import { Logger } from "./logger";
 import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics, GroupHistoryRecord, Group } from "./types";
@@ -18,6 +18,9 @@ export const clickhouse = createClient({
 	max_open_connections: 50,
 	clickhouse_settings: {
 		max_execution_time: 25,
+	},
+	log: {
+		level: ClickHouseLogLevel.OFF,
 	},
 });
 

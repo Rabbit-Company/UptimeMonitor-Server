@@ -6,8 +6,8 @@
       "name": "uptimemonitor-server",
       "dependencies": {
         "@clickhouse/client": "^1.18.1",
-        "@rabbit-company/web": "^0.18.1",
-        "@rabbit-company/web-middleware": "^0.18.1",
+        "@rabbit-company/web": "^0.18.2",
+        "@rabbit-company/web-middleware": "^0.18.2",
         "nodemailer": "^8.0.1",
         "smol-toml": "^1.6.0",
       },
@@ -25,13 +25,13 @@
 
     "@clickhouse/client-common": ["@clickhouse/client-common@1.18.1", "", {}, "sha512-kDk8miGZVDAzqFrBZRmD9rD82Li8gwaGlJ5MNUpWgxx1OUXRBUkcV6ULysWP1C9Jinb3yle3YLz/XbNOPVgVtQ=="],
 
-    "@rabbit-company/logger": ["@rabbit-company/logger@5.6.0", "", { "peerDependencies": { "typescript": "^5.8.3" } }, "sha512-lVfA2aq+iMUPI7g771LOqfinDy2IU5gY9m/X4OWO1q5ohwKi4fnj2q4sBWVe0NuF3+xUEVTYjYHWTHYYqOzHEw=="],
+    "@rabbit-company/logger": ["@rabbit-company/logger@5.6.1", "", { "peerDependencies": { "typescript": "^5.9.3" } }, "sha512-U/OvLzzkHgTUupgeMsnBHjJVbFfVIt4Nj643rraq/mKpIEmGUVsUGJi1Gin2Tw95vJ8pB/kNYVxtZi9FKO+mIw=="],
 
     "@rabbit-company/rate-limiter": ["@rabbit-company/rate-limiter@3.0.1", "", { "peerDependencies": { "typescript": "^5.8.3" } }, "sha512-Wj32TPksbohww7fMbERjjSAApA9fdsneRtIpfQmY/W/BfGA9BbO08wKA1tezoVHuYEMUCwjUjaRZxjEYGMxTOw=="],
 
-    "@rabbit-company/web": ["@rabbit-company/web@0.18.1", "", {}, "sha512-nOtqxFBelob5ldZhHtkjMYKPN9TJHOKcy/S/4OHou9Cfetja2fBRWeifvk0y7aDEQB2t64C2iCJioQc0xxEDMQ=="],
+    "@rabbit-company/web": ["@rabbit-company/web@0.18.2", "", {}, "sha512-8BIEIS7hsH67Z1D/r/11o50tNuyNlMOvEtCyeVFWHbWRAFMbXtQEWHrfoQHejUnrXxzBnFuDhd9/9iQ5q++sNA=="],
 
-    "@rabbit-company/web-middleware": ["@rabbit-company/web-middleware@0.18.1", "", { "dependencies": { "@rabbit-company/logger": "^5.6.0", "@rabbit-company/rate-limiter": "^3.0.1" }, "peerDependencies": { "@rabbit-company/web": "^0.18.1" } }, "sha512-DMXH0PDI45/kEkxzTHqd6a9wMwWrqmlnIVBwqwX0VYFuqnsDU5tw7mSxmKPv15rd3vPVd/dM42sRU0xUoYbM5w=="],
+    "@rabbit-company/web-middleware": ["@rabbit-company/web-middleware@0.18.2", "", { "dependencies": { "@rabbit-company/logger": "^5.6.1", "@rabbit-company/rate-limiter": "^3.0.1" }, "peerDependencies": { "@rabbit-company/web": "^0.18.2" } }, "sha512-byp5hH3Ab1GiicCCYof4hoN5IAoBEoEV6wa0OA/Jvr0Ep4C6e2let/4oMz0ARpLEFkJ3oPmAmXooLtwf8bXrJw=="],
 
     "@types/bun": ["@types/bun@1.3.10", "", { "dependencies": { "bun-types": "1.3.10" } }, "sha512-0+rlrUrOrTSskibryHbvQkDOWRJwJZqZlxrUs1u4oOoTln8+WIXBPmAuCF35SWB2z4Zl3E84Nl/D0P7803nigQ=="],
 

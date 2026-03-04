@@ -1,7 +1,7 @@
 {
 	"name": "uptimemonitor-server",
 	"module": "src/index.ts",
-	"version": "0.5.1",
+	"version": "0.5.2",
 	"type": "module",
 	"private": true,
 	"scripts": {
@@ -16,8 +16,8 @@
 	},
 	"dependencies": {
 		"@clickhouse/client": "^1.18.1",
-		"@rabbit-company/web": "^0.18.1",
-		"@rabbit-company/web-middleware": "^0.18.1",
+		"@rabbit-company/web": "^0.18.2",
+		"@rabbit-company/web-middleware": "^0.18.2",
 		"nodemailer": "^8.0.1",
 		"smol-toml": "^1.6.0"
 	}

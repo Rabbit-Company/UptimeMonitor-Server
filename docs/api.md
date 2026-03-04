@@ -705,6 +705,25 @@ When subscribed, you receive events:
 }
 ```
 
+**Uptime changed:**
+
+```json
+{
+	"action": "uptime-update",
+	"data": {
+		"slug": "status",
+		"monitorId": "api-prod",
+		"uptime1h": 99.5,
+		"uptime24h": 98.2,
+		"uptime7d": 99.1,
+		"uptime30d": 99.8,
+		"uptime90d": 99.9,
+		"uptime365d": 99.95
+	},
+	"timestamp": "2025-01-15T10:30:00.000Z"
+}
+```
+
 **Monitor Down:**
 
 ```json

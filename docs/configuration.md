@@ -113,7 +113,7 @@ level = 4
 url = "http://loki:3100"
 
 # Optional tuning (shown with defaults)
-# batchSize = 50
+# batchSize = 1000
 # batchTimeout = 5000
 # maxQueueSize = 10000
 
@@ -133,7 +133,7 @@ password = "loki-pass"
 | `tenantID`     | No       | -       | Required when multi-tenant is enabled in Loki              |
 | `labels`       | No       | `{}`    | Static labels attached to every log entry                  |
 | `basicAuth`    | No       | -       | Basic-auth credentials (`username` + `password`)           |
-| `batchSize`    | No       | `50`    | Number of log entries per batch                            |
+| `batchSize`    | No       | `1000`  | Number of log entries per batch                            |
 | `batchTimeout` | No       | `5000`  | Max milliseconds to wait before sending a partial batch    |
 | `maxQueueSize` | No       | `10000` | Max log entries held in memory while batches are in-flight |
 

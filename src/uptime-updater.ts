@@ -3,6 +3,7 @@ import { clickhouse } from "./clickhouse";
 import { Logger } from "./logger";
 import type { Monitor } from "./types";
 import { propagateGroupStatus } from "./group-updater";
+import { server } from ".";
 
 interface HistoricalDaily {
 	total_uptime: number | null;
@@ -539,10 +540,32 @@ class UptimeUpdater {
 			uptime365d: combineHistWithToday(cached.hist365d, cached.uptime24h),
 		};
 
+		const hasChanged =
+			uptimes.uptime1h !== prevStatus.uptime1h ||
+			uptimes.uptime24h !== prevStatus.uptime24h ||
+			uptimes.uptime7d !== prevStatus.uptime7d ||
+			uptimes.uptime30d !== prevStatus.uptime30d ||
+			uptimes.uptime90d !== prevStatus.uptime90d ||
+			uptimes.uptime365d !== prevStatus.uptime365d;
+
 		cache.setStatus(monitorId, {
 			...prevStatus,
 			...uptimes,
 		});
+
+		if (hasChanged) {
+			const slugs = cache.getStatusPageSlugsByItem(monitorId);
+			slugs.forEach((slug) => {
+				server.publish(
+					`slug-${slug}`,
+					JSON.stringify({
+						action: "uptime-update",
+						data: { slug, monitorId, ...uptimes },
+						timestamp: new Date().toISOString(),
+					}),
+				);
+			});
+		}
 	}
 }
 

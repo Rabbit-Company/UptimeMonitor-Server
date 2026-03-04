@@ -153,7 +153,7 @@ export async function storePulse(
 		propagateGroupStatus(monitorId);
 	}
 
-	const slugs = cache.getStatusPageSlugsByMonitor(monitorId);
+	const slugs = cache.getStatusPageSlugsByItem(monitorId);
 
 	const nonNullCustomMetrics = {
 		...(customMetrics.custom1 !== null && { custom1: customMetrics.custom1 }),
@@ -647,7 +647,8 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 			status = upPercentage === 100 ? "up" : upPercentage >= group.degradedThreshold ? "degraded" : "down";
 	}
 
-	const previousStatus = cache.getStatus(groupId)?.status;
+	const prevGroupStatus = cache.getStatus(groupId);
+	const previousStatus = prevGroupStatus?.status;
 
 	// Calculate group uptimes from child uptimes
 	const childIds = [...childMonitors.map((m) => m.id), ...childGroups.map((g) => g.id)];
@@ -664,6 +665,30 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	};
 
 	cache.setStatus(groupId, groupStatus);
+
+	if (prevGroupStatus) {
+		const hasUptimeChanged =
+			uptimes.uptime1h !== prevGroupStatus.uptime1h ||
+			uptimes.uptime24h !== prevGroupStatus.uptime24h ||
+			uptimes.uptime7d !== prevGroupStatus.uptime7d ||
+			uptimes.uptime30d !== prevGroupStatus.uptime30d ||
+			uptimes.uptime90d !== prevGroupStatus.uptime90d ||
+			uptimes.uptime365d !== prevGroupStatus.uptime365d;
+
+		if (hasUptimeChanged) {
+			const slugs = cache.getStatusPageSlugsByItem(groupId);
+			slugs.forEach((slug) => {
+				server.publish(
+					`slug-${slug}`,
+					JSON.stringify({
+						action: "uptime-update",
+						data: { slug, monitorId: groupId, ...uptimes },
+						timestamp: new Date().toISOString(),
+					}),
+				);
+			});
+		}
+	}
 
 	// Track group state for downtime calculations
 	const isGoingDown = status === "down" && previousStatus !== "down";

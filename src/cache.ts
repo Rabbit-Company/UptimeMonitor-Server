@@ -19,7 +19,7 @@ class CacheManager {
 	private monitorsByPulseMonitor: Map<string, Monitor[]> = new Map();
 
 	// Status pages caches
-	private statusPageSlugsByMonitor: Map<string, string[]> = new Map();
+	private statusPageSlugsByItem: Map<string, string[]> = new Map();
 	private itemsOnStatusPage: Map<string, Set<string>> = new Map();
 
 	// Status cache
@@ -163,7 +163,7 @@ class CacheManager {
 	 * Build status page -> monitor reverse index
 	 */
 	private buildStatusPageMonitorIndex(): void {
-		this.statusPageSlugsByMonitor.clear();
+		this.statusPageSlugsByItem.clear();
 		this.itemsOnStatusPage.clear();
 
 		for (const page of this.statusPages.values()) {
@@ -187,12 +187,12 @@ class CacheManager {
 			this.itemsOnStatusPage.set(page.slug, slugItemSet);
 
 			for (const id of slugItemSet) {
-				if (this.monitors.has(id)) {
-					const existing = this.statusPageSlugsByMonitor.get(id) || [];
+				if (this.monitors.has(id) || this.groups.has(id)) {
+					const existing = this.statusPageSlugsByItem.get(id) || [];
 					if (!existing.includes(page.slug)) {
 						existing.push(page.slug);
 					}
-					this.statusPageSlugsByMonitor.set(id, existing);
+					this.statusPageSlugsByItem.set(id, existing);
 				}
 			}
 		}
@@ -346,8 +346,8 @@ class CacheManager {
 		return Array.from(this.notificationChannels.values());
 	}
 
-	getStatusPageSlugsByMonitor(monitorId: string): string[] {
-		return this.statusPageSlugsByMonitor.get(monitorId) || [];
+	getStatusPageSlugsByItem(itemId: string): string[] {
+		return this.statusPageSlugsByItem.get(itemId) || [];
 	}
 
 	getStatus(id: string): StatusData | undefined {
@@ -502,7 +502,7 @@ class CacheManager {
 			notificationChannels: this.notificationChannels.size,
 			childrenByParent: this.childrenByParent.size,
 			monitorsByPulseMonitor: this.monitorsByPulseMonitor.size,
-			statusPageMonitorIndex: this.statusPageSlugsByMonitor.size,
+			statusPageSlugsByItem: this.statusPageSlugsByItem.size,
 			statusData: this.statusCache.size,
 			dependencyLevels: this.dependencyLevels.size,
 			entitiesWithDeps: this.dependenciesById.size,

@@ -428,7 +428,7 @@ export class MissingPulseDetector {
 			});
 		}
 
-		const slugs = cache.getStatusPageSlugsByMonitor(monitor.id);
+		const slugs = cache.getStatusPageSlugsByItem(monitor.id);
 		slugs.forEach((slug) => {
 			server.publish(
 				`slug-${slug}`,
@@ -464,7 +464,7 @@ export class MissingPulseDetector {
 			});
 		}
 
-		const slugs = cache.getStatusPageSlugsByMonitor(monitor.id);
+		const slugs = cache.getStatusPageSlugsByItem(monitor.id);
 		slugs.forEach((slug) => {
 			server.publish(
 				`slug-${slug}`,
@@ -626,7 +626,7 @@ export class MissingPulseDetector {
 			}
 		}
 
-		const slugs = cache.getStatusPageSlugsByMonitor(monitorId);
+		const slugs = cache.getStatusPageSlugsByItem(monitorId);
 		slugs.forEach((slug) => {
 			server.publish(
 				`slug-${slug}`,

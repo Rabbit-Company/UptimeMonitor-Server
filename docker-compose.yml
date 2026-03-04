@@ -3,6 +3,11 @@ services:
     image: rabbitcompany/uptime-monitor:latest
     container_name: uptime-monitor
     restart: unless-stopped
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
     ports:
       - "3000:3000"
     environment:

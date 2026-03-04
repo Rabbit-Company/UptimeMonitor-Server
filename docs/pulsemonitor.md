@@ -285,6 +285,11 @@ services:
       - PULSE_SERVER_URL=http://localhost:3000
       - PULSE_TOKEN=tk_pulse_eu_central_secret
     restart: unless-stopped
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
 ```
 
 ### Binary
@@ -386,6 +391,11 @@ services:
       - PULSE_SERVER_URL=http://localhost:3000
       - PULSE_TOKEN=tk_pulse_us_west
     restart: unless-stopped
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
 ```
 
 ## Security Best Practices

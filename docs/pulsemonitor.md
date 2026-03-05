@@ -160,6 +160,58 @@ url = "redis://user:pass@redis.example.com:6379"
 timeout = 3
 ```
 
+### SNMP
+
+Monitor network devices via SNMP (Simple Network Management Protocol). Supports SNMPv1, SNMPv2c, and SNMPv3 with custom OID mapping to `{custom1}`, `{custom2}`, and `{custom3}` placeholders.
+
+**SNMPv2c — Router with CPU and memory monitoring:**
+
+```toml
+[monitors.pulse.snmp]
+host = "10.0.0.1"
+version = "2c"
+community = "monitoring"
+
+[monitors.pulse.snmp.oids]
+custom1 = "1.3.6.1.4.1.2021.11.11.0"
+custom2 = "1.3.6.1.4.1.2021.4.6.0"
+```
+
+**SNMPv3 — Secure switch with authPriv:**
+
+```toml
+[monitors.pulse.snmp]
+host = "10.0.0.1"
+version = "3"
+username = "snmpv3user"
+authPassword = "MyAuthPass"
+authProtocol = "sha256"
+privPassword = "MyPrivPass"
+privCipher = "aes128"
+securityLevel = "authPriv"
+
+[monitors.pulse.snmp.oids]
+custom1 = "1.3.6.1.4.1.9.9.13.1.3.1.3.1006"
+```
+
+| Option          | Type    | Default               | Description                                              |
+| --------------- | ------- | --------------------- | -------------------------------------------------------- |
+| `host`          | string  | -                     | Target hostname or IP address (required)                 |
+| `port`          | integer | 161                   | SNMP port                                                |
+| `timeout`       | integer | 3                     | Response timeout in seconds                              |
+| `version`       | string  | `"3"`                 | SNMP version: `1`, `2c`, or `3`                          |
+| `community`     | string  | `"public"`            | Community string (v1/v2c only)                           |
+| `username`      | string  | -                     | USM username (v3 only)                                   |
+| `authPassword`  | string  | -                     | Authentication password (v3 only)                        |
+| `authProtocol`  | string  | `"sha256"`            | Auth protocol: md5, sha1, sha224, sha256, sha384, sha512 |
+| `privPassword`  | string  | -                     | Privacy password (v3 authPriv only)                      |
+| `privCipher`    | string  | `"aes128"`            | Privacy cipher: des, aes128, aes192, aes256              |
+| `securityLevel` | string  | `"authPriv"`          | Security level: noAuthNoPriv, authNoPriv, authPriv       |
+| `oid`           | string  | `"1.3.6.1.2.1.1.3.0"` | Primary OID for availability check (sysUpTime)           |
+| `oids`          | object  | -                     | Map of placeholder name → OID for custom values          |
+
+OIDs must be in numeric dot-notation (e.g., `1.3.6.1.2.1.1.3.0`). MIB names are not supported. Entries named `custom1`, `custom2`, or `custom3` populate the corresponding custom metric fields.
+
 ### Minecraft Java
 
 ```toml

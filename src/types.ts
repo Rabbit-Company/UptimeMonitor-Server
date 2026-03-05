@@ -175,6 +175,39 @@ export interface MinecraftBedrockConfig {
 }
 
 /**
+ * SNMP pulse monitoring configuration
+ * Supports SNMPv1, SNMPv2c, and SNMPv3
+ */
+export interface PulseSnmpConfig {
+	/** Target hostname or IP address */
+	host: string;
+	/** SNMP port (default: 161) */
+	port?: number;
+	/** Response timeout in seconds (default: 3) */
+	timeout?: number;
+	/** SNMP version: "1", "2c", or "3" (default: "3") */
+	version?: string;
+	/** Community string for v1/v2c (default: "public") */
+	community?: string;
+	/** USM username (required for v3) */
+	username?: string;
+	/** Authentication password (required for v3) */
+	authPassword?: string;
+	/** Authentication protocol: md5, sha1, sha224, sha256, sha384, sha512 (default: "sha256") */
+	authProtocol?: string;
+	/** Privacy password (required for v3 authPriv) */
+	privPassword?: string;
+	/** Privacy cipher: des, aes128, aes192, aes256 (default: "aes128") */
+	privCipher?: string;
+	/** Security level: noAuthNoPriv, authNoPriv, authPriv (default: "authPriv") */
+	securityLevel?: string;
+	/** Primary OID for availability check (default: sysUpTime "1.3.6.1.2.1.1.3.0") */
+	oid?: string;
+	/** Map of placeholder name to OID for querying custom values */
+	oids?: Record<string, string>;
+}
+
+/**
  * Pulse monitoring configuration - defines what PulseMonitor should check
  * Only one type should be configured per monitor
  */
@@ -201,6 +234,8 @@ export interface PulseConfig {
 	postgresql?: PulsePostgresqlConfig;
 	/** Redis monitoring */
 	redis?: PulseRedisConfig;
+	/** SNMP monitoring */
+	snmp?: PulseSnmpConfig;
 	/** Minecraft Java monitoring */
 	"minecraft-java"?: MinecraftJavaConfig;
 	/** Minecraft Bedrock monitoring */

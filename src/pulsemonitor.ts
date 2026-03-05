@@ -119,6 +119,43 @@ export function buildPulseMonitorConfig(monitor: Monitor): any {
 			};
 		}
 
+		// SNMP monitoring
+		if (monitor.pulse.snmp) {
+			pulseConfig.snmp = {
+				host: monitor.pulse.snmp.host,
+				port: monitor.pulse.snmp.port || 161,
+				timeout: monitor.pulse.snmp.timeout || 3,
+				version: monitor.pulse.snmp.version || "3",
+			};
+			if (monitor.pulse.snmp.community !== undefined) {
+				pulseConfig.snmp.community = monitor.pulse.snmp.community;
+			}
+			if (monitor.pulse.snmp.username !== undefined) {
+				pulseConfig.snmp.username = monitor.pulse.snmp.username;
+			}
+			if (monitor.pulse.snmp.authPassword !== undefined) {
+				pulseConfig.snmp.authPassword = monitor.pulse.snmp.authPassword;
+			}
+			if (monitor.pulse.snmp.authProtocol !== undefined) {
+				pulseConfig.snmp.authProtocol = monitor.pulse.snmp.authProtocol;
+			}
+			if (monitor.pulse.snmp.privPassword !== undefined) {
+				pulseConfig.snmp.privPassword = monitor.pulse.snmp.privPassword;
+			}
+			if (monitor.pulse.snmp.privCipher !== undefined) {
+				pulseConfig.snmp.privCipher = monitor.pulse.snmp.privCipher;
+			}
+			if (monitor.pulse.snmp.securityLevel !== undefined) {
+				pulseConfig.snmp.securityLevel = monitor.pulse.snmp.securityLevel;
+			}
+			if (monitor.pulse.snmp.oid !== undefined) {
+				pulseConfig.snmp.oid = monitor.pulse.snmp.oid;
+			}
+			if (monitor.pulse.snmp.oids !== undefined) {
+				pulseConfig.snmp.oids = monitor.pulse.snmp.oids;
+			}
+		}
+
 		// Minecraft Java monitoring
 		if (monitor.pulse["minecraft-java"]) {
 			pulseConfig["minecraft-java"] = {

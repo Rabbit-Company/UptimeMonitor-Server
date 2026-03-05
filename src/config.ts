@@ -492,6 +492,118 @@ function validatePulseConfig(pulse: unknown, context: string): PulseConfig | und
 		}
 	}
 
+	// Validate SNMP config
+	if (pulse.snmp !== undefined) {
+		configCount++;
+		if (!isObject(pulse.snmp)) {
+			errors.push(`${context}.snmp must be an object`);
+		} else {
+			const snmp = pulse.snmp;
+
+			// host is required
+			if (!isString(snmp.host) || snmp.host.trim().length === 0) {
+				errors.push(`${context}.snmp.host must be a non-empty string`);
+			}
+
+			// port is optional
+			if (snmp.port !== undefined && (!isNumber(snmp.port) || snmp.port <= 0 || snmp.port > 65535)) {
+				errors.push(`${context}.snmp.port must be a valid port number (1-65535)`);
+			}
+
+			// timeout is optional
+			if (snmp.timeout !== undefined && (!isNumber(snmp.timeout) || snmp.timeout <= 0)) {
+				errors.push(`${context}.snmp.timeout must be a positive number`);
+			}
+
+			// version is optional, must be "1", "2c", or "3"
+			const validVersions = ["1", "2c", "3"];
+			if (snmp.version !== undefined && (!isString(snmp.version) || !validVersions.includes(snmp.version))) {
+				errors.push(`${context}.snmp.version must be one of: ${validVersions.join(", ")}`);
+			}
+
+			// community is optional (used for v1/v2c)
+			if (snmp.community !== undefined && (!isString(snmp.community) || snmp.community.trim().length === 0)) {
+				errors.push(`${context}.snmp.community must be a non-empty string if provided`);
+			}
+
+			// v3-specific fields
+			const version = (snmp.version as string) || "3";
+
+			if (version === "3") {
+				// username is required for v3
+				if (snmp.username !== undefined && (!isString(snmp.username) || snmp.username.trim().length === 0)) {
+					errors.push(`${context}.snmp.username must be a non-empty string if provided`);
+				}
+
+				// authPassword is optional
+				if (snmp.authPassword !== undefined && (!isString(snmp.authPassword) || snmp.authPassword.trim().length === 0)) {
+					errors.push(`${context}.snmp.authPassword must be a non-empty string if provided`);
+				}
+
+				// authProtocol is optional
+				const validAuthProtocols = ["md5", "sha1", "sha224", "sha256", "sha384", "sha512"];
+				if (snmp.authProtocol !== undefined && (!isString(snmp.authProtocol) || !validAuthProtocols.includes(snmp.authProtocol))) {
+					errors.push(`${context}.snmp.authProtocol must be one of: ${validAuthProtocols.join(", ")}`);
+				}
+
+				// privPassword is optional
+				if (snmp.privPassword !== undefined && (!isString(snmp.privPassword) || snmp.privPassword.trim().length === 0)) {
+					errors.push(`${context}.snmp.privPassword must be a non-empty string if provided`);
+				}
+
+				// privCipher is optional
+				const validPrivCiphers = ["des", "aes128", "aes192", "aes256"];
+				if (snmp.privCipher !== undefined && (!isString(snmp.privCipher) || !validPrivCiphers.includes(snmp.privCipher))) {
+					errors.push(`${context}.snmp.privCipher must be one of: ${validPrivCiphers.join(", ")}`);
+				}
+
+				// securityLevel is optional
+				const validSecurityLevels = ["noAuthNoPriv", "authNoPriv", "authPriv"];
+				if (snmp.securityLevel !== undefined && (!isString(snmp.securityLevel) || !validSecurityLevels.includes(snmp.securityLevel))) {
+					errors.push(`${context}.snmp.securityLevel must be one of: ${validSecurityLevels.join(", ")}`);
+				}
+			}
+
+			// oid is optional
+			if (snmp.oid !== undefined && (!isString(snmp.oid) || snmp.oid.trim().length === 0)) {
+				errors.push(`${context}.snmp.oid must be a non-empty string if provided`);
+			}
+
+			// oids is optional, must be an object with string values
+			if (snmp.oids !== undefined) {
+				if (!isObject(snmp.oids)) {
+					errors.push(`${context}.snmp.oids must be an object`);
+				} else {
+					for (const [key, value] of Object.entries(snmp.oids)) {
+						if (!isString(value) || (value as string).trim().length === 0) {
+							errors.push(`${context}.snmp.oids.${key} must be a non-empty string`);
+						}
+					}
+				}
+			}
+
+			if (errors.length === 0) {
+				const snmpConfig: any = {
+					host: snmp.host as string,
+				};
+				if (snmp.port !== undefined) snmpConfig.port = snmp.port as number;
+				if (snmp.timeout !== undefined) snmpConfig.timeout = snmp.timeout as number;
+				if (snmp.version !== undefined) snmpConfig.version = snmp.version as string;
+				if (snmp.community !== undefined) snmpConfig.community = snmp.community as string;
+				if (snmp.username !== undefined) snmpConfig.username = snmp.username as string;
+				if (snmp.authPassword !== undefined) snmpConfig.authPassword = snmp.authPassword as string;
+				if (snmp.authProtocol !== undefined) snmpConfig.authProtocol = snmp.authProtocol as string;
+				if (snmp.privPassword !== undefined) snmpConfig.privPassword = snmp.privPassword as string;
+				if (snmp.privCipher !== undefined) snmpConfig.privCipher = snmp.privCipher as string;
+				if (snmp.securityLevel !== undefined) snmpConfig.securityLevel = snmp.securityLevel as string;
+				if (snmp.oid !== undefined) snmpConfig.oid = snmp.oid as string;
+				if (snmp.oids !== undefined) snmpConfig.oids = snmp.oids as Record<string, string>;
+
+				result.snmp = snmpConfig;
+			}
+		}
+	}
+
 	// Validate Minecraft Java config
 	if (pulse["minecraft-java"] !== undefined) {
 		configCount++;
@@ -547,7 +659,7 @@ function validatePulseConfig(pulse: unknown, context: string): PulseConfig | und
 	// Check that at least one config type is defined
 	if (configCount === 0) {
 		errors.push(
-			`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, redis, minecraft-java, minecraft-bedrock)`,
+			`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, redis, snmp, minecraft-java, minecraft-bedrock)`,
 		);
 	}
 

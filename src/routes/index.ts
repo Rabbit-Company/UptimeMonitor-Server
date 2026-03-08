@@ -7,6 +7,7 @@ import { registerGroupHistoryRoutes } from "./group-history";
 import { registerMonitorReportRoutes } from "./monitor-reports";
 import { registerGroupReportRoutes } from "./group-reports";
 import { registerIncidentRoutes } from "./incidents";
+import { registerMaintenanceRoutes } from "./maintenances";
 
 export function registerPublicRoutes(app: Web): void {
 	registerPulseRoutes(app);
@@ -16,6 +17,7 @@ export function registerPublicRoutes(app: Web): void {
 	registerMonitorReportRoutes(app);
 	registerGroupReportRoutes(app);
 	registerIncidentRoutes(app);
+	registerMaintenanceRoutes(app);
 
 	Logger.info("Public routes registered");
 }

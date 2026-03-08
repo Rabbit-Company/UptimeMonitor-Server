@@ -13,6 +13,7 @@ import {
 	broadcastIncidentEvent,
 } from "../incidents";
 import { VALID_SEVERITIES, VALID_STATUSES } from "../types";
+import { incidentScheduler } from "../schedulers/incident";
 
 export function registerIncidentRoutes(app: Web, getServer: () => Server): void {
 	/**
@@ -21,7 +22,6 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 	 */
 	app.get("/v1/admin/incidents", adminBearerAuth(), async (ctx) => {
 		const statusPageId = ctx.query().get("status_page_id") || undefined;
-
 		const incidents = await getAllIncidents(statusPageId);
 		return ctx.json({ incidents });
 	});
@@ -73,11 +73,13 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 				severity: body.severity,
 				message: body.message,
 				affectedMonitors: body.affected_monitors,
+				suppressNotifications: body.suppress_notifications,
 			});
 
 			Logger.audit("Admin API: Incident created", { incidentId: incident.id, statusPageId: body.status_page_id });
 
-			// Broadcast to WebSocket subscribers
+			incidentScheduler.refreshCache();
+
 			broadcastIncidentEvent(statusPage.slug, "incident-created", { incident });
 
 			return ctx.json({ success: true, message: `Incident '${incident.id}' created`, id: incident.id, incident }, 201);
@@ -124,13 +126,15 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 				title: body.title,
 				severity: body.severity,
 				affectedMonitors: body.affected_monitors,
+				suppressNotifications: body.suppress_notifications,
 			});
 
 			if (!incident) return ctx.json({ error: "Incident not found" }, 404);
 
 			Logger.audit("Admin API: Incident updated", { incidentId: id });
 
-			// Broadcast
+			incidentScheduler.refreshCache();
+
 			const statusPage = cache.getStatusPage(incident.status_page_id);
 			if (statusPage) {
 				broadcastIncidentEvent(statusPage.slug, "incident-updated", { incident });
@@ -158,6 +162,8 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 			if (!deleted) return ctx.json({ error: "Failed to delete incident" }, 500);
 
 			Logger.audit("Admin API: Incident deleted", { incidentId: id });
+
+			incidentScheduler.refreshCache();
 
 			// Broadcast
 			const statusPage = cache.getStatusPage(existing.status_page_id);
@@ -199,7 +205,8 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 
 			Logger.audit("Admin API: Incident update added", { incidentId: id, updateId: result.update.id, status: body.status });
 
-			// Broadcast
+			incidentScheduler.refreshCache();
+
 			const statusPage = cache.getStatusPage(result.incident.status_page_id);
 			if (statusPage) {
 				broadcastIncidentEvent(statusPage.slug, "incident-update-added", {
@@ -237,7 +244,8 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 
 			Logger.audit("Admin API: Incident update deleted", { incidentId, updateId });
 
-			// Broadcast
+			incidentScheduler.refreshCache();
+
 			const statusPage = cache.getStatusPage(updatedIncident.status_page_id);
 			if (statusPage) {
 				broadcastIncidentEvent(statusPage.slug, "incident-update-deleted", {
@@ -279,6 +287,9 @@ function validateCreate(input: any): string[] {
 			e.push("affected_monitors must be an array of strings");
 		}
 	}
+	if (input.suppress_notifications !== undefined && typeof input.suppress_notifications !== "boolean") {
+		e.push("suppress_notifications must be a boolean");
+	}
 	return e;
 }
 
@@ -299,6 +310,9 @@ function validateUpdate(input: any): string[] {
 		} else if (input.affected_monitors.some((m: any) => typeof m !== "string")) {
 			e.push("affected_monitors must be an array of strings");
 		}
+	}
+	if (input.suppress_notifications !== undefined && typeof input.suppress_notifications !== "boolean") {
+		e.push("suppress_notifications must be a boolean");
 	}
 	return e;
 }

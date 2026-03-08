@@ -3,6 +3,15 @@ import type { IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extra
 import type { LokiConfig } from "@rabbit-company/web-middleware/logger";
 
 /**
+ * Configuration for the SQL database used.
+ * Supports SQLite, PostgreSQL and MySQL via Bun's native SQL driver.
+ */
+export interface DatabaseConfig {
+	/** Connection URL ("sqlite://...", "postgres://...", "mysql://...") */
+	url?: string;
+}
+
+/**
  * Configuration options for the logger.
  */
 export interface LoggerConfig {
@@ -381,6 +390,8 @@ export interface AdminAPIConfig {
  * Application configuration object.
  */
 export interface Config {
+	/** SQL database (SQLite, PostgreSQL, or MySQL) */
+	database: DatabaseConfig;
 	/** ClickHouse connection options */
 	clickhouse: NodeClickHouseClientConfigOptions;
 	/** Server-specific configuration */
@@ -836,6 +847,7 @@ export interface Incident {
 	status: IncidentStatus;
 	severity: IncidentSeverity;
 	affected_monitors: string[];
+	suppress_notifications: boolean;
 	created_at: string;
 	updated_at: string;
 	resolved_at: string | null;
@@ -855,3 +867,32 @@ export interface IncidentWithUpdates extends Incident {
 
 export const VALID_STATUSES: IncidentStatus[] = ["investigating", "identified", "monitoring", "resolved"];
 export const VALID_SEVERITIES: IncidentSeverity[] = ["minor", "major", "critical"];
+
+export type MaintenanceStatus = "scheduled" | "in_progress" | "completed" | "cancelled";
+export const VALID_MAINTENANCE_STATUSES: MaintenanceStatus[] = ["scheduled", "in_progress", "completed", "cancelled"];
+
+export interface Maintenance {
+	id: string;
+	status_page_id: string;
+	title: string;
+	status: MaintenanceStatus;
+	scheduled_start: string;
+	scheduled_end: string;
+	affected_monitors: string[];
+	suppress_notifications: boolean;
+	created_at: string;
+	updated_at: string;
+	completed_at: string | null;
+}
+
+export interface MaintenanceUpdate {
+	id: string;
+	maintenance_id: string;
+	status: MaintenanceStatus;
+	message: string;
+	created_at: string;
+}
+
+export interface MaintenanceWithUpdates extends Maintenance {
+	updates: MaintenanceUpdate[];
+}

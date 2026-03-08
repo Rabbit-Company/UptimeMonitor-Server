@@ -1,5 +1,13 @@
 # Uptime Monitor Configuration
 
+# Database (SQLite, PostgreSQL or MySQL)
+#
+# SQLite (default):  url = "sqlite://./databases/uptime_monitor.db"
+# PostgreSQL:        url = "postgres://user:password@localhost:5432/uptime_monitor"
+# MySQL:             url = "mysql://user:password@localhost:3306/uptime_monitor"
+[database]
+url = "sqlite://./databases/uptime_monitor.db"
+
 [clickhouse]
 url = "http://uptime_user:uptime_password@clickhouse:8123/uptime_monitor"
 

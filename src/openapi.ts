@@ -23,6 +23,7 @@ export const openapi = {
 		{ name: "Monitor Reports", description: "Export monitor history data as CSV or JSON" },
 		{ name: "Group Reports", description: "Export group history data as CSV or JSON" },
 		{ name: "Incidents", description: "Incident reports for status pages" },
+		{ name: "Maintenances", description: "Scheduled maintenances for status pages" },
 		{ name: "Configuration", description: "Server configuration management" },
 		{ name: "Admin: Monitors", description: "Admin CRUD operations for monitors" },
 		{ name: "Admin: Groups", description: "Admin CRUD operations for groups" },
@@ -31,6 +32,7 @@ export const openapi = {
 		{ name: "Admin: Pulse Monitors", description: "Admin CRUD operations for PulseMonitor instances" },
 		{ name: "Admin: Reports", description: "Admin export endpoints for monitor and group history data" },
 		{ name: "Admin: Incidents", description: "Admin CRUD operations for incidents" },
+		{ name: "Admin: Maintenances", description: "Manage scheduled maintenances" },
 		{ name: "Admin: Configuration", description: "Admin configuration access" },
 	],
 	paths: {
@@ -935,6 +937,57 @@ export const openapi = {
 				},
 			},
 		},
+		"/v1/status/{slug}/maintenances": {
+			get: {
+				tags: ["Maintenances"],
+				summary: "Get maintenances for a status page",
+				description: "Returns all maintenances for a status page in a given month, with all timeline updates inlined. Cached for 30 seconds.",
+				operationId: "getMaintenances",
+				parameters: [
+					{ name: "slug", in: "path", required: true, description: "Status page slug", schema: { type: "string" } },
+					{
+						name: "month",
+						in: "query",
+						required: false,
+						description: "Month to retrieve maintenances for (YYYY-MM format). Defaults to current month.",
+						schema: { type: "string", pattern: "^\\d{4}-(0[1-9]|1[0-2])$", example: "2026-03" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "Maintenances for the month",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["statusPageId", "month", "maintenances"],
+									properties: {
+										statusPageId: { type: "string", example: "main" },
+										month: { type: "string", example: "2026-03" },
+										maintenances: {
+											type: "array",
+											items: { $ref: "#/components/schemas/MaintenanceWithUpdates" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"400": {
+						description: "Invalid month format",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"401": {
+						description: "Unauthorized (password-protected page)",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
 		"/v1/reload/{token}": {
 			get: {
 				tags: ["Configuration"],
@@ -1084,7 +1137,7 @@ export const openapi = {
 						description: "Configuration updated successfully",
 						content: {
 							"application/json": {
-								schema: { $ref: "#/components/schemas/AdminSuccessSimple" },
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
 								example: { success: true },
 							},
 						},
@@ -2309,7 +2362,7 @@ export const openapi = {
 				tags: ["Admin: Incidents"],
 				summary: "Update an incident",
 				description:
-					"Update incident metadata (title, severity, affected_monitors). Status cannot be changed directly — use the updates endpoint to post a new timeline entry which changes the status.",
+					"Update incident metadata (title, severity, affected_monitors). Status cannot be changed directly - use the updates endpoint to post a new timeline entry which changes the status.",
 				operationId: "adminUpdateIncident",
 				security: [{ adminBearerAuth: [] }],
 				parameters: [{ name: "id", in: "path", required: true, description: "Incident ID", schema: { type: "string" } }],
@@ -2471,6 +2524,289 @@ export const openapi = {
 				},
 			},
 		},
+		"/v1/admin/maintenances": {
+			get: {
+				tags: ["Admin: Maintenances"],
+				summary: "List all maintenances",
+				description: "Returns all maintenances. Optionally filter by status_page_id query parameter.",
+				operationId: "adminListMaintenances",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{
+						name: "status_page_id",
+						in: "query",
+						required: false,
+						description: "Filter maintenances by status page ID",
+						schema: { type: "string" },
+					},
+				],
+				responses: {
+					"200": {
+						description: "List of maintenances",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									required: ["maintenances"],
+									properties: {
+										maintenances: {
+											type: "array",
+											items: { $ref: "#/components/schemas/Maintenance" },
+										},
+									},
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			post: {
+				tags: ["Admin: Maintenances"],
+				summary: "Create a maintenance",
+				description:
+					"Create a new maintenance with an initial timeline update message. The maintenance is associated with a status page and optionally linked to affected monitors. Maintenances support automatic status transitions — the scheduler moves scheduled maintenances to in_progress when their start time arrives, and in_progress maintenances to completed when their end time passes.",
+				operationId: "adminCreateMaintenance",
+				security: [{ adminBearerAuth: [] }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminMaintenanceCreate" },
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "Maintenance created",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									properties: {
+										success: { type: "boolean", enum: [true] },
+										message: { type: "string" },
+										id: { type: "string" },
+										maintenance: { $ref: "#/components/schemas/MaintenanceWithUpdates" },
+									},
+								},
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Status page not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/maintenances/{id}": {
+			get: {
+				tags: ["Admin: Maintenances"],
+				summary: "Get a maintenance",
+				description: "Returns a single maintenance with all its timeline updates.",
+				operationId: "adminGetMaintenance",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Maintenance ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Maintenance details with updates",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/MaintenanceWithUpdates" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Maintenance not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			put: {
+				tags: ["Admin: Maintenances"],
+				summary: "Update a maintenance",
+				description:
+					"Update maintenance metadata (title, scheduled_start, scheduled_end, affected_monitors, suppress_notifications). Status cannot be changed directly — use the updates endpoint to post a new timeline entry which changes the status.",
+				operationId: "adminUpdateMaintenance",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Maintenance ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: { $ref: "#/components/schemas/AdminMaintenanceUpdate" },
+						},
+					},
+				},
+				responses: {
+					"200": {
+						description: "Maintenance updated",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									properties: {
+										success: { type: "boolean", enum: [true] },
+										message: { type: "string" },
+										maintenance: { $ref: "#/components/schemas/MaintenanceWithUpdates" },
+									},
+								},
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Maintenance not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+			delete: {
+				tags: ["Admin: Maintenances"],
+				summary: "Delete a maintenance",
+				description: "Delete a maintenance and all its timeline updates.",
+				operationId: "adminDeleteMaintenance",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Maintenance ID", schema: { type: "string" } }],
+				responses: {
+					"200": {
+						description: "Maintenance deleted",
+						content: {
+							"application/json": {
+								schema: { $ref: "#/components/schemas/AdminSuccess" },
+								example: { success: true, message: "Maintenance 'abc123' deleted" },
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Maintenance not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/maintenances/{id}/updates": {
+			post: {
+				tags: ["Admin: Maintenances"],
+				summary: "Add a timeline update",
+				description:
+					"Add a timeline update to a maintenance. This also updates the parent maintenance's status and updated_at timestamp. If the new status is 'completed' or 'cancelled', the maintenance's completed_at is set.",
+				operationId: "adminAddMaintenanceUpdate",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [{ name: "id", in: "path", required: true, description: "Maintenance ID", schema: { type: "string" } }],
+				requestBody: {
+					required: true,
+					content: {
+						"application/json": {
+							schema: {
+								type: "object",
+								required: ["status", "message"],
+								properties: {
+									status: {
+										type: "string",
+										enum: ["scheduled", "in_progress", "completed", "cancelled"],
+										description: "New status for the maintenance",
+									},
+									message: { type: "string", description: "Update message body" },
+								},
+							},
+						},
+					},
+				},
+				responses: {
+					"201": {
+						description: "Update added",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									properties: {
+										success: { type: "boolean", enum: [true] },
+										message: { type: "string" },
+										updateId: { type: "string" },
+										maintenance: { $ref: "#/components/schemas/MaintenanceWithUpdates" },
+									},
+								},
+							},
+						},
+					},
+					"400": {
+						description: "Validation failed",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/AdminValidationError" } } },
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Maintenance not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
+		"/v1/admin/maintenances/{id}/updates/{updateId}": {
+			delete: {
+				tags: ["Admin: Maintenances"],
+				summary: "Delete a timeline update",
+				description:
+					"Delete a specific timeline update from a maintenance. If the deleted update was the most recent one, the maintenance's status and completed_at are synced to match the new most-recent update.",
+				operationId: "adminDeleteMaintenanceUpdate",
+				security: [{ adminBearerAuth: [] }],
+				parameters: [
+					{ name: "id", in: "path", required: true, description: "Maintenance ID", schema: { type: "string" } },
+					{ name: "updateId", in: "path", required: true, description: "Update ID to delete", schema: { type: "string" } },
+				],
+				responses: {
+					"200": {
+						description: "Update deleted",
+						content: {
+							"application/json": {
+								schema: {
+									type: "object",
+									properties: {
+										success: { type: "boolean", enum: [true] },
+										message: { type: "string" },
+										maintenance: { $ref: "#/components/schemas/MaintenanceWithUpdates" },
+									},
+								},
+							},
+						},
+					},
+					"401": {
+						description: "Unauthorized",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+					"404": {
+						description: "Maintenance or update not found",
+						content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+					},
+				},
+			},
+		},
 	},
 	components: {
 		securitySchemes: {
@@ -2597,6 +2933,11 @@ export const openapi = {
 					status: { type: "string", enum: ["investigating", "identified", "monitoring", "resolved"], example: "investigating" },
 					severity: { type: "string", enum: ["minor", "major", "critical"], example: "major" },
 					affected_monitors: { type: "array", items: { type: "string" }, example: ["api-prod", "web-app"] },
+					suppress_notifications: {
+						type: "boolean",
+						description: "Whether notifications are suppressed for affected monitors during the incident",
+						example: true,
+					},
 					created_at: { type: "string", format: "date-time", example: "2025-06-15T10:30:00.000Z" },
 					updated_at: { type: "string", format: "date-time", example: "2025-06-15T11:00:00.000Z" },
 					resolved_at: { type: "string", format: "date-time", nullable: true, example: null },
@@ -2623,6 +2964,10 @@ export const openapi = {
 					status: { type: "string", enum: ["investigating", "identified", "monitoring", "resolved"] },
 					severity: { type: "string", enum: ["minor", "major", "critical"] },
 					affected_monitors: { type: "array", items: { type: "string" } },
+					suppress_notifications: {
+						type: "boolean",
+						description: "Whether notifications are suppressed for affected monitors during the incident",
+					},
 					created_at: { type: "string", format: "date-time" },
 					updated_at: { type: "string", format: "date-time" },
 					resolved_at: { type: "string", format: "date-time", nullable: true },
@@ -2652,6 +2997,11 @@ export const openapi = {
 						description: "Optional list of affected monitor/group IDs (must be on the status page)",
 						example: ["api-prod"],
 					},
+					suppress_notifications: {
+						type: "boolean",
+						description: "Whether to suppress notifications for affected monitors during the incident (default: true)",
+						default: true,
+					},
 				},
 			},
 			AdminIncidentUpdate: {
@@ -2660,6 +3010,126 @@ export const openapi = {
 					title: { type: "string", example: "Database connectivity issues - resolved" },
 					severity: { type: "string", enum: ["minor", "major", "critical"] },
 					affected_monitors: { type: "array", items: { type: "string" } },
+					suppress_notifications: { type: "boolean", description: "Whether to suppress notifications for affected monitors during the incident" },
+				},
+			},
+			Maintenance: {
+				type: "object",
+				required: [
+					"id",
+					"status_page_id",
+					"title",
+					"status",
+					"scheduled_start",
+					"scheduled_end",
+					"affected_monitors",
+					"suppress_notifications",
+					"created_at",
+					"updated_at",
+				],
+				properties: {
+					id: { type: "string", example: "b2c3d4e5-f6a7-8901-bcde-f12345678901" },
+					status_page_id: { type: "string", example: "main" },
+					title: { type: "string", example: "Scheduled database migration" },
+					status: { type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], example: "scheduled" },
+					scheduled_start: { type: "string", format: "date-time", example: "2026-03-10T02:00:00.000Z" },
+					scheduled_end: { type: "string", format: "date-time", example: "2026-03-10T06:00:00.000Z" },
+					affected_monitors: { type: "array", items: { type: "string" }, example: ["api-prod", "web-app"] },
+					suppress_notifications: {
+						type: "boolean",
+						description: "Whether notifications are suppressed for affected monitors during the maintenance",
+						example: true,
+					},
+					created_at: { type: "string", format: "date-time", example: "2026-03-05T14:00:00.000Z" },
+					updated_at: { type: "string", format: "date-time", example: "2026-03-05T14:00:00.000Z" },
+					completed_at: { type: "string", format: "date-time", nullable: true, example: null },
+				},
+			},
+			MaintenanceUpdate: {
+				type: "object",
+				required: ["id", "maintenance_id", "status", "message", "created_at"],
+				properties: {
+					id: { type: "string", example: "c3d4e5f6-a7b8-9012-cdef-123456789012" },
+					maintenance_id: { type: "string", example: "b2c3d4e5-f6a7-8901-bcde-f12345678901" },
+					status: { type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], example: "in_progress" },
+					message: { type: "string", example: "Maintenance has started. Database migration is underway." },
+					created_at: { type: "string", format: "date-time", example: "2026-03-10T02:00:00.000Z" },
+				},
+			},
+			MaintenanceWithUpdates: {
+				type: "object",
+				required: [
+					"id",
+					"status_page_id",
+					"title",
+					"status",
+					"scheduled_start",
+					"scheduled_end",
+					"affected_monitors",
+					"suppress_notifications",
+					"created_at",
+					"updated_at",
+					"updates",
+				],
+				properties: {
+					id: { type: "string" },
+					status_page_id: { type: "string" },
+					title: { type: "string" },
+					status: { type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"] },
+					scheduled_start: { type: "string", format: "date-time" },
+					scheduled_end: { type: "string", format: "date-time" },
+					affected_monitors: { type: "array", items: { type: "string" } },
+					suppress_notifications: { type: "boolean", description: "Whether notifications are suppressed for affected monitors during the maintenance" },
+					created_at: { type: "string", format: "date-time" },
+					updated_at: { type: "string", format: "date-time" },
+					completed_at: { type: "string", format: "date-time", nullable: true },
+					updates: {
+						type: "array",
+						items: { $ref: "#/components/schemas/MaintenanceUpdate" },
+						description: "All timeline updates for this maintenance, ordered chronologically",
+					},
+				},
+			},
+			AdminMaintenanceCreate: {
+				type: "object",
+				required: ["status_page_id", "title", "status", "scheduled_start", "scheduled_end", "message"],
+				properties: {
+					status_page_id: { type: "string", description: "ID of the status page this maintenance belongs to", example: "main" },
+					title: { type: "string", description: "Short maintenance title", example: "Scheduled database migration" },
+					status: { type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], example: "scheduled" },
+					scheduled_start: { type: "string", format: "date-time", description: "Scheduled start time (ISO 8601)", example: "2026-03-10T02:00:00.000Z" },
+					scheduled_end: {
+						type: "string",
+						format: "date-time",
+						description: "Scheduled end time (ISO 8601, must be after scheduled_start)",
+						example: "2026-03-10T06:00:00.000Z",
+					},
+					message: {
+						type: "string",
+						description: "Initial timeline update message",
+						example: "Database migration scheduled for March 10th, 2:00-6:00 AM UTC.",
+					},
+					affected_monitors: {
+						type: "array",
+						items: { type: "string" },
+						description: "Optional list of affected monitor/group IDs (must be on the status page)",
+						example: ["api-prod"],
+					},
+					suppress_notifications: {
+						type: "boolean",
+						description: "Whether to suppress notifications for affected monitors during the maintenance (default: true)",
+						default: true,
+					},
+				},
+			},
+			AdminMaintenanceUpdate: {
+				type: "object",
+				properties: {
+					title: { type: "string", example: "Scheduled database migration - extended" },
+					scheduled_start: { type: "string", format: "date-time", description: "Updated start time (ISO 8601)" },
+					scheduled_end: { type: "string", format: "date-time", description: "Updated end time (ISO 8601, must be after scheduled_start)" },
+					affected_monitors: { type: "array", items: { type: "string" } },
+					suppress_notifications: { type: "boolean", description: "Whether to suppress notifications for affected monitors during the maintenance" },
 				},
 			},
 			AdminSuccess: {

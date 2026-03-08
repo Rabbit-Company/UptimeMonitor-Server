@@ -920,7 +920,8 @@ curl -X DELETE -H "Authorization: Bearer <token>" \
 
 ## Incidents
 
-Unlike other admin resources, incidents are stored in ClickHouse (not `config.toml`). They are not part of the configuration file and do not trigger a config reload. Incidents are associated with a status page and optionally linked to affected monitors or groups on that page.
+Unlike other admin resources, incidents are stored in the SQL database (not `config.toml`). They are not part of the configuration file and do not trigger a config reload.
+Incidents are associated with a status page and optionally linked to affected monitors or groups on that page.
 
 Each incident has a timeline of updates that track its progression. The incident's `status` is driven by its timeline updates. To change an incident's status, add a new update via the updates endpoint.
 
@@ -951,6 +952,7 @@ curl -H "Authorization: Bearer " \
 			"status": "investigating",
 			"severity": "major",
 			"affected_monitors": ["api-prod", "web-app"],
+			"suppress_notifications": true,
 			"created_at": "2026-02-15T10:30:00.000Z",
 			"updated_at": "2026-02-15T10:30:00.000Z",
 			"resolved_at": null
@@ -978,6 +980,7 @@ curl -H "Authorization: Bearer " \
 	"status": "identified",
 	"severity": "major",
 	"affected_monitors": ["api-prod"],
+	"suppress_notifications": true,
 	"created_at": "2026-02-15T10:30:00.000Z",
 	"updated_at": "2026-02-15T10:45:00.000Z",
 	"resolved_at": null,
@@ -1034,9 +1037,10 @@ curl -X POST -H "Authorization: Bearer " \
 
 **Optional fields:**
 
-| Field               | Type     | Description                                                            |
-| ------------------- | -------- | ---------------------------------------------------------------------- |
-| `affected_monitors` | string[] | IDs of affected monitors/groups (must be on the specified status page) |
+| Field                    | Type     | Description                                                                 |
+| ------------------------ | -------- | --------------------------------------------------------------------------- |
+| `affected_monitors`      | string[] | IDs of affected monitors/groups (must be on the specified status page)      |
+| `suppress_notifications` | boolean  | Whether to suppress notifications for affected monitors during the incident |
 
 **Success Response (201):**
 
@@ -1052,6 +1056,7 @@ curl -X POST -H "Authorization: Bearer " \
 		"status": "investigating",
 		"severity": "major",
 		"affected_monitors": ["api-prod"],
+		"suppress_notifications": true,
 		"created_at": "2026-02-15T10:30:00.000Z",
 		"updated_at": "2026-02-15T10:30:00.000Z",
 		"resolved_at": null,
@@ -1090,11 +1095,12 @@ curl -X PUT -H "Authorization: Bearer " \
 
 **Optional fields (send only what you want to change):**
 
-| Field               | Type     | Description                                                         |
-| ------------------- | -------- | ------------------------------------------------------------------- |
-| `title`             | string   | Updated incident title                                              |
-| `severity`          | string   | `minor`, `major`, or `critical`                                     |
-| `affected_monitors` | string[] | Updated list of affected monitor/group IDs (must be on status page) |
+| Field                    | Type     | Description                                                                 |
+| ------------------------ | -------- | --------------------------------------------------------------------------- |
+| `title`                  | string   | Updated incident title                                                      |
+| `severity`               | string   | `minor`, `major`, or `critical`                                             |
+| `affected_monitors`      | string[] | Updated list of affected monitor/group IDs (must be on status page)         |
+| `suppress_notifications` | boolean  | Whether to suppress notifications for affected monitors during the incident |
 
 **Success Response (200):**
 
@@ -1195,41 +1201,336 @@ All incident operations broadcast real-time events to WebSocket subscribers of t
 
 ---
 
+## Maintenances
+
+Like incidents, maintenances are stored in the SQL database (not `config.toml`). They are not part of the configuration file and do not trigger a config reload. Maintenances are associated with a status page and optionally linked to affected monitors or groups on that page.
+
+Each maintenance has a timeline of updates that track its progression. The maintenance's `status` is driven by its timeline updates. To change a maintenance's status, add a new update via the updates endpoint. Maintenances also support automatic status transitions - the scheduler will move `scheduled` maintenances to `in_progress` when their start time arrives, and `in_progress` maintenances to `completed` when their end time passes.
+
+### GET /v1/admin/maintenances
+
+List all maintenances. Optionally filter by status page.
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:3000/v1/admin/maintenances
+```
+
+**Query Parameters:**
+
+| Parameter        | Type   | Description                           |
+| ---------------- | ------ | ------------------------------------- |
+| `status_page_id` | string | Filter maintenances by status page ID |
+
+**Response:**
+
+```json
+{
+	"maintenances": [
+		{
+			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status_page_id": "main",
+			"title": "Scheduled database migration",
+			"status": "scheduled",
+			"scheduled_start": "2026-03-10T02:00:00.000Z",
+			"scheduled_end": "2026-03-10T06:00:00.000Z",
+			"affected_monitors": ["api-prod", "web-app"],
+			"suppress_notifications": true,
+			"created_at": "2026-03-05T14:00:00.000Z",
+			"updated_at": "2026-03-05T14:00:00.000Z",
+			"completed_at": null
+		}
+	]
+}
+```
+
+### GET /v1/admin/maintenances/:id
+
+Get a single maintenance with all its timeline updates.
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:3000/v1/admin/maintenances/b2c3d4e5-f6a7-8901-bcde-f12345678901
+```
+
+**Response:**
+
+```json
+{
+	"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+	"status_page_id": "main",
+	"title": "Scheduled database migration",
+	"status": "in_progress",
+	"scheduled_start": "2026-03-10T02:00:00.000Z",
+	"scheduled_end": "2026-03-10T06:00:00.000Z",
+	"affected_monitors": ["api-prod"],
+	"suppress_notifications": true,
+	"created_at": "2026-03-05T14:00:00.000Z",
+	"updated_at": "2026-03-10T02:00:00.000Z",
+	"completed_at": null,
+	"updates": [
+		{
+			"id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+			"maintenance_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status": "scheduled",
+			"message": "Database migration scheduled for March 10th, 2:00-6:00 AM UTC.",
+			"created_at": "2026-03-05T14:00:00.000Z"
+		},
+		{
+			"id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+			"maintenance_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status": "in_progress",
+			"message": "Maintenance has started. Database migration is underway.",
+			"created_at": "2026-03-10T02:00:00.000Z"
+		}
+	]
+}
+```
+
+**Errors:**
+
+- `404 Not Found` - Maintenance does not exist
+
+### POST /v1/admin/maintenances
+
+Create a new maintenance with an initial timeline update message.
+
+```bash
+curl -X POST -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status_page_id": "main",
+    "title": "Scheduled database migration",
+    "status": "scheduled",
+    "scheduled_start": "2026-03-10T02:00:00.000Z",
+    "scheduled_end": "2026-03-10T06:00:00.000Z",
+    "message": "Database migration scheduled for March 10th, 2:00-6:00 AM UTC.",
+    "affected_monitors": ["api-prod"]
+  }' \
+  http://localhost:3000/v1/admin/maintenances
+```
+
+**Required fields:**
+
+| Field             | Type   | Description                                                             |
+| ----------------- | ------ | ----------------------------------------------------------------------- |
+| `status_page_id`  | string | ID of the status page this maintenance belongs to                       |
+| `title`           | string | Short maintenance title                                                 |
+| `status`          | string | Initial status: `scheduled`, `in_progress`, `completed`, or `cancelled` |
+| `scheduled_start` | string | Scheduled start time (ISO 8601 format)                                  |
+| `scheduled_end`   | string | Scheduled end time (ISO 8601 format, must be after `scheduled_start`)   |
+| `message`         | string | Initial timeline update message                                         |
+
+**Optional fields:**
+
+| Field                    | Type     | Default | Description                                                                    |
+| ------------------------ | -------- | ------- | ------------------------------------------------------------------------------ |
+| `affected_monitors`      | string[] | `[]`    | IDs of affected monitors/groups (must be on the specified status page)         |
+| `suppress_notifications` | boolean  | `true`  | Whether to suppress notifications for affected monitors during the maintenance |
+
+**Success Response (201):**
+
+```json
+{
+	"success": true,
+	"message": "Maintenance 'b2c3d4e5-f6a7-8901-bcde-f12345678901' created",
+	"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+	"maintenance": {
+		"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+		"status_page_id": "main",
+		"title": "Scheduled database migration",
+		"status": "scheduled",
+		"scheduled_start": "2026-03-10T02:00:00.000Z",
+		"scheduled_end": "2026-03-10T06:00:00.000Z",
+		"affected_monitors": ["api-prod"],
+		"suppress_notifications": true,
+		"created_at": "2026-03-05T14:00:00.000Z",
+		"updated_at": "2026-03-05T14:00:00.000Z",
+		"completed_at": null,
+		"updates": [
+			{
+				"id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+				"maintenance_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+				"status": "scheduled",
+				"message": "Database migration scheduled for March 10th, 2:00-6:00 AM UTC.",
+				"created_at": "2026-03-05T14:00:00.000Z"
+			}
+		]
+	}
+}
+```
+
+**Errors:**
+
+- `400 Bad Request` - Validation failed (missing fields, invalid status, `scheduled_end` not after `scheduled_start`, affected monitor not on status page)
+- `404 Not Found` - Status page does not exist
+
+### PUT /v1/admin/maintenances/:id
+
+Update maintenance metadata. Status cannot be changed directly. Use the updates endpoint to post a new timeline entry which changes the status.
+
+```bash
+curl -X PUT -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Scheduled database migration - extended",
+    "scheduled_end": "2026-03-10T08:00:00.000Z",
+    "affected_monitors": ["api-prod", "web-app"]
+  }' \
+  http://localhost:3000/v1/admin/maintenances/b2c3d4e5-f6a7-8901-bcde-f12345678901
+```
+
+**Optional fields (send only what you want to change):**
+
+| Field                    | Type     | Description                                                                    |
+| ------------------------ | -------- | ------------------------------------------------------------------------------ |
+| `title`                  | string   | Updated maintenance title                                                      |
+| `scheduled_start`        | string   | Updated start time (ISO 8601 format)                                           |
+| `scheduled_end`          | string   | Updated end time (ISO 8601 format, must be after `scheduled_start`)            |
+| `affected_monitors`      | string[] | Updated list of affected monitor/group IDs (must be on status page)            |
+| `suppress_notifications` | boolean  | Whether to suppress notifications for affected monitors during the maintenance |
+
+**Success Response (200):**
+
+```json
+{
+	"success": true,
+	"message": "Maintenance 'b2c3d4e5-f6a7-8901-bcde-f12345678901' updated",
+	"maintenance": {}
+}
+```
+
+**Errors:**
+
+- `400 Bad Request` - Validation failed (including if you try to set `status` directly)
+- `404 Not Found` - Maintenance does not exist
+
+### DELETE /v1/admin/maintenances/:id
+
+Delete a maintenance and all its timeline updates.
+
+```bash
+curl -X DELETE -H "Authorization: Bearer <token>" \
+  http://localhost:3000/v1/admin/maintenances/b2c3d4e5-f6a7-8901-bcde-f12345678901
+```
+
+**Success Response (200):**
+
+```json
+{
+	"success": true,
+	"message": "Maintenance 'b2c3d4e5-f6a7-8901-bcde-f12345678901' deleted"
+}
+```
+
+### POST /v1/admin/maintenances/:id/updates
+
+Add a timeline update to a maintenance. This also updates the parent maintenance's `status` and `updated_at` timestamp. If the new status is `completed` or `cancelled`, the maintenance's `completed_at` is set.
+
+```bash
+curl -X POST -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "in_progress",
+    "message": "Maintenance has started. Database migration is underway."
+  }' \
+  http://localhost:3000/v1/admin/maintenances/b2c3d4e5-f6a7-8901-bcde-f12345678901/updates
+```
+
+**Required fields:**
+
+| Field     | Type   | Description                                                         |
+| --------- | ------ | ------------------------------------------------------------------- |
+| `status`  | string | New status: `scheduled`, `in_progress`, `completed`, or `cancelled` |
+| `message` | string | Update message body                                                 |
+
+**Success Response (201):**
+
+```json
+{
+	"success": true,
+	"message": "Update added to maintenance 'b2c3d4e5-f6a7-8901-bcde-f12345678901'",
+	"updateId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+	"maintenance": {}
+}
+```
+
+**Errors:**
+
+- `400 Bad Request` - Validation failed (missing or invalid status/message)
+- `404 Not Found` - Maintenance does not exist
+
+### DELETE /v1/admin/maintenances/:id/updates/:updateId
+
+Delete a specific timeline update from a maintenance. If the deleted update was the most recent one, the maintenance's status and `completed_at` are synced to match the new most-recent update.
+
+```bash
+curl -X DELETE -H "Authorization: Bearer <token>" \
+  http://localhost:3000/v1/admin/maintenances/b2c3d4e5-f6a7-8901-bcde-f12345678901/updates/d4e5f6a7-b8c9-0123-defa-234567890123
+```
+
+**Success Response (200):**
+
+```json
+{
+	"success": true,
+	"message": "Update 'd4e5f6a7-b8c9-0123-defa-234567890123' deleted from maintenance 'b2c3d4e5-f6a7-8901-bcde-f12345678901'",
+	"maintenance": {}
+}
+```
+
+**Errors:**
+
+- `404 Not Found` - Maintenance or update does not exist
+
+### WebSocket Events
+
+All maintenance operations broadcast real-time events to WebSocket subscribers of the relevant status page. The following actions are emitted: `maintenance-created`, `maintenance-updated`, `maintenance-update-added`, `maintenance-update-deleted`, `maintenance-deleted`. See the [WebSocket API section](api.md#websocket-api) in the API Reference for event payload formats.
+
+---
+
 ## Endpoint Summary
 
-| Method   | Endpoint                                    | Description                    |
-| -------- | ------------------------------------------- | ------------------------------ |
-| `GET`    | `/v1/admin/config`                          | Get full configuration         |
-| `POST`   | `/v1/admin/config`                          | Replace full configuration     |
-| `GET`    | `/v1/admin/monitors`                        | List all monitors              |
-| `GET`    | `/v1/admin/monitors/:id`                    | Get a monitor                  |
-| `POST`   | `/v1/admin/monitors`                        | Create a monitor               |
-| `PUT`    | `/v1/admin/monitors/:id`                    | Update a monitor               |
-| `DELETE` | `/v1/admin/monitors/:id`                    | Delete a monitor               |
-| `GET`    | `/v1/admin/groups`                          | List all groups                |
-| `GET`    | `/v1/admin/groups/:id`                      | Get a group                    |
-| `POST`   | `/v1/admin/groups`                          | Create a group                 |
-| `PUT`    | `/v1/admin/groups/:id`                      | Update a group                 |
-| `DELETE` | `/v1/admin/groups/:id`                      | Delete a group                 |
-| `GET`    | `/v1/admin/status-pages`                    | List all status pages          |
-| `GET`    | `/v1/admin/status-pages/:id`                | Get a status page              |
-| `POST`   | `/v1/admin/status-pages`                    | Create a status page           |
-| `PUT`    | `/v1/admin/status-pages/:id`                | Update a status page           |
-| `DELETE` | `/v1/admin/status-pages/:id`                | Delete a status page           |
-| `GET`    | `/v1/admin/notifications`                   | List all notification channels |
-| `GET`    | `/v1/admin/notifications/:id`               | Get a notification channel     |
-| `POST`   | `/v1/admin/notifications`                   | Create a notification channel  |
-| `PUT`    | `/v1/admin/notifications/:id`               | Update a notification channel  |
-| `DELETE` | `/v1/admin/notifications/:id`               | Delete a notification channel  |
-| `GET`    | `/v1/admin/pulse-monitors`                  | List all PulseMonitors         |
-| `GET`    | `/v1/admin/pulse-monitors/:id`              | Get a PulseMonitor             |
-| `POST`   | `/v1/admin/pulse-monitors`                  | Create a PulseMonitor          |
-| `PUT`    | `/v1/admin/pulse-monitors/:id`              | Update a PulseMonitor          |
-| `DELETE` | `/v1/admin/pulse-monitors/:id`              | Delete a PulseMonitor          |
-| `GET`    | `/v1/admin/incidents`                       | List all incidents             |
-| `GET`    | `/v1/admin/incidents/:id`                   | Get an incident                |
-| `POST`   | `/v1/admin/incidents`                       | Create an incident             |
-| `PUT`    | `/v1/admin/incidents/:id`                   | Update an incident             |
-| `DELETE` | `/v1/admin/incidents/:id`                   | Delete an incident             |
-| `POST`   | `/v1/admin/incidents/:id/updates`           | Add a timeline update          |
-| `DELETE` | `/v1/admin/incidents/:id/updates/:updateId` | Delete a timeline update       |
+| Method   | Endpoint                                       | Description                    |
+| -------- | ---------------------------------------------- | ------------------------------ |
+| `GET`    | `/v1/admin/config`                             | Get full configuration         |
+| `POST`   | `/v1/admin/config`                             | Replace full configuration     |
+| `GET`    | `/v1/admin/monitors`                           | List all monitors              |
+| `GET`    | `/v1/admin/monitors/:id`                       | Get a monitor                  |
+| `POST`   | `/v1/admin/monitors`                           | Create a monitor               |
+| `PUT`    | `/v1/admin/monitors/:id`                       | Update a monitor               |
+| `DELETE` | `/v1/admin/monitors/:id`                       | Delete a monitor               |
+| `GET`    | `/v1/admin/groups`                             | List all groups                |
+| `GET`    | `/v1/admin/groups/:id`                         | Get a group                    |
+| `POST`   | `/v1/admin/groups`                             | Create a group                 |
+| `PUT`    | `/v1/admin/groups/:id`                         | Update a group                 |
+| `DELETE` | `/v1/admin/groups/:id`                         | Delete a group                 |
+| `GET`    | `/v1/admin/status-pages`                       | List all status pages          |
+| `GET`    | `/v1/admin/status-pages/:id`                   | Get a status page              |
+| `POST`   | `/v1/admin/status-pages`                       | Create a status page           |
+| `PUT`    | `/v1/admin/status-pages/:id`                   | Update a status page           |
+| `DELETE` | `/v1/admin/status-pages/:id`                   | Delete a status page           |
+| `GET`    | `/v1/admin/notifications`                      | List all notification channels |
+| `GET`    | `/v1/admin/notifications/:id`                  | Get a notification channel     |
+| `POST`   | `/v1/admin/notifications`                      | Create a notification channel  |
+| `PUT`    | `/v1/admin/notifications/:id`                  | Update a notification channel  |
+| `DELETE` | `/v1/admin/notifications/:id`                  | Delete a notification channel  |
+| `GET`    | `/v1/admin/pulse-monitors`                     | List all PulseMonitors         |
+| `GET`    | `/v1/admin/pulse-monitors/:id`                 | Get a PulseMonitor             |
+| `POST`   | `/v1/admin/pulse-monitors`                     | Create a PulseMonitor          |
+| `PUT`    | `/v1/admin/pulse-monitors/:id`                 | Update a PulseMonitor          |
+| `DELETE` | `/v1/admin/pulse-monitors/:id`                 | Delete a PulseMonitor          |
+| `GET`    | `/v1/admin/incidents`                          | List all incidents             |
+| `GET`    | `/v1/admin/incidents/:id`                      | Get an incident                |
+| `POST`   | `/v1/admin/incidents`                          | Create an incident             |
+| `PUT`    | `/v1/admin/incidents/:id`                      | Update an incident             |
+| `DELETE` | `/v1/admin/incidents/:id`                      | Delete an incident             |
+| `POST`   | `/v1/admin/incidents/:id/updates`              | Add a timeline update          |
+| `DELETE` | `/v1/admin/incidents/:id/updates/:updateId`    | Delete a timeline update       |
+| `GET`    | `/v1/admin/maintenances`                       | List all maintenances          |
+| `GET`    | `/v1/admin/maintenances/:id`                   | Get a maintenance              |
+| `POST`   | `/v1/admin/maintenances`                       | Create a maintenance           |
+| `PUT`    | `/v1/admin/maintenances/:id`                   | Update a maintenance           |
+| `DELETE` | `/v1/admin/maintenances/:id`                   | Delete a maintenance           |
+| `POST`   | `/v1/admin/maintenances/:id/updates`           | Add a maintenance update       |
+| `DELETE` | `/v1/admin/maintenances/:id/updates/:updateId` | Delete a maintenance update    |

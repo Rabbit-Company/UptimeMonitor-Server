@@ -433,6 +433,7 @@ Returns all incidents for a status page in a given month, with all timeline upda
 			"status": "resolved",
 			"severity": "major",
 			"affected_monitors": ["api-prod", "web-app"],
+			"suppress_notifications": true,
 			"created_at": "2026-02-15T10:30:00.000Z",
 			"updated_at": "2026-02-15T12:00:00.000Z",
 			"resolved_at": "2026-02-15T12:00:00.000Z",
@@ -467,6 +468,90 @@ Returns all incidents for a status page in a given month, with all timeline upda
 **Incident Statuses:** `investigating`, `identified`, `monitoring`, `resolved`
 
 **Severity Levels:** `minor`, `major`, `critical`
+
+**Errors:**
+
+- `400 Bad Request` – Invalid month format (must be `YYYY-MM`)
+- `401 Unauthorized` – Password is required, missing, or invalid
+- `404 Not Found` – Status page does not exist
+
+---
+
+## Maintenances
+
+Maintenances allow communicating scheduled maintenance windows on a status page. Each maintenance has a timeline of updates tracking its progression from scheduled through completion.
+
+**Authentication:**
+
+- If the status page is password-protected, an `Authorization` header must be provided.
+- If the status page is public, no authentication is required.
+
+For protected pages, the `Authorization` header must contain a **BLAKE2b-512 hash of the configured password**, sent as a `Bearer` token.
+
+### GET /v1/status/:slug/maintenances
+
+Returns all maintenances for a status page in a given month, with all timeline updates inlined. Cached for 30 seconds.
+
+**Path Parameters:**
+
+| Parameter | Description      |
+| --------- | ---------------- |
+| `slug`    | Status page slug |
+
+**Query Parameters:**
+
+| Parameter | Type   | Default       | Description                                           |
+| --------- | ------ | ------------- | ----------------------------------------------------- |
+| `month`   | string | Current month | Month to retrieve maintenances for (`YYYY-MM` format) |
+
+**Response:**
+
+```json
+{
+	"statusPageId": "main",
+	"month": "2026-03",
+	"maintenances": [
+		{
+			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status_page_id": "main",
+			"title": "Scheduled database migration",
+			"status": "completed",
+			"scheduled_start": "2026-03-10T02:00:00.000Z",
+			"scheduled_end": "2026-03-10T06:00:00.000Z",
+			"affected_monitors": ["api-prod", "web-app"],
+			"suppress_notifications": true,
+			"created_at": "2026-03-05T14:00:00.000Z",
+			"updated_at": "2026-03-10T05:30:00.000Z",
+			"completed_at": "2026-03-10T05:30:00.000Z",
+			"updates": [
+				{
+					"id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+					"maintenance_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+					"status": "scheduled",
+					"message": "Database migration scheduled for March 10th, 2:00-6:00 AM UTC.",
+					"created_at": "2026-03-05T14:00:00.000Z"
+				},
+				{
+					"id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+					"maintenance_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+					"status": "in_progress",
+					"message": "Maintenance has started. Database migration is underway.",
+					"created_at": "2026-03-10T02:00:00.000Z"
+				},
+				{
+					"id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+					"maintenance_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+					"status": "completed",
+					"message": "Migration completed successfully. All services are back to normal.",
+					"created_at": "2026-03-10T05:30:00.000Z"
+				}
+			]
+		}
+	]
+}
+```
+
+**Maintenance Statuses:** `scheduled`, `in_progress`, `completed`, `cancelled`
 
 **Errors:**
 
@@ -533,17 +618,18 @@ See the [Admin API Reference](admin-api.md) for complete documentation of all en
 
 **Quick overview:**
 
-| Resource              | Endpoints                                                                                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Configuration         | `GET/POST /v1/admin/config`                                                                                                                        |
-| Monitors              | `GET/POST /v1/admin/monitors`, `GET/PUT/DELETE /v1/admin/monitors/:id`                                                                             |
-| Groups                | `GET/POST /v1/admin/groups`, `GET/PUT/DELETE /v1/admin/groups/:id`                                                                                 |
-| Status Pages          | `GET/POST /v1/admin/status-pages`, `GET/PUT/DELETE /v1/admin/status-pages/:id`                                                                     |
-| Notification Channels | `GET/POST /v1/admin/notifications`, `GET/PUT/DELETE /v1/admin/notifications/:id`                                                                   |
-| Pulse Monitors        | `GET/POST /v1/admin/pulse-monitors`, `GET/PUT/DELETE /v1/admin/pulse-monitors/:id`                                                                 |
-| Reports (Monitors)    | `GET /v1/admin/monitors/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily`                                                            |
-| Reports (Groups)      | `GET /v1/admin/groups/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily`                                                              |
-| Incidents             | `GET/POST /v1/admin/incidents`, `GET/PUT/DELETE .../incidents/:id`, `POST .../incidents/:id/updates`, `DELETE .../incidents/:id/updates/:updateId` |
+| Resource              | Endpoints                                                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configuration         | `GET/POST /v1/admin/config`                                                                                                                                    |
+| Monitors              | `GET/POST /v1/admin/monitors`, `GET/PUT/DELETE /v1/admin/monitors/:id`                                                                                         |
+| Groups                | `GET/POST /v1/admin/groups`, `GET/PUT/DELETE /v1/admin/groups/:id`                                                                                             |
+| Status Pages          | `GET/POST /v1/admin/status-pages`, `GET/PUT/DELETE /v1/admin/status-pages/:id`                                                                                 |
+| Notification Channels | `GET/POST /v1/admin/notifications`, `GET/PUT/DELETE /v1/admin/notifications/:id`                                                                               |
+| Pulse Monitors        | `GET/POST /v1/admin/pulse-monitors`, `GET/PUT/DELETE /v1/admin/pulse-monitors/:id`                                                                             |
+| Reports (Monitors)    | `GET /v1/admin/monitors/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily`                                                                        |
+| Reports (Groups)      | `GET /v1/admin/groups/:id/reports`, `GET .../reports/hourly`, `GET .../reports/daily`                                                                          |
+| Incidents             | `GET/POST /v1/admin/incidents`, `GET/PUT/DELETE .../incidents/:id`, `POST .../incidents/:id/updates`, `DELETE .../incidents/:id/updates/:updateId`             |
+| Maintenances          | `GET/POST /v1/admin/maintenances`, `GET/PUT/DELETE .../maintenances/:id`, `POST .../maintenances/:id/updates`, `DELETE .../maintenances/:id/updates/:updateId` |
 
 To enable, add to `config.toml`:
 
@@ -782,6 +868,7 @@ When subscribed, you receive events:
 			"status": "investigating",
 			"severity": "major",
 			"affected_monitors": ["api-prod"],
+			"suppress_notifications": true,
 			"created_at": "2026-02-15T10:30:00.000Z",
 			"updated_at": "2026-02-15T10:30:00.000Z",
 			"resolved_at": null,
@@ -814,6 +901,7 @@ When subscribed, you receive events:
 			"status": "investigating",
 			"severity": "critical",
 			"affected_monitors": ["api-prod", "web-app"],
+			"suppress_notifications": true,
 			"created_at": "2026-02-15T10:30:00.000Z",
 			"updated_at": "2026-02-15T10:35:00.000Z",
 			"resolved_at": null,
@@ -838,6 +926,7 @@ When subscribed, you receive events:
 			"status": "identified",
 			"severity": "major",
 			"affected_monitors": ["api-prod"],
+			"suppress_notifications": true,
 			"created_at": "2026-02-15T10:30:00.000Z",
 			"updated_at": "2026-02-15T10:45:00.000Z",
 			"resolved_at": null,
@@ -871,6 +960,7 @@ When subscribed, you receive events:
 			"status": "investigating",
 			"severity": "major",
 			"affected_monitors": ["api-prod"],
+			"suppress_notifications": true,
 			"created_at": "2026-02-15T10:30:00.000Z",
 			"updated_at": "2026-02-15T10:50:00.000Z",
 			"resolved_at": null,
@@ -891,6 +981,140 @@ When subscribed, you receive events:
 		"incidentId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 	},
 	"timestamp": "2026-02-15T11:00:00.000Z"
+}
+```
+
+**Maintenance Created:**
+
+```json
+{
+	"action": "maintenance-created",
+	"data": {
+		"slug": "status",
+		"maintenance": {
+			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status_page_id": "main",
+			"title": "Scheduled database migration",
+			"status": "scheduled",
+			"scheduled_start": "2026-03-10T02:00:00.000Z",
+			"scheduled_end": "2026-03-10T06:00:00.000Z",
+			"affected_monitors": ["api-prod"],
+			"suppress_notifications": true,
+			"created_at": "2026-03-05T14:00:00.000Z",
+			"updated_at": "2026-03-05T14:00:00.000Z",
+			"completed_at": null,
+			"updates": [
+				{
+					"id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+					"maintenance_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+					"status": "scheduled",
+					"message": "Database migration scheduled for March 10th, 2:00-6:00 AM UTC.",
+					"created_at": "2026-03-05T14:00:00.000Z"
+				}
+			]
+		}
+	},
+	"timestamp": "2026-03-05T14:00:00.000Z"
+}
+```
+
+**Maintenance Updated:**
+
+```json
+{
+	"action": "maintenance-updated",
+	"data": {
+		"slug": "status",
+		"maintenance": {
+			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status_page_id": "main",
+			"title": "Scheduled database migration - extended",
+			"status": "scheduled",
+			"scheduled_start": "2026-03-10T02:00:00.000Z",
+			"scheduled_end": "2026-03-10T08:00:00.000Z",
+			"affected_monitors": ["api-prod", "web-app"],
+			"suppress_notifications": true,
+			"created_at": "2026-03-05T14:00:00.000Z",
+			"updated_at": "2026-03-06T09:00:00.000Z",
+			"completed_at": null,
+			"updates": []
+		}
+	},
+	"timestamp": "2026-03-06T09:00:00.000Z"
+}
+```
+
+**Maintenance Update Added:**
+
+```json
+{
+	"action": "maintenance-update-added",
+	"data": {
+		"slug": "status",
+		"maintenance": {
+			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status_page_id": "main",
+			"title": "Scheduled database migration",
+			"status": "in_progress",
+			"scheduled_start": "2026-03-10T02:00:00.000Z",
+			"scheduled_end": "2026-03-10T06:00:00.000Z",
+			"affected_monitors": ["api-prod"],
+			"suppress_notifications": true,
+			"created_at": "2026-03-05T14:00:00.000Z",
+			"updated_at": "2026-03-10T02:00:00.000Z",
+			"completed_at": null,
+			"updates": []
+		},
+		"update": {
+			"id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+			"maintenance_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status": "in_progress",
+			"message": "Maintenance has started. Database migration is underway.",
+			"created_at": "2026-03-10T02:00:00.000Z"
+		}
+	},
+	"timestamp": "2026-03-10T02:00:00.000Z"
+}
+```
+
+**Maintenance Update Deleted:**
+
+```json
+{
+	"action": "maintenance-update-deleted",
+	"data": {
+		"slug": "status",
+		"maintenanceId": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+		"updateId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+		"maintenance": {
+			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+			"status_page_id": "main",
+			"title": "Scheduled database migration",
+			"status": "scheduled",
+			"scheduled_start": "2026-03-10T02:00:00.000Z",
+			"scheduled_end": "2026-03-10T06:00:00.000Z",
+			"affected_monitors": ["api-prod"],
+			"suppress_notifications": true,
+			"created_at": "2026-03-05T14:00:00.000Z",
+			"updated_at": "2026-03-10T02:05:00.000Z",
+			"completed_at": null,
+			"updates": []
+		}
+	},
+	"timestamp": "2026-03-10T02:05:00.000Z"
+}
+```
+
+**Maintenance Deleted:**
+
+```json
+{
+	"action": "maintenance-deleted",
+	"data": {
+		"slug": "status",
+		"maintenanceId": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+	},
+	"timestamp": "2026-03-10T03:00:00.000Z"
 }
 ```
 
@@ -921,3 +1145,5 @@ When subscribed, you receive events:
 | `/v1/status/:slug/groups/:id/reports`          | 30 seconds |
 | `/v1/status/:slug/groups/:id/reports/hourly`   | 5 minutes  |
 | `/v1/status/:slug/groups/:id/reports/daily`    | 15 minutes |
+| `/v1/status/:slug/incidents`                   | 30 seconds |
+| `/v1/status/:slug/maintenances`                | 30 seconds |

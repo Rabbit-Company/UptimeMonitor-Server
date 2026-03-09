@@ -109,7 +109,7 @@ class MaintenanceScheduler {
 					const statusPage = cache.getStatusPage(maintenance.status_page_id);
 					if (statusPage) {
 						try {
-							broadcastMaintenanceEvent(statusPage.slug, "maintenance-started", {
+							broadcastMaintenanceEvent(statusPage.slug, "maintenance-update-added", {
 								maintenance: updated,
 							});
 						} catch (err) {
@@ -149,7 +149,7 @@ class MaintenanceScheduler {
 					const statusPage = cache.getStatusPage(maintenance.status_page_id);
 					if (statusPage) {
 						try {
-							broadcastMaintenanceEvent(statusPage.slug, "maintenance-completed", {
+							broadcastMaintenanceEvent(statusPage.slug, "maintenance-update-added", {
 								maintenance: updated,
 							});
 						} catch (err) {

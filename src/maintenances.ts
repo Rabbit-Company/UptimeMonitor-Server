@@ -273,7 +273,7 @@ export async function addMaintenanceUpdate(
 
 	const now = new Date().toISOString();
 	const updateId = Bun.randomUUIDv7();
-	const completedAt = params.status === "completed" || params.status === "cancelled" ? now : existing.completed_at;
+	const completedAt = params.status === "completed" || params.status === "cancelled" ? (existing.completed_at ?? now) : null;
 
 	await db`
 		INSERT INTO maintenance_updates (id, maintenance_id, status, message, created_at)
@@ -483,14 +483,7 @@ export async function transitionMaintenanceStatus(
  */
 export function broadcastMaintenanceEvent(
 	statusPageSlug: string,
-	action:
-		| "maintenance-created"
-		| "maintenance-updated"
-		| "maintenance-update-added"
-		| "maintenance-update-deleted"
-		| "maintenance-deleted"
-		| "maintenance-started"
-		| "maintenance-completed",
+	action: "maintenance-created" | "maintenance-updated" | "maintenance-update-added" | "maintenance-update-deleted" | "maintenance-deleted",
 	data: any,
 ): void {
 	try {

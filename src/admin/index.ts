@@ -8,6 +8,7 @@ import { registerNotificationRoutes } from "./notifications";
 import { registerAdminReportRoutes } from "./reports";
 import { registerIncidentRoutes } from "./incidents";
 import { registerConfigRoutes } from "./config";
+import { registerMaintenanceRoutes } from "./maintenances";
 
 export function registerAdminAPI(app: Web, getServer: () => Server): void {
 	registerConfigRoutes(app, getServer);
@@ -18,6 +19,7 @@ export function registerAdminAPI(app: Web, getServer: () => Server): void {
 	registerNotificationRoutes(app, getServer);
 	registerAdminReportRoutes(app);
 	registerIncidentRoutes(app, getServer);
+	registerMaintenanceRoutes(app, getServer);
 
 	Logger.info("Admin API registered", { prefix: "/v1/admin" });
 }

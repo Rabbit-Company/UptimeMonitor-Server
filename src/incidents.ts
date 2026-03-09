@@ -1,54 +1,44 @@
-import { clickhouse } from "./clickhouse";
 import { Logger } from "./logger";
 import { server } from ".";
 import type { Incident, IncidentSeverity, IncidentStatus, IncidentUpdate, IncidentWithUpdates } from "./types";
+import { db } from "./database";
 
-type IncidentRow = Omit<Incident, "resolved_at"> & {
-	created_at: string;
-	updated_at: string;
-	resolved_at: "" | string;
-};
-
-export async function initIncidentTables(): Promise<void> {
-	try {
-		await clickhouse.command({
-			query: `
-				CREATE TABLE IF NOT EXISTS incidents (
-					id String,
-					status_page_id LowCardinality(String),
-					title String,
-					status LowCardinality(String),
-					severity LowCardinality(String),
-					affected_monitors Array(String),
-					created_at DateTime64(3),
-					updated_at DateTime64(3),
-					resolved_at Nullable(DateTime64(3))
-				) ENGINE = ReplacingMergeTree(updated_at)
-				ORDER BY (status_page_id, created_at, id)
-				PARTITION BY toYYYYMM(created_at)
-				SETTINGS index_granularity = 8192
-			`,
-		});
-
-		await clickhouse.command({
-			query: `
-				CREATE TABLE IF NOT EXISTS incident_updates (
-					id String,
-					incident_id String,
-					status LowCardinality(String),
-					message String,
-					created_at DateTime64(3)
-				) ENGINE = MergeTree()
-				ORDER BY (incident_id, created_at, id)
-				PARTITION BY toYYYYMM(created_at)
-				SETTINGS index_granularity = 8192
-			`,
-		});
-
-		Logger.info("Incident tables initialized");
-	} catch (err: any) {
-		Logger.error("Incident tables initialization failed", { "error.message": err?.message });
+function parseAffectedMonitors(value: unknown): string[] {
+	if (Array.isArray(value)) return value as string[];
+	if (typeof value === "string") {
+		try {
+			const parsed = JSON.parse(value);
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
 	}
+	return [];
+}
+
+function rowToIncident(row: Record<string, any>): Incident {
+	return {
+		id: row.id,
+		status_page_id: row.status_page_id,
+		title: row.title,
+		status: row.status as IncidentStatus,
+		severity: row.severity as IncidentSeverity,
+		affected_monitors: parseAffectedMonitors(row.affected_monitors),
+		suppress_notifications: row.suppress_notifications === true || row.suppress_notifications === 1,
+		created_at: row.created_at,
+		updated_at: row.updated_at,
+		resolved_at: row.resolved_at || null,
+	};
+}
+
+function rowToUpdate(row: Record<string, any>): IncidentUpdate {
+	return {
+		id: row.id,
+		incident_id: row.incident_id,
+		status: row.status as IncidentStatus,
+		message: row.message,
+		created_at: row.created_at,
+	};
 }
 
 /**
@@ -59,7 +49,6 @@ export async function getIncidentsByMonth(statusPageId: string, month?: string):
 	const now = new Date();
 	const targetMonth = month || `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 
-	// Parse month to get date range
 	const [yearStr, monthStr] = targetMonth.split("-");
 	const year = parseInt(yearStr!, 10);
 	const mon = parseInt(monthStr!, 10);
@@ -68,79 +57,41 @@ export async function getIncidentsByMonth(statusPageId: string, month?: string):
 		return [];
 	}
 
-	const startDate = `${year}-${String(mon).padStart(2, "0")}-01 00:00:00.000`;
-	// Next month start
+	const startDate = new Date(Date.UTC(year, mon - 1, 1)).toISOString();
 	const nextYear = mon === 12 ? year + 1 : year;
 	const nextMonth = mon === 12 ? 1 : mon + 1;
-	const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01 00:00:00.000`;
+	const endDate = new Date(Date.UTC(nextYear, nextMonth - 1, 1)).toISOString();
 
 	try {
-		const incidentResult = await clickhouse.query({
-			query: `
-				SELECT
-					id,
-					status_page_id,
-					title,
-					status,
-					severity,
-					affected_monitors,
-					created_at,
-					updated_at,
-					resolved_at
-				FROM incidents FINAL
-				WHERE status_page_id = {statusPageId:String}
-					AND created_at >= {startDate:String}
-					AND created_at < {endDate:String}
-				ORDER BY created_at DESC
-			`,
-			query_params: { statusPageId, startDate, endDate },
-			format: "JSONEachRow",
-			clickhouse_settings: {
-				date_time_output_format: "iso",
-			},
-		});
+		const incidentRows = await db`
+			SELECT * FROM incidents
+			WHERE status_page_id = ${statusPageId}
+				AND created_at >= ${startDate}
+				AND created_at < ${endDate}
+			ORDER BY created_at DESC
+		`;
 
-		const incidents = await incidentResult.json<IncidentRow>();
+		if (incidentRows.length === 0) return [];
 
-		if (incidents.length === 0) return [];
+		const incidentIds = incidentRows.map((r: any) => r.id);
 
-		// Get all updates for these incidents in one query
-		const incidentIds = incidents.map((i) => i.id);
-		const updateResult = await clickhouse.query({
-			query: `
-				SELECT
-					id,
-					incident_id,
-					status,
-					message,
-					created_at
-				FROM incident_updates
-				WHERE incident_id IN ({incidentIds:Array(String)})
-				ORDER BY created_at ASC
-			`,
-			query_params: { incidentIds },
-			format: "JSONEachRow",
-			clickhouse_settings: {
-				date_time_output_format: "iso",
-			},
-		});
-
-		const updates = await updateResult.json<IncidentUpdate>();
+		const updateRows = await db`
+			SELECT * FROM incident_updates
+			WHERE incident_id IN ${db(incidentIds)}
+			ORDER BY created_at ASC
+		`;
 
 		// Group updates by incident_id
 		const updatesByIncident = new Map<string, IncidentUpdate[]>();
-		for (const update of updates) {
-			const list = updatesByIncident.get(update.incident_id) || [];
-			list.push(update);
-			updatesByIncident.set(update.incident_id, list);
+		for (const row of updateRows) {
+			const list = updatesByIncident.get(row.incident_id) || [];
+			list.push(rowToUpdate(row));
+			updatesByIncident.set(row.incident_id, list);
 		}
 
-		// Merge
-		return incidents.map((incident) => ({
-			...incident,
-			affected_monitors: incident.affected_monitors || [],
-			resolved_at: incident.resolved_at || null,
-			updates: updatesByIncident.get(incident.id) || [],
+		return incidentRows.map((row: any) => ({
+			...rowToIncident(row),
+			updates: updatesByIncident.get(row.id) || [],
 		}));
 	} catch (err: any) {
 		Logger.error("getIncidentsByMonth failed", { statusPageId, month: targetMonth, "error.message": err?.message });
@@ -153,60 +104,25 @@ export async function getIncidentsByMonth(statusPageId: string, month?: string):
  */
 export async function getIncidentById(incidentId: string): Promise<IncidentWithUpdates | null> {
 	try {
-		const incidentResult = await clickhouse.query({
-			query: `
-				SELECT
-					id,
-					status_page_id,
-					title,
-					status,
-					severity,
-					affected_monitors,
-					created_at,
-					updated_at,
-					resolved_at
-				FROM incidents FINAL
-				WHERE id = {incidentId:String}
-				LIMIT 1
-			`,
-			query_params: { incidentId },
-			format: "JSONEachRow",
-			clickhouse_settings: {
-				date_time_output_format: "iso",
-			},
-		});
+		const incidentRows = await db`
+			SELECT * FROM incidents
+			WHERE id = ${incidentId}
+			LIMIT 1
+		`;
 
-		const incidents = await incidentResult.json<IncidentRow>();
-		if (incidents.length === 0) return null;
+		if (incidentRows.length === 0) return null;
 
-		const incident = incidents[0]!;
+		const incident = rowToIncident(incidentRows[0]!);
 
-		const updateResult = await clickhouse.query({
-			query: `
-				SELECT
-					id,
-					incident_id,
-					status,
-					message,
-					created_at
-				FROM incident_updates
-				WHERE incident_id = {incidentId:String}
-				ORDER BY created_at ASC
-			`,
-			query_params: { incidentId },
-			format: "JSONEachRow",
-			clickhouse_settings: {
-				date_time_output_format: "iso",
-			},
-		});
-
-		const updates = await updateResult.json<IncidentUpdate>();
+		const updateRows = await db`
+			SELECT * FROM incident_updates
+			WHERE incident_id = ${incidentId}
+			ORDER BY created_at ASC
+		`;
 
 		return {
 			...incident,
-			affected_monitors: incident.affected_monitors || [],
-			resolved_at: incident.resolved_at || null,
-			updates,
+			updates: updateRows.map(rowToUpdate),
 		};
 	} catch (err: any) {
 		Logger.error("getIncidentById failed", { incidentId, "error.message": err?.message });
@@ -219,36 +135,22 @@ export async function getIncidentById(incidentId: string): Promise<IncidentWithU
  */
 export async function getAllIncidents(statusPageId?: string): Promise<Incident[]> {
 	try {
-		const whereClause = statusPageId ? "WHERE status_page_id = {statusPageId:String}" : "";
-		const result = await clickhouse.query({
-			query: `
-				SELECT
-					id,
-					status_page_id,
-					title,
-					status,
-					severity,
-					affected_monitors,
-					created_at,
-					updated_at,
-					resolved_at
-				FROM incidents FINAL
-				${whereClause}
-				ORDER BY created_at DESC
-			`,
-			query_params: { statusPageId: statusPageId || "" },
-			format: "JSONEachRow",
-			clickhouse_settings: {
-				date_time_output_format: "iso",
-			},
-		});
+		let rows: any[];
 
-		const incidents = await result.json<IncidentRow>();
-		return incidents.map((i) => ({
-			...i,
-			affected_monitors: i.affected_monitors || [],
-			resolved_at: i.resolved_at || null,
-		}));
+		if (statusPageId) {
+			rows = await db`
+				SELECT * FROM incidents
+				WHERE status_page_id = ${statusPageId}
+				ORDER BY created_at DESC
+			`;
+		} else {
+			rows = await db`
+				SELECT * FROM incidents
+				ORDER BY created_at DESC
+			`;
+		}
+
+		return rows.map(rowToIncident);
 	} catch (err: any) {
 		Logger.error("getAllIncidents failed", { "error.message": err?.message });
 		return [];
@@ -265,61 +167,37 @@ export async function createIncident(params: {
 	severity: IncidentSeverity;
 	message: string;
 	affectedMonitors?: string[];
+	suppressNotifications?: boolean;
 }): Promise<IncidentWithUpdates> {
 	const now = new Date().toISOString();
-	const incidentId = crypto.randomUUID();
-	const updateId = crypto.randomUUID();
-
+	const incidentId = Bun.randomUUIDv7();
+	const updateId = Bun.randomUUIDv7();
 	const resolvedAt = params.status === "resolved" ? now : null;
+	const affectedJson = JSON.stringify(params.affectedMonitors || []);
+	const suppressNotifications = params.suppressNotifications !== false;
+	const suppressInt = suppressNotifications ? 1 : 0;
 
-	await clickhouse.insert({
-		table: "incidents",
-		values: [
-			{
-				id: incidentId,
-				status_page_id: params.statusPageId,
-				title: params.title,
-				status: params.status,
-				severity: params.severity,
-				affected_monitors: params.affectedMonitors || [],
-				created_at: now,
-				updated_at: now,
-				resolved_at: resolvedAt,
-			},
-		],
-		format: "JSONEachRow",
-		clickhouse_settings: {
-			date_time_input_format: "best_effort",
-		},
-	});
+	await db`
+		INSERT INTO incidents (id, status_page_id, title, status, severity, affected_monitors, suppress_notifications, created_at, updated_at, resolved_at)
+		VALUES (${incidentId}, ${params.statusPageId}, ${params.title}, ${params.status}, ${params.severity}, ${affectedJson}, ${suppressInt}, ${now}, ${now}, ${resolvedAt})
+	`;
 
-	await clickhouse.insert({
-		table: "incident_updates",
-		values: [
-			{
-				id: updateId,
-				incident_id: incidentId,
-				status: params.status,
-				message: params.message,
-				created_at: now,
-			},
-		],
-		format: "JSONEachRow",
-		clickhouse_settings: {
-			date_time_input_format: "best_effort",
-		},
-	});
+	await db`
+		INSERT INTO incident_updates (id, incident_id, status, message, created_at)
+		VALUES (${updateId}, ${incidentId}, ${params.status}, ${params.message}, ${now})
+	`;
 
-	const incident: IncidentWithUpdates = {
+	return {
 		id: incidentId,
 		status_page_id: params.statusPageId,
 		title: params.title,
 		status: params.status,
 		severity: params.severity,
 		affected_monitors: params.affectedMonitors || [],
+		suppress_notifications: suppressNotifications,
 		created_at: now,
 		updated_at: now,
-		resolved_at: resolvedAt ? now : null,
+		resolved_at: resolvedAt,
 		updates: [
 			{
 				id: updateId,
@@ -330,51 +208,48 @@ export async function createIncident(params: {
 			},
 		],
 	};
-
-	return incident;
 }
 
 /**
- * Update incident metadata (title, severity, affected_monitors).
- * Re-inserts a row with the same id - ReplacingMergeTree keeps the latest by updated_at.
+ * Update incident metadata (title, severity, affected_monitors, suppress_notifications).
  */
 export async function updateIncident(
 	incidentId: string,
-	updates: { title?: string; severity?: IncidentSeverity; affectedMonitors?: string[] },
+	updates: {
+		title?: string;
+		severity?: IncidentSeverity;
+		affectedMonitors?: string[];
+		suppressNotifications?: boolean;
+	},
 ): Promise<IncidentWithUpdates | null> {
 	const existing = await getIncidentById(incidentId);
 	if (!existing) return null;
 
 	const now = new Date().toISOString();
+	const newTitle = updates.title ?? existing.title;
+	const newSeverity = updates.severity ?? existing.severity;
+	const newAffected = updates.affectedMonitors ?? existing.affected_monitors;
+	const newSuppress = updates.suppressNotifications ?? existing.suppress_notifications;
+	const affectedJson = JSON.stringify(newAffected);
+	const suppressInt = newSuppress ? 1 : 0;
 
-	const updated = {
-		id: existing.id,
-		status_page_id: existing.status_page_id,
-		title: updates.title ?? existing.title,
-		status: existing.status,
-		severity: updates.severity ?? existing.severity,
-		affected_monitors: updates.affectedMonitors ?? existing.affected_monitors,
-		created_at: existing.created_at,
-		updated_at: now,
-		resolved_at: existing.resolved_at,
-	};
-
-	await clickhouse.insert({
-		table: "incidents",
-		values: [updated],
-		format: "JSONEachRow",
-		clickhouse_settings: {
-			date_time_input_format: "best_effort",
-		},
-	});
+	await db`
+		UPDATE incidents
+		SET title = ${newTitle},
+			severity = ${newSeverity},
+			affected_monitors = ${affectedJson},
+			suppress_notifications = ${suppressInt},
+			updated_at = ${now}
+		WHERE id = ${incidentId}
+	`;
 
 	return {
 		...existing,
-		title: updated.title,
-		severity: updated.severity,
-		affected_monitors: updated.affected_monitors,
+		title: newTitle,
+		severity: newSeverity,
+		affected_monitors: newAffected,
+		suppress_notifications: newSuppress,
 		updated_at: now,
-		updates: existing.updates,
 	};
 }
 
@@ -389,48 +264,29 @@ export async function addIncidentUpdate(
 	if (!existing) return null;
 
 	const now = new Date().toISOString();
-	const updateId = crypto.randomUUID();
+	const updateId = Bun.randomUUIDv7();
+	const resolvedAt = params.status === "resolved" ? now : existing.resolved_at;
 
-	const update = {
+	await db`
+		INSERT INTO incident_updates (id, incident_id, status, message, created_at)
+		VALUES (${updateId}, ${incidentId}, ${params.status}, ${params.message}, ${now})
+	`;
+
+	await db`
+		UPDATE incidents
+		SET status = ${params.status},
+			updated_at = ${now},
+			resolved_at = ${resolvedAt}
+		WHERE id = ${incidentId}
+	`;
+
+	const update: IncidentUpdate = {
 		id: updateId,
 		incident_id: incidentId,
 		status: params.status,
 		message: params.message,
 		created_at: now,
 	};
-
-	await clickhouse.insert({
-		table: "incident_updates",
-		values: [update],
-		format: "JSONEachRow",
-		clickhouse_settings: {
-			date_time_input_format: "best_effort",
-		},
-	});
-
-	// Update the parent incident
-	const resolvedAt = params.status === "resolved" ? now : existing.resolved_at;
-
-	await clickhouse.insert({
-		table: "incidents",
-		values: [
-			{
-				id: existing.id,
-				status_page_id: existing.status_page_id,
-				title: existing.title,
-				status: params.status,
-				severity: existing.severity,
-				affected_monitors: existing.affected_monitors,
-				created_at: existing.created_at,
-				updated_at: now,
-				resolved_at: resolvedAt,
-			},
-		],
-		format: "JSONEachRow",
-		clickhouse_settings: {
-			date_time_input_format: "best_effort",
-		},
-	});
 
 	const updatedIncident: IncidentWithUpdates = {
 		...existing,
@@ -440,7 +296,7 @@ export async function addIncidentUpdate(
 		updates: [...existing.updates, update],
 	};
 
-	return { incident: updatedIncident, update: update };
+	return { incident: updatedIncident, update };
 }
 
 /**
@@ -448,15 +304,8 @@ export async function addIncidentUpdate(
  */
 export async function deleteIncident(incidentId: string): Promise<boolean> {
 	try {
-		await clickhouse.command({
-			query: `DELETE FROM incident_updates WHERE incident_id = {incidentId:String}`,
-			query_params: { incidentId },
-		});
-
-		await clickhouse.command({
-			query: `DELETE FROM incidents WHERE id = {incidentId:String}`,
-			query_params: { incidentId },
-		});
+		await db`DELETE FROM incident_updates WHERE incident_id = ${incidentId}`;
+		await db`DELETE FROM incidents WHERE id = ${incidentId}`;
 
 		return true;
 	} catch (err: any) {
@@ -476,48 +325,28 @@ export async function deleteIncidentUpdate(incidentId: string, updateId: string)
 		const existing = await getIncidentById(incidentId);
 		if (!existing) return null;
 
-		// Find the update being deleted
 		const deletedUpdate = existing.updates.find((u) => u.id === updateId);
 		if (!deletedUpdate) return null;
 
-		// Determine if this is the latest update (last in chronological order)
 		const isLatestUpdate = existing.updates.length > 0 && existing.updates[existing.updates.length - 1]!.id === updateId;
 
-		// Delete the update
-		await clickhouse.command({
-			query: `DELETE FROM incident_updates WHERE id = {updateId:String} AND incident_id = {incidentId:String}`,
-			query_params: { updateId, incidentId },
-		});
+		await db`DELETE FROM incident_updates WHERE id = ${updateId} AND incident_id = ${incidentId}`;
 
 		const remainingUpdates = existing.updates.filter((u) => u.id !== updateId);
 
-		// If we deleted the latest update, sync the incident's status to the new latest update
 		if (isLatestUpdate) {
 			const newLatest = remainingUpdates.length > 0 ? remainingUpdates[remainingUpdates.length - 1]! : null;
 			const newStatus: IncidentStatus = newLatest ? (newLatest.status as IncidentStatus) : existing.status;
 			const now = new Date().toISOString();
 			const newResolvedAt = newStatus === "resolved" ? (existing.resolved_at ?? now) : null;
 
-			await clickhouse.insert({
-				table: "incidents",
-				values: [
-					{
-						id: existing.id,
-						status_page_id: existing.status_page_id,
-						title: existing.title,
-						status: newStatus,
-						severity: existing.severity,
-						affected_monitors: existing.affected_monitors,
-						created_at: existing.created_at,
-						updated_at: now,
-						resolved_at: newResolvedAt,
-					},
-				],
-				format: "JSONEachRow",
-				clickhouse_settings: {
-					date_time_input_format: "best_effort",
-				},
-			});
+			await db`
+				UPDATE incidents
+				SET status = ${newStatus},
+					updated_at = ${now},
+					resolved_at = ${newResolvedAt}
+				WHERE id = ${incidentId}
+			`;
 
 			return {
 				...existing,
@@ -535,6 +364,20 @@ export async function deleteIncidentUpdate(incidentId: string, updateId: string)
 	} catch (err: any) {
 		Logger.error("deleteIncidentUpdate failed", { incidentId, updateId, "error.message": err?.message });
 		return null;
+	}
+}
+
+export async function getActiveIncidents(): Promise<Incident[]> {
+	try {
+		const rows = await db`
+			SELECT * FROM incidents
+			WHERE status IN ('investigating', 'identified', 'monitoring') AND suppress_notifications = ${1}
+		`;
+
+		return rows.map(rowToIncident);
+	} catch (err: any) {
+		Logger.error("getActiveIncidents failed", { "error.message": err?.message });
+		return [];
 	}
 }
 

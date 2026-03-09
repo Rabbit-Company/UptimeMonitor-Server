@@ -14,6 +14,7 @@ import type {
 	PulseMonitor,
 	PulseConfig,
 	AdminAPIConfig,
+	DatabaseConfig,
 } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { configureLoki, Logger } from "./logger";
@@ -1187,6 +1188,20 @@ function validateMissingPulseDetectorConfig(config: unknown): MissingPulseDetect
 	return result;
 }
 
+function validateDatabaseConfig(config: unknown): DatabaseConfig {
+	const cfg = (config || {}) as Record<string, unknown>;
+	const result: DatabaseConfig = {};
+
+	if (cfg.url !== undefined) {
+		if (!isString(cfg.url) || cfg.url.trim().length === 0) {
+			throw new ConfigValidationError(["database.url must be a non-empty string"]);
+		}
+		result.url = cfg.url;
+	}
+
+	return result;
+}
+
 function validatePulseMonitor(pulseMonitor: unknown, index: number): PulseMonitor {
 	const errors: string[] = [];
 
@@ -2067,6 +2082,16 @@ function loadConfig(exitOnError: boolean = true): Config {
 			} else throw error;
 		}
 
+		let database: DatabaseConfig;
+		try {
+			database = validateDatabaseConfig(parsed.database);
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				allErrors.push(...error.errors);
+				database = {};
+			} else throw error;
+		}
+
 		let notifications: NotificationsConfig;
 		try {
 			notifications = validateNotificationsConfig(parsed.notifications);
@@ -2162,6 +2187,7 @@ function loadConfig(exitOnError: boolean = true): Config {
 		}
 
 		const config: Config = {
+			database,
 			clickhouse,
 			server,
 			adminAPI,

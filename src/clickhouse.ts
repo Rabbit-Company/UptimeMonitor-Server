@@ -7,7 +7,6 @@ import { cache } from "./cache";
 import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
 import { server } from ".";
 import { groupStateTracker } from "./group-state-tracker";
-import { initIncidentTables } from "./incidents";
 import { pulseBuffer } from "./pulse-buffer";
 import { uptimeUpdater } from "./uptime-updater";
 import { propagateGroupStatus } from "./group-updater";
@@ -98,9 +97,7 @@ export async function initClickHouse(): Promise<void> {
 			`,
 		});
 
-		await initIncidentTables();
-
-		Logger.info("ClickHouse tables initialized");
+		Logger.info("Pulse tables initialized");
 	} catch (err: any) {
 		Logger.error("ClickHouse initialization failed", { "error.message": err?.message });
 	}
@@ -712,7 +709,23 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 		const downDep = cache.isAnyDependencyDown(groupId);
 
 		if (isGoingDown) {
-			if (downDep) {
+			if (cache.isUnderActiveMaintenance(groupId)) {
+				const gState = groupStateTracker.getState(groupId);
+				if (gState) gState.notificationSuppressed = true;
+				Logger.info("Group down notification suppressed (active maintenance)", {
+					groupId,
+					groupName: group.name,
+					maintenanceId: cache.isUnderActiveMaintenance(groupId),
+				});
+			} else if (cache.isUnderActiveIncident(groupId)) {
+				const gState = groupStateTracker.getState(groupId);
+				if (gState) gState.notificationSuppressed = true;
+				Logger.info("Group down notification suppressed (active incident)", {
+					groupId,
+					groupName: group.name,
+					incidentId: cache.isUnderActiveIncident(groupId),
+				});
+			} else if (downDep) {
 				// Dependency already down - suppress immediately
 				const gState = groupStateTracker.getState(groupId);
 				if (gState) gState.notificationSuppressed = true;
@@ -812,7 +825,23 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 				});
 			}
 		} else if (isStillDown && group.resendNotification && group.resendNotification > 0) {
-			if (downDep) {
+			if (cache.isUnderActiveMaintenance(groupId)) {
+				const gState = groupStateTracker.getState(groupId);
+				if (gState) gState.notificationSuppressed = true;
+				Logger.info("Group still-down notification suppressed (active maintenance)", {
+					groupId,
+					groupName: group.name,
+					maintenanceId: cache.isUnderActiveMaintenance(groupId),
+				});
+			} else if (cache.isUnderActiveIncident(groupId)) {
+				const gState = groupStateTracker.getState(groupId);
+				if (gState) gState.notificationSuppressed = true;
+				Logger.info("Group still-down notification suppressed (active incident)", {
+					groupId,
+					groupName: group.name,
+					incidentId: cache.isUnderActiveIncident(groupId),
+				});
+			} else if (downDep) {
 				// Suppress still-down reminders when dependency is down
 				const gState = groupStateTracker.getState(groupId);
 				if (gState) gState.notificationSuppressed = true;

@@ -22,6 +22,9 @@ If you prefer to edit the TOML file directly, here's the complete reference:
 The smallest working configuration:
 
 ```toml
+[database]
+url = "sqlite://./databases/uptime_monitor.db"
+
 [clickhouse]
 url = "http://uptime_user:uptime_password@clickhouse:8123/uptime_monitor"
 
@@ -41,6 +44,27 @@ items = ["my-service"]
 ```
 
 ## Configuration Sections
+
+### Database (SQL)
+
+Incidents and maintenances are stored in a SQL database. SQLite is used by default (no external dependency required), but PostgreSQL and MySQL/MariaDB are also supported.
+
+```toml
+[database]
+url = "sqlite://./databases/uptime_monitor.db"
+```
+
+| Field | Required | Default                                  | Description                 |
+| ----- | -------- | ---------------------------------------- | --------------------------- |
+| `url` | No       | `sqlite://./databases/uptime_monitor.db` | SQL database connection URL |
+
+**Supported databases:**
+
+- **SQLite** (default): `sqlite://./databases/uptime_monitor.db`
+- **PostgreSQL**: `postgres://user:password@localhost:5432/uptime_monitor`
+- **MySQL/MariaDB**: `mysql://user:password@localhost:3306/uptime_monitor`
+
+Tables are created automatically on startup.
 
 ### ClickHouse Connection
 

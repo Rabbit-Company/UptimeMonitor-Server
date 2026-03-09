@@ -16,6 +16,7 @@ services:
       - CONFIG=/app/config/config.toml
     volumes:
       - ./config.toml:/app/config/config.toml
+      - uptime_monitor_db:/app/databases
     networks:
       - internal-network
     depends_on:
@@ -63,5 +64,7 @@ networks:
     driver: bridge
 
 volumes:
+  uptime_monitor_db:
+    driver: local
   clickhouse_data:
     driver: local

@@ -20,8 +20,12 @@ import { registerPublicRoutes } from "./routes";
 import { statusUpdater } from "./status-updater";
 import { pulseBuffer } from "./pulse-buffer";
 import { uptimeUpdater } from "./uptime-updater";
+import { maintenanceScheduler } from "./schedulers/maintenance";
+import { closeDatabase, initDatabase } from "./database";
+import { incidentScheduler } from "./schedulers/incident";
 
 await initClickHouse();
+await initDatabase(config.database?.url);
 
 const app = new Web();
 
@@ -386,17 +390,23 @@ if (config.pulseMonitors.length > 0) {
 }
 
 // Graceful shutdown
-process.on("SIGTERM", () => {
+process.on("SIGTERM", async () => {
 	Logger.info("Received SIGTERM, shutting down gracefully");
 	missingPulseDetector.stop();
 	aggregationJob.stop();
+	incidentScheduler.stop();
+	maintenanceScheduler.stop();
+	await closeDatabase();
 	process.exit(0);
 });
 
-process.on("SIGINT", () => {
+process.on("SIGINT", async () => {
 	Logger.info("Received SIGINT, shutting down gracefully");
 	missingPulseDetector.stop();
 	aggregationJob.stop();
+	incidentScheduler.stop();
+	maintenanceScheduler.stop();
+	await closeDatabase();
 	process.exit(0);
 });
 
@@ -418,3 +428,6 @@ await statusUpdater.flush();
 missingPulseDetector.start();
 
 aggregationJob.start().catch((err) => Logger.error("AggregationJob error", err));
+
+incidentScheduler.start();
+maintenanceScheduler.start();

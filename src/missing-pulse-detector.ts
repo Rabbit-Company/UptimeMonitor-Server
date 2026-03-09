@@ -231,7 +231,29 @@ export class MissingPulseDetector {
 				const hasDeps = cache.hasDependencies(monitor.id);
 				const notificationType: "down" | "still-down" = mState.consecutiveDownCount === 1 ? "down" : "still-down";
 
-				if (hasDeps) {
+				if (cache.isUnderActiveMaintenance(monitor.id)) {
+					// Suppress immediately
+					mState.notificationSuppressed = true;
+					mState.lastNotificationCount = mState.consecutiveDownCount;
+
+					Logger.info("Notification suppressed (active maintenance)", {
+						monitorId: monitor.id,
+						monitorName: monitor.name,
+						maintenanceId: cache.isUnderActiveMaintenance(monitor.id),
+						notificationType,
+					});
+				} else if (cache.isUnderActiveIncident(monitor.id)) {
+					// Suppress immediately
+					mState.notificationSuppressed = true;
+					mState.lastNotificationCount = mState.consecutiveDownCount;
+
+					Logger.info("Monitor notification suppressed (active incident)", {
+						monitorId: monitor.id,
+						monitorName: monitor.name,
+						incidentId: cache.isUnderActiveIncident(monitor.id),
+						notificationType,
+					});
+				} else if (hasDeps) {
 					const downDep = cache.isAnyDependencyDown(monitor.id);
 					if (downDep) {
 						// Suppress immediately
@@ -308,14 +330,30 @@ export class MissingPulseDetector {
 				continue;
 			}
 
-			const downDep = cache.isAnyDependencyDown(monitor.id);
-
-			if (downDep) {
+			if (cache.isUnderActiveMaintenance(monitor.id)) {
+				state.notificationSuppressed = true;
+				Logger.info("Notification suppressed after delay (active maintenance)", {
+					monitorId: monitor.id,
+					monitorName: monitor.name,
+					maintenanceId: cache.isUnderActiveMaintenance(monitor.id),
+					notificationType: type,
+					delayMs: delay,
+				});
+			} else if (cache.isUnderActiveIncident(monitor.id)) {
+				state.notificationSuppressed = true;
+				Logger.info("Notification suppressed after delay (active incident)", {
+					monitorId: monitor.id,
+					monitorName: monitor.name,
+					incidentId: cache.isUnderActiveIncident(monitor.id),
+					notificationType: type,
+					delayMs: delay,
+				});
+			} else if (cache.isAnyDependencyDown(monitor.id)) {
 				state.notificationSuppressed = true;
 				Logger.info("Notification suppressed after delay (dependency now down)", {
 					monitorId: monitor.id,
 					monitorName: monitor.name,
-					suppressedBy: downDep,
+					suppressedBy: cache.isAnyDependencyDown(monitor.id),
 					notificationType: type,
 					delayMs: delay,
 				});

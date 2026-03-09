@@ -22,6 +22,9 @@ class CacheManager {
 	private statusPageSlugsByItem: Map<string, string[]> = new Map();
 	private itemsOnStatusPage: Map<string, Set<string>> = new Map();
 
+	private activeIncidentMonitors: Map<string, string[]> = new Map();
+	private activeMaintenanceMonitors: Map<string, string[]> = new Map();
+
 	// Status cache
 	public statusCache: Map<string, StatusData> = new Map();
 
@@ -482,6 +485,43 @@ class CacheManager {
 	}
 
 	/**
+	 * Replace the active incident monitor suppression map.
+	 * Called periodically by the IncidentScheduler.
+	 */
+	setActiveIncidentMonitors(map: Map<string, string[]>): void {
+		this.activeIncidentMonitors = map;
+	}
+
+	/**
+	 * Check if a monitor/group is under an active incident with notification suppression.
+	 * Returns the first incident ID if suppressed, or undefined.
+	 */
+	isUnderActiveIncident(entityId: string): string | undefined {
+		const incidentIds = this.activeIncidentMonitors.get(entityId);
+		return incidentIds && incidentIds.length > 0 ? incidentIds[0] : undefined;
+	}
+
+	/**
+	 * Set the active maintenance suppression map.
+	 * Called by the MaintenanceScheduler when rebuilding the cache.
+	 */
+	setActiveMaintenanceMonitors(map: Map<string, string[]>): void {
+		this.activeMaintenanceMonitors = map;
+	}
+
+	/**
+	 * Check if a monitor/group is currently under an active maintenance with notification suppression.
+	 * Returns the first maintenance ID suppressing it, or undefined if not under maintenance.
+	 */
+	isUnderActiveMaintenance(entityId: string): string | undefined {
+		const maintenanceIds = this.activeMaintenanceMonitors.get(entityId);
+		if (maintenanceIds && maintenanceIds.length > 0) {
+			return maintenanceIds[0];
+		}
+		return undefined;
+	}
+
+	/**
 	 * Reload configuration and rebuild caches
 	 * This would be called when config is hot-reloaded
 	 */
@@ -503,6 +543,8 @@ class CacheManager {
 			childrenByParent: this.childrenByParent.size,
 			monitorsByPulseMonitor: this.monitorsByPulseMonitor.size,
 			statusPageSlugsByItem: this.statusPageSlugsByItem.size,
+			activeIncidentMonitors: this.activeIncidentMonitors.size,
+			activeMaintenanceMonitors: this.activeMaintenanceMonitors.size,
 			statusData: this.statusCache.size,
 			dependencyLevels: this.dependencyLevels.size,
 			entitiesWithDeps: this.dependenciesById.size,

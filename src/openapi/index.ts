@@ -12,7 +12,7 @@ export const openapi = {
 	info: {
 		title: "UptimeMonitor Server API",
 		description: "API for UptimeMonitor Server - a push-based uptime monitoring system with status pages, history tracking, and real-time WebSocket updates.",
-		version: "0.5.0",
+		version: "0.6.0",
 		license: {
 			name: "GPL-3.0",
 			url: "https://github.com/Rabbit-Company/UptimeMonitor-Server/blob/main/LICENSE",

@@ -88,7 +88,7 @@ curl "http://localhost:3000/v1/push/my-token?startTime=2025-01-15T10:00:00Z&endT
 
 ## Status Pages
 
-### GET /v1/status/:slug
+### GET /v1/status/:statusPageId
 
 Get full status page data with all monitors and groups.
 
@@ -103,8 +103,8 @@ For protected pages, the `Authorization` header must contain a **BLAKE2b-512 has
 
 ```json
 {
+	"id": "status",
 	"name": "Public Status",
-	"slug": "status",
 	"reports": false,
 	"items": [
 		{
@@ -151,7 +151,7 @@ For protected pages, the `Authorization` header must contain a **BLAKE2b-512 has
 - `401 Unauthorized` – Password is required, missing, or invalid
 - `404 Not Found` – Status page does not exist
 
-### GET /v1/status/:slug/summary
+### GET /v1/status/:statusPageId/summary
 
 Get a quick overview without full details.
 
@@ -185,7 +185,7 @@ For protected pages, the `Authorization` header must contain a **BLAKE2b-512 has
 
 ## History Endpoints
 
-All history endpoints are scoped under a status page slug. The monitor or group must belong to the specified status page (either as a direct item or nested within a group's children hierarchy). If the status page is password-protected, authentication is required.
+All history endpoints are scoped under a status page ID. The monitor or group must belong to the specified status page (either as a direct item or nested within a group's children hierarchy). If the status page is password-protected, authentication is required.
 
 **Authentication:**
 
@@ -201,16 +201,16 @@ For protected pages, the `Authorization` header must contain a **BLAKE2b-512 has
 
 ### Monitor History
 
-#### GET /v1/status/:slug/monitors/:id/history
+#### GET /v1/status/:statusPageId/monitors/:id/history
 
 Raw pulse data (~24 hours due to TTL).
 
 **Path Parameters:**
 
-| Parameter | Description      |
-| --------- | ---------------- |
-| `slug`    | Status page slug |
-| `id`      | Monitor ID       |
+| Parameter      | Description    |
+| -------------- | -------------- |
+| `statusPageId` | Status page ID |
+| `id`           | Monitor ID     |
 
 **Response:**
 
@@ -233,26 +233,26 @@ Raw pulse data (~24 hours due to TTL).
 }
 ```
 
-#### GET /v1/status/:slug/monitors/:id/history/hourly
+#### GET /v1/status/:statusPageId/monitors/:id/history/hourly
 
 Hourly aggregated data (~90 days).
 
-#### GET /v1/status/:slug/monitors/:id/history/daily
+#### GET /v1/status/:statusPageId/monitors/:id/history/daily
 
 Daily aggregated data (kept forever).
 
 ### Group History
 
-#### GET /v1/status/:slug/groups/:id/history
+#### GET /v1/status/:statusPageId/groups/:id/history
 
 Raw group history computed from children (~24 hours).
 
 **Path Parameters:**
 
-| Parameter | Description      |
-| --------- | ---------------- |
-| `slug`    | Status page slug |
-| `id`      | Group ID         |
+| Parameter      | Description    |
+| -------------- | -------------- |
+| `statusPageId` | Status page ID |
+| `id`           | Group ID       |
 
 **Response:**
 
@@ -273,11 +273,11 @@ Raw group history computed from children (~24 hours).
 }
 ```
 
-#### GET /v1/status/:slug/groups/:id/history/hourly
+#### GET /v1/status/:statusPageId/groups/:id/history/hourly
 
 Hourly aggregated group data (~90 days).
 
-#### GET /v1/status/:slug/groups/:id/history/daily
+#### GET /v1/status/:statusPageId/groups/:id/history/daily
 
 Daily aggregated group data (kept forever).
 
@@ -295,7 +295,6 @@ See the [Reports documentation](reports.md) for full details on configuration, C
 [[status_pages]]
 id = "main"
 name = "Status"
-slug = "status"
 items = ["my-service"]
 reports = true
 ```
@@ -318,16 +317,16 @@ All report endpoints accept a `format` query parameter (`json` or `csv`). Defaul
 
 ### Monitor Reports
 
-#### GET /v1/status/:slug/monitors/:id/reports
+#### GET /v1/status/:statusPageId/monitors/:id/reports
 
 Raw pulse data as CSV or JSON (~24 hours due to TTL).
 
 **Path Parameters:**
 
-| Parameter | Description      |
-| --------- | ---------------- |
-| `slug`    | Status page slug |
-| `id`      | Monitor ID       |
+| Parameter      | Description    |
+| -------------- | -------------- |
+| `statusPageId` | Status page ID |
+| `id`           | Monitor ID     |
 
 **Query Parameters:**
 
@@ -346,26 +345,26 @@ Timestamp,Uptime (%),Latency Min (ms),Latency Max (ms),Latency Avg (ms)
 
 If the monitor has custom metrics configured, additional columns are appended using the format `Name Min/Max/Avg (unit)`.
 
-#### GET /v1/status/:slug/monitors/:id/reports/hourly
+#### GET /v1/status/:statusPageId/monitors/:id/reports/hourly
 
 Hourly aggregated data as CSV or JSON (~90 days).
 
-#### GET /v1/status/:slug/monitors/:id/reports/daily
+#### GET /v1/status/:statusPageId/monitors/:id/reports/daily
 
 Daily aggregated data as CSV or JSON (kept forever).
 
 ### Group Reports
 
-#### GET /v1/status/:slug/groups/:id/reports
+#### GET /v1/status/:statusPageId/groups/:id/reports
 
 Raw group data as CSV or JSON (~24 hours due to TTL).
 
 **Path Parameters:**
 
-| Parameter | Description      |
-| --------- | ---------------- |
-| `slug`    | Status page slug |
-| `id`      | Group ID         |
+| Parameter      | Description    |
+| -------------- | -------------- |
+| `statusPageId` | Status page ID |
+| `id`           | Group ID       |
 
 **Query Parameters:**
 
@@ -382,11 +381,11 @@ Timestamp,Uptime (%),Latency Min (ms),Latency Max (ms),Latency Avg (ms)
 2025-01-15T10:00:00Z,100,35,120,67.5
 ```
 
-#### GET /v1/status/:slug/groups/:id/reports/hourly
+#### GET /v1/status/:statusPageId/groups/:id/reports/hourly
 
 Hourly aggregated group data as CSV or JSON (~90 days).
 
-#### GET /v1/status/:slug/groups/:id/reports/daily
+#### GET /v1/status/:statusPageId/groups/:id/reports/daily
 
 Daily aggregated group data as CSV or JSON (kept forever).
 
@@ -403,15 +402,15 @@ Incidents allow communicating outages and maintenance events on a status page. E
 
 For protected pages, the `Authorization` header must contain a **BLAKE2b-512 hash of the configured password**, sent as a `Bearer` token.
 
-### GET /v1/status/:slug/incidents
+### GET /v1/status/:statusPageId/incidents
 
 Returns all incidents for a status page in a given month, with all timeline updates inlined. Cached for 30 seconds.
 
 **Path Parameters:**
 
-| Parameter | Description      |
-| --------- | ---------------- |
-| `slug`    | Status page slug |
+| Parameter      | Description    |
+| -------------- | -------------- |
+| `statusPageId` | Status page ID |
 
 **Query Parameters:**
 
@@ -488,15 +487,15 @@ Maintenances allow communicating scheduled maintenance windows on a status page.
 
 For protected pages, the `Authorization` header must contain a **BLAKE2b-512 hash of the configured password**, sent as a `Bearer` token.
 
-### GET /v1/status/:slug/maintenances
+### GET /v1/status/:statusPageId/maintenances
 
 Returns all maintenances for a status page in a given month, with all timeline updates inlined. Cached for 30 seconds.
 
 **Path Parameters:**
 
-| Parameter | Description      |
-| --------- | ---------------- |
-| `slug`    | Status page slug |
+| Parameter      | Description    |
+| -------------- | -------------- |
+| `statusPageId` | Status page ID |
 
 **Query Parameters:**
 
@@ -677,7 +676,7 @@ On connect, you receive:
 ### Subscribe to Status Page
 
 ```json
-{ "action": "subscribe", "slug": "status" }
+{ "action": "subscribe", "statusPageId": "status" }
 ```
 
 **Response:**
@@ -685,7 +684,7 @@ On connect, you receive:
 ```json
 {
 	"action": "subscribed",
-	"slug": "status",
+	"statusPageId": "status",
 	"message": "Subscription successful",
 	"timestamp": "2025-01-15T10:30:00.000Z"
 }
@@ -694,7 +693,7 @@ On connect, you receive:
 ### Unsubscribe
 
 ```json
-{ "action": "unsubscribe", "slug": "status" }
+{ "action": "unsubscribe", "statusPageId": "status" }
 ```
 
 ### List Subscriptions
@@ -708,7 +707,7 @@ On connect, you receive:
 ```json
 {
 	"action": "subscriptions",
-	"type": "slug",
+	"type": "statusPage",
 	"items": ["status", "internal"],
 	"timestamp": "2025-01-15T10:30:00.000Z"
 }
@@ -781,7 +780,7 @@ When subscribed, you receive events:
 {
 	"action": "pulse",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"monitorId": "api-prod",
 		"status": "up",
 		"latency": 42,
@@ -797,7 +796,7 @@ When subscribed, you receive events:
 {
 	"action": "uptime-update",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"monitorId": "api-prod",
 		"uptime1h": 99.5,
 		"uptime24h": 98.2,
@@ -816,7 +815,7 @@ When subscribed, you receive events:
 {
 	"action": "monitor-down",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"monitorId": "api-prod",
 		"downtime": 30000
 	},
@@ -830,7 +829,7 @@ When subscribed, you receive events:
 {
 	"action": "monitor-recovered",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"monitorId": "api-prod",
 		"previousConsecutiveDownCount": 5,
 		"downtime": 150000
@@ -845,7 +844,7 @@ When subscribed, you receive events:
 {
 	"action": "monitor-still-down",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"monitorId": "api-prod",
 		"consecutiveDownCount": 10,
 		"downtime": 300000
@@ -860,7 +859,7 @@ When subscribed, you receive events:
 {
 	"action": "incident-created",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"incident": {
 			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			"status_page_id": "main",
@@ -893,7 +892,7 @@ When subscribed, you receive events:
 {
 	"action": "incident-updated",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"incident": {
 			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			"status_page_id": "main",
@@ -918,7 +917,7 @@ When subscribed, you receive events:
 {
 	"action": "incident-update-added",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"incident": {
 			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			"status_page_id": "main",
@@ -950,7 +949,7 @@ When subscribed, you receive events:
 {
 	"action": "incident-update-deleted",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"incidentId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 		"updateId": "11223344-5566-7788-99aa-bbccddeeff00",
 		"incident": {
@@ -977,7 +976,7 @@ When subscribed, you receive events:
 {
 	"action": "incident-deleted",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"incidentId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 	},
 	"timestamp": "2026-02-15T11:00:00.000Z"
@@ -990,7 +989,7 @@ When subscribed, you receive events:
 {
 	"action": "maintenance-created",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"maintenance": {
 			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
 			"status_page_id": "main",
@@ -1024,7 +1023,7 @@ When subscribed, you receive events:
 {
 	"action": "maintenance-updated",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"maintenance": {
 			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
 			"status_page_id": "main",
@@ -1050,7 +1049,7 @@ When subscribed, you receive events:
 {
 	"action": "maintenance-update-added",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"maintenance": {
 			"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
 			"status_page_id": "main",
@@ -1083,7 +1082,7 @@ When subscribed, you receive events:
 {
 	"action": "maintenance-update-deleted",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"maintenanceId": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
 		"updateId": "d4e5f6a7-b8c9-0123-defa-234567890123",
 		"maintenance": {
@@ -1111,7 +1110,7 @@ When subscribed, you receive events:
 {
 	"action": "maintenance-deleted",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"maintenanceId": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
 	},
 	"timestamp": "2026-03-10T03:00:00.000Z"
@@ -1129,21 +1128,21 @@ When subscribed, you receive events:
 
 ## Caching
 
-| Endpoint                                       | Cache TTL  |
-| ---------------------------------------------- | ---------- |
-| `/v1/status/:slug`                             | 30 seconds |
-| `/v1/status/:slug/summary`                     | 30 seconds |
-| `/v1/status/:slug/monitors/:id/history`        | 30 seconds |
-| `/v1/status/:slug/monitors/:id/history/hourly` | 5 minutes  |
-| `/v1/status/:slug/monitors/:id/history/daily`  | 15 minutes |
-| `/v1/status/:slug/groups/:id/history`          | 30 seconds |
-| `/v1/status/:slug/groups/:id/history/hourly`   | 5 minutes  |
-| `/v1/status/:slug/groups/:id/history/daily`    | 15 minutes |
-| `/v1/status/:slug/monitors/:id/reports`        | 30 seconds |
-| `/v1/status/:slug/monitors/:id/reports/hourly` | 5 minutes  |
-| `/v1/status/:slug/monitors/:id/reports/daily`  | 15 minutes |
-| `/v1/status/:slug/groups/:id/reports`          | 30 seconds |
-| `/v1/status/:slug/groups/:id/reports/hourly`   | 5 minutes  |
-| `/v1/status/:slug/groups/:id/reports/daily`    | 15 minutes |
-| `/v1/status/:slug/incidents`                   | 30 seconds |
-| `/v1/status/:slug/maintenances`                | 30 seconds |
+| Endpoint                                               | Cache TTL  |
+| ------------------------------------------------------ | ---------- |
+| `/v1/status/:statusPageId`                             | 30 seconds |
+| `/v1/status/:statusPageId/summary`                     | 30 seconds |
+| `/v1/status/:statusPageId/monitors/:id/history`        | 30 seconds |
+| `/v1/status/:statusPageId/monitors/:id/history/hourly` | 5 minutes  |
+| `/v1/status/:statusPageId/monitors/:id/history/daily`  | 15 minutes |
+| `/v1/status/:statusPageId/groups/:id/history`          | 30 seconds |
+| `/v1/status/:statusPageId/groups/:id/history/hourly`   | 5 minutes  |
+| `/v1/status/:statusPageId/groups/:id/history/daily`    | 15 minutes |
+| `/v1/status/:statusPageId/monitors/:id/reports`        | 30 seconds |
+| `/v1/status/:statusPageId/monitors/:id/reports/hourly` | 5 minutes  |
+| `/v1/status/:statusPageId/monitors/:id/reports/daily`  | 15 minutes |
+| `/v1/status/:statusPageId/groups/:id/reports`          | 30 seconds |
+| `/v1/status/:statusPageId/groups/:id/reports/hourly`   | 5 minutes  |
+| `/v1/status/:statusPageId/groups/:id/reports/daily`    | 15 minutes |
+| `/v1/status/:statusPageId/incidents`                   | 30 seconds |
+| `/v1/status/:statusPageId/maintenances`                | 30 seconds |

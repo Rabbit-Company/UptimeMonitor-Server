@@ -1,6 +1,15 @@
 import { cache } from "../cache";
+import { config } from "../config";
 import type { CustomMetricConfig, ReportFormat, StatusPage } from "../types";
 import { bearerAuth } from "@rabbit-company/web-middleware/bearer-auth";
+
+export function constantTimeTokenCompare(input: string, expected: string): boolean {
+	if (input.length !== expected.length) {
+		return !crypto.timingSafeEqual(Buffer.from(input), Buffer.from(input));
+	}
+
+	return crypto.timingSafeEqual(Buffer.from(input), Buffer.from(expected));
+}
 
 /**
  * Reusable bearer-auth middleware for status-page-scoped routes.
@@ -9,22 +18,21 @@ import { bearerAuth } from "@rabbit-company/web-middleware/bearer-auth";
 export function statusPageBearerAuth() {
 	return bearerAuth({
 		skip(ctx) {
-			const slug = ctx.params["slug"]!;
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPageId = ctx.params["statusPageId"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return true;
-			if (cache.isStatusPageProtected(slug)) return false;
+			if (cache.isStatusPageProtected(statusPageId)) return false;
 			return true;
 		},
 		validate(token, ctx) {
-			const slug = ctx.params["slug"]!;
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPageId = ctx.params["statusPageId"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return false;
 
-			if (token.length !== statusPage.hashedPassword!.length) {
-				return !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(token));
-			}
+			const matchesStatusPageToken = typeof statusPage.hashedPassword === "string" && constantTimeTokenCompare(token, statusPage.hashedPassword);
+			const matchesAdminToken = config.adminAPI.enabled && constantTimeTokenCompare(token, config.adminAPI.token);
 
-			return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(statusPage.hashedPassword!));
+			return matchesStatusPageToken || matchesAdminToken;
 		},
 	});
 }
@@ -34,10 +42,10 @@ export function statusPageBearerAuth() {
  * Never cache responses for protected pages.
  */
 export function statusPageShouldCache(ctx: any, res: any): boolean {
-	const slug = ctx.params["slug"]!;
-	const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+	const statusPageId = ctx.params["statusPageId"]!;
+	const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 	if (!statusPage) return false;
-	if (cache.isStatusPageProtected(slug)) return false;
+	if (cache.isStatusPageProtected(statusPageId)) return false;
 	return res.status >= 200 && res.status < 300;
 }
 

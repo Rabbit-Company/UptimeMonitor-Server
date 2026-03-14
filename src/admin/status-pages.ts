@@ -25,7 +25,6 @@ export function registerStatusPageRoutes(app: Web, getServer: () => Server): voi
 		const errors = validate(body, false);
 		if (errors.length) return ctx.json({ error: "Validation failed", details: errors }, 400);
 		if (cache.getStatusPage(body.id)) return ctx.json({ error: `Status page '${body.id}' already exists` }, 409);
-		if (cache.getStatusPageBySlug(body.slug)) return ctx.json({ error: `Slug '${body.slug}' already in use` }, 409);
 
 		try {
 			const raw = await readRawConfig();
@@ -57,11 +56,6 @@ export function registerStatusPageRoutes(app: Web, getServer: () => Server): voi
 
 		const errors = validate(body, true);
 		if (errors.length) return ctx.json({ error: "Validation failed", details: errors }, 400);
-
-		if (body.slug) {
-			const existing = cache.getStatusPageBySlug(body.slug);
-			if (existing && existing.id !== id) return ctx.json({ error: `Slug '${body.slug}' already in use` }, 409);
-		}
 
 		try {
 			const raw = await readRawConfig();
@@ -112,13 +106,12 @@ export function registerStatusPageRoutes(app: Web, getServer: () => Server): voi
 	});
 }
 
-const SLUG_RE = /^[a-z0-9-]+$/;
+const ID_RE = /^[a-z0-9-]+$/;
 
 function serialize(input: any): Record<string, unknown> {
 	const r: Record<string, unknown> = {
 		id: input.id,
 		name: input.name,
-		slug: input.slug,
 		items: input.items,
 	};
 	if (input.leafItems?.length) r.leafItems = input.leafItems;
@@ -131,7 +124,6 @@ function toResponse(p: any) {
 	return {
 		id: p.id,
 		name: p.name,
-		slug: p.slug,
 		items: p.items,
 		leafItems: p.leafItems || [],
 		password: p.password,
@@ -143,21 +135,16 @@ function validate(input: any, isUpdate: boolean): string[] {
 	const e: string[] = [];
 
 	if (!isUpdate) {
-		if (!isValidId(input.id)) e.push("id is required (alphanumeric, hyphens, underscores)");
-		if (!input.name || typeof input.name !== "string" || !input.name.trim()) e.push("name is required");
-		if (!input.slug || typeof input.slug !== "string" || !input.slug.trim()) {
-			e.push("slug is required");
-		} else if (!SLUG_RE.test(input.slug)) {
-			e.push("slug must contain only lowercase letters, numbers, and hyphens");
+		if (!input.id || typeof input.id !== "string" || !input.id.trim()) {
+			e.push("id is required");
+		} else if (!ID_RE.test(input.id)) {
+			e.push("id must contain only lowercase letters, numbers, and hyphens");
 		}
+		if (!input.name || typeof input.name !== "string" || !input.name.trim()) e.push("name is required");
 		if (!Array.isArray(input.items) || input.items.length === 0) e.push("items must be a non-empty array");
 	} else {
 		if (input.id !== undefined) e.push("id cannot be changed");
 		if (input.name !== undefined && (typeof input.name !== "string" || !input.name.trim())) e.push("name must be a non-empty string");
-		if (input.slug !== undefined) {
-			if (typeof input.slug !== "string" || !input.slug.trim()) e.push("slug must be a non-empty string");
-			else if (!SLUG_RE.test(input.slug)) e.push("slug must contain only lowercase letters, numbers, and hyphens");
-		}
 		if (input.items !== undefined && (!Array.isArray(input.items) || input.items.length === 0)) e.push("items must be a non-empty array");
 	}
 

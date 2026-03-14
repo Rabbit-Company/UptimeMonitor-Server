@@ -351,8 +351,6 @@ export interface StatusPage {
 	id: string;
 	/** Status page display name */
 	name: string;
-	/** URL slug for accessing the page */
-	slug: string;
 	/** Array of monitor or group IDs displayed on the page */
 	items: string[];
 	/** Array of monitor/group IDs that should be treated as leaf nodes (children not expanded) */

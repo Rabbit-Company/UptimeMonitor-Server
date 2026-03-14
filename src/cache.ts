@@ -10,7 +10,6 @@ class CacheManager {
 	private monitorsByToken: Map<string, Monitor> = new Map();
 	private groups: Map<string, Group> = new Map();
 	private statusPages: Map<string, StatusPage> = new Map();
-	private statusPagesBySlug: Map<string, StatusPage> = new Map();
 	private notificationChannels: Map<string, NotificationChannel> = new Map();
 
 	// Relationship caches
@@ -19,7 +18,7 @@ class CacheManager {
 	private monitorsByPulseMonitor: Map<string, Monitor[]> = new Map();
 
 	// Status pages caches
-	private statusPageSlugsByItem: Map<string, string[]> = new Map();
+	private statusPageIdsByItem: Map<string, string[]> = new Map();
 	private itemsOnStatusPage: Map<string, Set<string>> = new Map();
 
 	private activeIncidentMonitors: Map<string, string[]> = new Map();
@@ -104,11 +103,9 @@ class CacheManager {
 	 */
 	private initializeStatusPages(): void {
 		this.statusPages.clear();
-		this.statusPagesBySlug.clear();
 
 		for (const page of config.statusPages) {
 			this.statusPages.set(page.id, page);
-			this.statusPagesBySlug.set(page.slug, page);
 		}
 	}
 
@@ -166,16 +163,16 @@ class CacheManager {
 	 * Build status page -> monitor reverse index
 	 */
 	private buildStatusPageMonitorIndex(): void {
-		this.statusPageSlugsByItem.clear();
+		this.statusPageIdsByItem.clear();
 		this.itemsOnStatusPage.clear();
 
 		for (const page of this.statusPages.values()) {
-			const slugItemSet = new Set<string>();
+			const pageItemSet = new Set<string>();
 			const leafItemSet = new Set<string>(page.leafItems || []);
 
 			const walk = (id: string) => {
-				if (slugItemSet.has(id)) return;
-				slugItemSet.add(id);
+				if (pageItemSet.has(id)) return;
+				pageItemSet.add(id);
 				if (leafItemSet.has(id)) return;
 				const childIds = this.childrenByParent.get(id) || [];
 				for (const childId of childIds) {
@@ -187,15 +184,15 @@ class CacheManager {
 				walk(itemId);
 			}
 
-			this.itemsOnStatusPage.set(page.slug, slugItemSet);
+			this.itemsOnStatusPage.set(page.id, pageItemSet);
 
-			for (const id of slugItemSet) {
+			for (const id of pageItemSet) {
 				if (this.monitors.has(id) || this.groups.has(id)) {
-					const existing = this.statusPageSlugsByItem.get(id) || [];
-					if (!existing.includes(page.slug)) {
-						existing.push(page.slug);
+					const existing = this.statusPageIdsByItem.get(id) || [];
+					if (!existing.includes(page.id)) {
+						existing.push(page.id);
 					}
-					this.statusPageSlugsByItem.set(id, existing);
+					this.statusPageIdsByItem.set(id, existing);
 				}
 			}
 		}
@@ -333,10 +330,6 @@ class CacheManager {
 		return this.statusPages.get(id);
 	}
 
-	getStatusPageBySlug(slug: string): StatusPage | undefined {
-		return this.statusPagesBySlug.get(slug);
-	}
-
 	getAllStatusPages(): StatusPage[] {
 		return Array.from(this.statusPages.values());
 	}
@@ -349,8 +342,8 @@ class CacheManager {
 		return Array.from(this.notificationChannels.values());
 	}
 
-	getStatusPageSlugsByItem(itemId: string): string[] {
-		return this.statusPageSlugsByItem.get(itemId) || [];
+	getStatusPageIdsByItem(itemId: string): string[] {
+		return this.statusPageIdsByItem.get(itemId) ?? [];
 	}
 
 	getStatus(id: string): StatusData | undefined {
@@ -368,18 +361,18 @@ class CacheManager {
 		}
 	}
 
-	isStatusPageProtected(slug: string): boolean {
-		const statusPage = this.statusPagesBySlug.get(slug);
+	isStatusPageProtected(id: string): boolean {
+		const statusPage = this.statusPages.get(id);
 		return statusPage?.password !== undefined && statusPage.password.length > 0;
 	}
 
-	getStatusPagePassword(slug: string): string | undefined {
-		const statusPage = this.statusPagesBySlug.get(slug);
+	getStatusPagePassword(id: string): string | undefined {
+		const statusPage = this.statusPages.get(id);
 		return statusPage?.password;
 	}
 
-	verifyStatusPagePassword(slug: string, providedPassword: string): boolean {
-		const statusPage = this.statusPagesBySlug.get(slug);
+	verifyStatusPagePassword(id: string, providedPassword: string): boolean {
+		const statusPage = this.statusPages.get(id);
 		if (!statusPage) {
 			return false;
 		}
@@ -395,8 +388,8 @@ class CacheManager {
 		return crypto.timingSafeEqual(Buffer.from(providedPassword), Buffer.from(statusPage.hashedPassword!));
 	}
 
-	isItemOnStatusPage(slug: string, itemId: string): boolean {
-		return this.itemsOnStatusPage.get(slug)?.has(itemId) ?? false;
+	isItemOnStatusPage(statusPageId: string, itemId: string): boolean {
+		return this.itemsOnStatusPage.get(statusPageId)?.has(itemId) ?? false;
 	}
 
 	/**
@@ -542,7 +535,7 @@ class CacheManager {
 			notificationChannels: this.notificationChannels.size,
 			childrenByParent: this.childrenByParent.size,
 			monitorsByPulseMonitor: this.monitorsByPulseMonitor.size,
-			statusPageSlugsByItem: this.statusPageSlugsByItem.size,
+			statusPageIdsByItem: this.statusPageIdsByItem.size,
 			activeIncidentMonitors: this.activeIncidentMonitors.size,
 			activeMaintenanceMonitors: this.activeMaintenanceMonitors.size,
 			statusData: this.statusCache.size,

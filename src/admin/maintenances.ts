@@ -59,7 +59,7 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 		// Validate affected monitors if provided
 		if (body.affected_monitors?.length) {
 			for (const monitorId of body.affected_monitors) {
-				if (!cache.isItemOnStatusPage(statusPage.slug, monitorId)) {
+				if (!cache.isItemOnStatusPage(statusPage.id, monitorId)) {
 					return ctx.json({ error: `Monitor or group '${monitorId}' is not on status page '${body.status_page_id}'` }, 400);
 				}
 			}
@@ -81,7 +81,7 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 
 			maintenanceScheduler.refreshCache();
 
-			broadcastMaintenanceEvent(statusPage.slug, "maintenance-created", { maintenance });
+			broadcastMaintenanceEvent(statusPage.id, "maintenance-created", { maintenance });
 
 			return ctx.json({ success: true, message: `Maintenance '${maintenance.id}' created`, id: maintenance.id, maintenance }, 201);
 		} catch (e: any) {
@@ -115,7 +115,7 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 			const statusPage = cache.getStatusPage(existing.status_page_id);
 			if (statusPage) {
 				for (const monitorId of body.affected_monitors) {
-					if (!cache.isItemOnStatusPage(statusPage.slug, monitorId)) {
+					if (!cache.isItemOnStatusPage(statusPage.id, monitorId)) {
 						return ctx.json({ error: `Monitor or group '${monitorId}' is not on status page '${existing.status_page_id}'` }, 400);
 					}
 				}
@@ -139,7 +139,7 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 
 			const statusPage = cache.getStatusPage(maintenance.status_page_id);
 			if (statusPage) {
-				broadcastMaintenanceEvent(statusPage.slug, "maintenance-updated", { maintenance });
+				broadcastMaintenanceEvent(statusPage.id, "maintenance-updated", { maintenance });
 			}
 
 			return ctx.json({ success: true, message: `Maintenance '${id}' updated`, maintenance });
@@ -169,7 +169,7 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 
 			const statusPage = cache.getStatusPage(existing.status_page_id);
 			if (statusPage) {
-				broadcastMaintenanceEvent(statusPage.slug, "maintenance-deleted", { maintenanceId: id });
+				broadcastMaintenanceEvent(statusPage.id, "maintenance-deleted", { maintenanceId: id });
 			}
 
 			return ctx.json({ success: true, message: `Maintenance '${id}' deleted` });
@@ -210,7 +210,7 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 
 			const statusPage = cache.getStatusPage(result.maintenance.status_page_id);
 			if (statusPage) {
-				broadcastMaintenanceEvent(statusPage.slug, "maintenance-update-added", {
+				broadcastMaintenanceEvent(statusPage.id, "maintenance-update-added", {
 					maintenance: result.maintenance,
 					update: result.update,
 				});
@@ -249,7 +249,7 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 
 			const statusPage = cache.getStatusPage(updatedMaintenance.status_page_id);
 			if (statusPage) {
-				broadcastMaintenanceEvent(statusPage.slug, "maintenance-update-deleted", {
+				broadcastMaintenanceEvent(statusPage.id, "maintenance-update-deleted", {
 					maintenanceId,
 					updateId,
 					maintenance: updatedMaintenance,

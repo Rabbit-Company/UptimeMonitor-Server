@@ -178,7 +178,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}": {
+	"/v1/status/{statusPageId}": {
 		get: {
 			tags: ["Status Pages"],
 			summary: "Get full status page",
@@ -188,10 +188,10 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status page ID",
 					schema: { type: "string" },
 				},
 			],
@@ -202,10 +202,10 @@ export const publicPaths = {
 						"application/json": {
 							schema: {
 								type: "object",
-								required: ["name", "slug", "items", "lastUpdated"],
+								required: ["id", "name", "items", "lastUpdated"],
 								properties: {
+									id: { name: "id", in: "path", required: true, description: "Status page ID", schema: { type: "string" } },
 									name: { type: "string", example: "Public Status" },
-									slug: { type: "string", example: "status" },
 									reports: { type: "boolean", example: false },
 									items: {
 										type: "array",
@@ -237,7 +237,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/summary": {
+	"/v1/status/{statusPageId}/summary": {
 		get: {
 			tags: ["Status Pages"],
 			summary: "Get status page summary",
@@ -246,10 +246,10 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status page ID",
 					schema: { type: "string" },
 				},
 			],
@@ -298,7 +298,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/monitors/{id}/history": {
+	"/v1/status/{statusPageId}/monitors/{monitorId}/history": {
 		get: {
 			tags: ["Monitor History"],
 			summary: "Get raw monitor history",
@@ -308,14 +308,14 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status page ID",
 					schema: { type: "string" },
 				},
 				{
-					name: "id",
+					name: "monitorId",
 					in: "path",
 					required: true,
 					description: "Monitor ID",
@@ -350,7 +350,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/monitors/{id}/history/hourly": {
+	"/v1/status/{statusPageId}/monitors/{monitorId}/history/hourly": {
 		get: {
 			tags: ["Monitor History"],
 			summary: "Get hourly monitor history",
@@ -360,14 +360,14 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status page ID",
 					schema: { type: "string" },
 				},
 				{
-					name: "id",
+					name: "monitorId",
 					in: "path",
 					required: true,
 					description: "Monitor ID",
@@ -402,7 +402,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/monitors/{id}/history/daily": {
+	"/v1/status/{statusPageId}/monitors/{monitorId}/history/daily": {
 		get: {
 			tags: ["Monitor History"],
 			summary: "Get daily monitor history",
@@ -412,14 +412,14 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status page ID",
 					schema: { type: "string" },
 				},
 				{
-					name: "id",
+					name: "monitorId",
 					in: "path",
 					required: true,
 					description: "Monitor ID",
@@ -454,7 +454,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/groups/{id}/history": {
+	"/v1/status/{statusPageId}/groups/{groupId}/history": {
 		get: {
 			tags: ["Group History"],
 			summary: "Get raw group history",
@@ -464,14 +464,14 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status page ID",
 					schema: { type: "string" },
 				},
 				{
-					name: "id",
+					name: "groupId",
 					in: "path",
 					required: true,
 					description: "Group ID",
@@ -506,7 +506,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/groups/{id}/history/hourly": {
+	"/v1/status/{statusPageId}/groups/{groupId}/history/hourly": {
 		get: {
 			tags: ["Group History"],
 			summary: "Get hourly group history",
@@ -516,14 +516,14 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status page ID",
 					schema: { type: "string" },
 				},
 				{
-					name: "id",
+					name: "groupId",
 					in: "path",
 					required: true,
 					description: "Group ID",
@@ -558,7 +558,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/groups/{id}/history/daily": {
+	"/v1/status/{statusPageId}/groups/{groupId}/history/daily": {
 		get: {
 			tags: ["Group History"],
 			summary: "Get daily group history",
@@ -568,14 +568,14 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status page ID",
 					schema: { type: "string" },
 				},
 				{
-					name: "id",
+					name: "groupId",
 					in: "path",
 					required: true,
 					description: "Group ID",
@@ -610,7 +610,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/monitors/{id}/reports": {
+	"/v1/status/{statusPageId}/monitors/{monitorId}/reports": {
 		get: {
 			tags: ["Monitor Reports"],
 			summary: "Export raw monitor report",
@@ -619,8 +619,8 @@ export const publicPaths = {
 			operationId: "getMonitorReportRaw",
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
-				{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
-				{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+				{ name: "statusPageId", in: "path", required: true, description: "Status page ID", schema: { type: "string" } },
+				{ name: "monitorId", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
 				{
 					name: "format",
 					in: "query",
@@ -648,7 +648,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/monitors/{id}/reports/hourly": {
+	"/v1/status/{statusPageId}/monitors/{monitorId}/reports/hourly": {
 		get: {
 			tags: ["Monitor Reports"],
 			summary: "Export hourly monitor report",
@@ -657,8 +657,8 @@ export const publicPaths = {
 			operationId: "getMonitorReportHourly",
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
-				{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
-				{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+				{ name: "statusPageId", in: "path", required: true, description: "Status page ID", schema: { type: "string" } },
+				{ name: "monitorId", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
 				{
 					name: "format",
 					in: "query",
@@ -687,7 +687,7 @@ export const publicPaths = {
 		},
 	},
 
-	"/v1/status/{slug}/monitors/{id}/reports/daily": {
+	"/v1/status/{statusPageId}/monitors/{monitorId}/reports/daily": {
 		get: {
 			tags: ["Monitor Reports"],
 			summary: "Export daily monitor report",
@@ -696,8 +696,8 @@ export const publicPaths = {
 			operationId: "getMonitorReportDaily",
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
-				{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
-				{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
+				{ name: "statusPageId", in: "path", required: true, description: "Status Page ID", schema: { type: "string" } },
+				{ name: "monitorId", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } },
 				{
 					name: "format",
 					in: "query",
@@ -725,7 +725,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/groups/{id}/reports": {
+	"/v1/status/{statusPageId}/groups/{groupId}/reports": {
 		get: {
 			tags: ["Group Reports"],
 			summary: "Export raw group report",
@@ -734,8 +734,8 @@ export const publicPaths = {
 			operationId: "getGroupReportRaw",
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
-				{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
-				{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+				{ name: "statusPageId", in: "path", required: true, description: "Status Page ID", schema: { type: "string" } },
+				{ name: "groupId", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
 				{
 					name: "format",
 					in: "query",
@@ -764,7 +764,7 @@ export const publicPaths = {
 		},
 	},
 
-	"/v1/status/{slug}/groups/{id}/reports/hourly": {
+	"/v1/status/{statusPageId}/groups/{groupId}/reports/hourly": {
 		get: {
 			tags: ["Group Reports"],
 			summary: "Export hourly group report",
@@ -773,8 +773,8 @@ export const publicPaths = {
 			operationId: "getGroupReportHourly",
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
-				{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
-				{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+				{ name: "statusPageId", in: "path", required: true, description: "Status Page ID", schema: { type: "string" } },
+				{ name: "groupId", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
 				{
 					name: "format",
 					in: "query",
@@ -803,7 +803,7 @@ export const publicPaths = {
 		},
 	},
 
-	"/v1/status/{slug}/groups/{id}/reports/daily": {
+	"/v1/status/{statusPageId}/groups/{groupId}/reports/daily": {
 		get: {
 			tags: ["Group Reports"],
 			summary: "Export daily group report",
@@ -812,8 +812,8 @@ export const publicPaths = {
 			operationId: "getGroupReportDaily",
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
-				{ name: "slug", in: "path", required: true, description: "Status page URL slug", schema: { type: "string" } },
-				{ name: "id", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
+				{ name: "statusPageId", in: "path", required: true, description: "Status Page ID", schema: { type: "string" } },
+				{ name: "groupId", in: "path", required: true, description: "Group ID", schema: { type: "string" } },
 				{
 					name: "format",
 					in: "query",
@@ -841,7 +841,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/incidents": {
+	"/v1/status/{statusPageId}/incidents": {
 		get: {
 			tags: ["Incidents"],
 			summary: "Get incidents for a status page",
@@ -851,10 +851,10 @@ export const publicPaths = {
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
 				{
-					name: "slug",
+					name: "statusPageId",
 					in: "path",
 					required: true,
-					description: "Status page URL slug",
+					description: "Status Page ID",
 					schema: { type: "string" },
 				},
 				{
@@ -900,7 +900,7 @@ export const publicPaths = {
 			},
 		},
 	},
-	"/v1/status/{slug}/maintenances": {
+	"/v1/status/{statusPageId}/maintenances": {
 		get: {
 			tags: ["Maintenances"],
 			summary: "Get maintenances for a status page",
@@ -909,7 +909,7 @@ export const publicPaths = {
 			operationId: "getMaintenances",
 			security: [{ bearerAuth: [] }, {}],
 			parameters: [
-				{ name: "slug", in: "path", required: true, description: "Status page slug", schema: { type: "string" } },
+				{ name: "statusPageId", in: "path", required: true, description: "Status page ID", schema: { type: "string" } },
 				{
 					name: "month",
 					in: "query",

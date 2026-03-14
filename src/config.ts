@@ -935,18 +935,13 @@ function validateStatusPage(page: unknown, index: number): StatusPage {
 	// Validate ID
 	if (!isString(page.id) || page.id.trim().length === 0) {
 		errors.push(`status_pages[${index}].id must be a non-empty string`);
+	} else if (!/^[a-z0-9-]+$/.test(page.id as string)) {
+		errors.push(`status_pages[${index}].id must contain only lowercase letters, numbers, and hyphens`);
 	}
 
 	// Validate name
 	if (!isString(page.name) || page.name.trim().length === 0) {
 		errors.push(`status_pages[${index}].name must be a non-empty string`);
-	}
-
-	// Validate slug
-	if (!isString(page.slug) || page.slug.trim().length === 0) {
-		errors.push(`status_pages[${index}].slug must be a non-empty string`);
-	} else if (!/^[a-z0-9-]+$/.test(page.slug as string)) {
-		errors.push(`status_pages[${index}].slug must contain only lowercase letters, numbers, and hyphens`);
 	}
 
 	// Validate items array
@@ -996,7 +991,6 @@ function validateStatusPage(page: unknown, index: number): StatusPage {
 	const result: StatusPage = {
 		id: page.id as string,
 		name: page.name as string,
-		slug: page.slug as string,
 		items: page.items as string[],
 	};
 
@@ -1753,15 +1747,6 @@ function validateUniqueIds(config: Config): void {
 			errors.push(`Duplicate status page ID: ${page.id}`);
 		}
 		statusPageIds.add(page.id);
-	}
-
-	// Check for duplicate status page slugs
-	const slugs = new Set<string>();
-	for (const page of config.statusPages) {
-		if (slugs.has(page.slug)) {
-			errors.push(`Duplicate status page slug: ${page.slug}`);
-		}
-		slugs.add(page.slug);
 	}
 
 	const notificationChannelIds = new Set<string>();

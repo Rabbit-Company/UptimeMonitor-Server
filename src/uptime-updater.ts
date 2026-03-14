@@ -554,13 +554,13 @@ class UptimeUpdater {
 		});
 
 		if (hasChanged) {
-			const slugs = cache.getStatusPageSlugsByItem(monitorId);
-			slugs.forEach((slug) => {
+			const statusPageIds = cache.getStatusPageIdsByItem(monitorId);
+			statusPageIds.forEach((statusPageId) => {
 				server.publish(
-					`slug-${slug}`,
+					`statusPage-${statusPageId}`,
 					JSON.stringify({
 						action: "uptime-update",
-						data: { slug, monitorId, ...uptimes },
+						data: { statusPageId, monitorId, ...uptimes },
 						timestamp: new Date().toISOString(),
 					}),
 				);

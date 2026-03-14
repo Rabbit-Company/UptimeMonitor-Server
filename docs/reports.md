@@ -10,7 +10,6 @@ Reports must be explicitly enabled per status page in `config.toml`:
 [[status_pages]]
 id = "main"
 name = "Public Status"
-slug = "status"
 items = ["all-services"]
 reports = true
 ```
@@ -93,7 +92,7 @@ Three report types are available, matching the history data granularity:
 
 ## Public Report Endpoints
 
-All public report endpoints are scoped under a status page slug. The monitor or group must belong to the specified status page.
+All public report endpoints are scoped under a status page ID. The monitor or group must belong to the specified status page.
 
 **Common Errors:**
 
@@ -102,7 +101,7 @@ All public report endpoints are scoped under a status page slug. The monitor or 
 
 ### Monitor Reports
 
-#### GET /v1/status/:slug/monitors/:id/reports
+#### GET /v1/status/:statusPageId/monitors/:monitorId/reports
 
 Raw monitor report (~24 hours due to TTL). Cached for 30 seconds.
 
@@ -112,7 +111,7 @@ Raw monitor report (~24 hours due to TTL). Cached for 30 seconds.
 | --------- | ------ | ------- | --------------- |
 | `format`  | string | `json`  | `json` or `csv` |
 
-**JSON Response:** Same as `/v1/status/:slug/monitors/:id/history`.
+**JSON Response:** Same as `/v1/status/:statusPageId/monitors/:monitorId/history`.
 
 **CSV Response:**
 
@@ -122,17 +121,17 @@ Timestamp,Uptime (%),Latency Min (ms),Latency Max (ms),Latency Avg (ms)
 2025-01-15T10:01:00Z,100,38,70,48.1
 ```
 
-#### GET /v1/status/:slug/monitors/:id/reports/hourly
+#### GET /v1/status/:statusPageId/monitors/:monitorId/reports/hourly
 
 Hourly aggregated monitor report (~90 days). Cached for 5 minutes.
 
-#### GET /v1/status/:slug/monitors/:id/reports/daily
+#### GET /v1/status/:statusPageId/monitors/:monitorId/reports/daily
 
 Daily aggregated monitor report (all time). Cached for 15 minutes.
 
 ### Group Reports
 
-#### GET /v1/status/:slug/groups/:id/reports
+#### GET /v1/status/:statusPageId/groups/:groupId/reports
 
 Raw group report (~24 hours due to TTL). Cached for 30 seconds.
 
@@ -142,7 +141,7 @@ Raw group report (~24 hours due to TTL). Cached for 30 seconds.
 | --------- | ------ | ------- | --------------- |
 | `format`  | string | `json`  | `json` or `csv` |
 
-**JSON Response:** Same as `/v1/status/:slug/groups/:id/history`.
+**JSON Response:** Same as `/v1/status/:statusPageId/groups/:groupId/history`.
 
 **CSV Response:**
 
@@ -151,11 +150,11 @@ Timestamp,Uptime (%),Latency Min (ms),Latency Max (ms),Latency Avg (ms)
 2025-01-15T10:00:00Z,100,35,120,67.5
 ```
 
-#### GET /v1/status/:slug/groups/:id/reports/hourly
+#### GET /v1/status/:statusPageId/groups/:groupId/reports/hourly
 
 Hourly aggregated group report (~90 days). Cached for 5 minutes.
 
-#### GET /v1/status/:slug/groups/:id/reports/daily
+#### GET /v1/status/:statusPageId/groups/:groupId/reports/daily
 
 Daily aggregated group report (all time). Cached for 15 minutes.
 

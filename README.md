@@ -73,7 +73,7 @@ See [Pulses](docs/pulses.md) for timing parameters, best practices, and how puls
 ### 4. Check Status
 
 ```bash
-curl http://localhost:3000/v1/status/:slug
+curl http://localhost:3000/v1/status/:statusPageId
 ```
 
 ## Documentation

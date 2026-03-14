@@ -39,7 +39,6 @@ resendNotification = 0
 [[status_pages]]
 id = "main"
 name = "Status"
-slug = "status"
 items = ["my-service"]
 ```
 
@@ -288,7 +287,6 @@ See [Groups & Strategies](groups.md) for detailed documentation on strategies, n
 [[status_pages]]
 id = "public"
 name = "Public Status"
-slug = "status"
 items = ["production", "infrastructure"]
 # leafItems = ["europe"]
 # password = "optional-password"
@@ -297,9 +295,8 @@ items = ["production", "infrastructure"]
 
 | Field       | Required | Description                                                                |
 | ----------- | -------- | -------------------------------------------------------------------------- |
-| `id`        | Yes      | Unique identifier                                                          |
+| `id`        | Yes      | Unique identifier (lowercase, hyphens)                                     |
 | `name`      | Yes      | Display name                                                               |
-| `slug`      | Yes      | URL path (lowercase, hyphens)                                              |
 | `items`     | Yes      | Array of monitor/group IDs to display                                      |
 | `leafItems` | No       | Array of IDs to treat as leaf nodes (children not expanded on status page) |
 | `password`  | No       | Password to protect the page (minimum 8 characters)                        |

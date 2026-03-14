@@ -166,7 +166,7 @@ Custom metrics are included in real-time pulse events:
 {
 	"action": "pulse",
 	"data": {
-		"slug": "status",
+		"statusPageId": "status",
 		"monitorId": "game-server",
 		"status": "up",
 		"latency": 15,

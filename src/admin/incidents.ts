@@ -59,7 +59,7 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 		// Validate affected monitors if provided
 		if (body.affected_monitors?.length) {
 			for (const monitorId of body.affected_monitors) {
-				if (!cache.isItemOnStatusPage(statusPage.slug, monitorId)) {
+				if (!cache.isItemOnStatusPage(statusPage.id, monitorId)) {
 					return ctx.json({ error: `Monitor or group '${monitorId}' is not on status page '${body.status_page_id}'` }, 400);
 				}
 			}
@@ -80,7 +80,7 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 
 			incidentScheduler.refreshCache();
 
-			broadcastIncidentEvent(statusPage.slug, "incident-created", { incident });
+			broadcastIncidentEvent(statusPage.id, "incident-created", { incident });
 
 			return ctx.json({ success: true, message: `Incident '${incident.id}' created`, id: incident.id, incident }, 201);
 		} catch (e: any) {
@@ -114,7 +114,7 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 			const statusPage = cache.getStatusPage(existing.status_page_id);
 			if (statusPage) {
 				for (const monitorId of body.affected_monitors) {
-					if (!cache.isItemOnStatusPage(statusPage.slug, monitorId)) {
+					if (!cache.isItemOnStatusPage(statusPage.id, monitorId)) {
 						return ctx.json({ error: `Monitor or group '${monitorId}' is not on status page '${existing.status_page_id}'` }, 400);
 					}
 				}
@@ -137,7 +137,7 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 
 			const statusPage = cache.getStatusPage(incident.status_page_id);
 			if (statusPage) {
-				broadcastIncidentEvent(statusPage.slug, "incident-updated", { incident });
+				broadcastIncidentEvent(statusPage.id, "incident-updated", { incident });
 			}
 
 			return ctx.json({ success: true, message: `Incident '${id}' updated`, incident });
@@ -168,7 +168,7 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 			// Broadcast
 			const statusPage = cache.getStatusPage(existing.status_page_id);
 			if (statusPage) {
-				broadcastIncidentEvent(statusPage.slug, "incident-deleted", { incidentId: id });
+				broadcastIncidentEvent(statusPage.id, "incident-deleted", { incidentId: id });
 			}
 
 			return ctx.json({ success: true, message: `Incident '${id}' deleted` });
@@ -209,7 +209,7 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 
 			const statusPage = cache.getStatusPage(result.incident.status_page_id);
 			if (statusPage) {
-				broadcastIncidentEvent(statusPage.slug, "incident-update-added", {
+				broadcastIncidentEvent(statusPage.id, "incident-update-added", {
 					incident: result.incident,
 					update: result.update,
 				});
@@ -248,7 +248,7 @@ export function registerIncidentRoutes(app: Web, getServer: () => Server): void 
 
 			const statusPage = cache.getStatusPage(updatedIncident.status_page_id);
 			if (statusPage) {
-				broadcastIncidentEvent(statusPage.slug, "incident-update-deleted", {
+				broadcastIncidentEvent(statusPage.id, "incident-update-deleted", {
 					incidentId,
 					updateId,
 					incident: updatedIncident,

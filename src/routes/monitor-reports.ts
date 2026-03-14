@@ -11,8 +11,8 @@ import { monitorDataToCsv, parseFormat, statusPageBearerAuth, statusPageShouldCa
  */
 function reportsEnabled() {
 	return async (ctx: any, next: () => Promise<Response | void>) => {
-		const slug = ctx.params["slug"]!;
-		const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+		const statusPageId = ctx.params["statusPageId"]!;
+		const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 		if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 		if (!statusPage.reports) return ctx.json({ error: "Reports are not enabled for this status page" }, 404);
 		return next();
@@ -21,22 +21,22 @@ function reportsEnabled() {
 
 export function registerMonitorReportRoutes(app: Web): void {
 	/**
-	 * GET /v1/status/:slug/monitors/:id/reports
+	 * GET /v1/status/:statusPageId/monitors/:monitorId/reports
 	 * Export raw monitor data as CSV or JSON
 	 */
 	app.get(
-		"/v1/status/:slug/monitors/:id/reports",
+		"/v1/status/:statusPageId/monitors/:monitorId/reports",
 		reportsEnabled(),
 		statusPageBearerAuth(),
 		webCache({ ttl: 30, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const monitorId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const monitorId = ctx.params["monitorId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
 
 			const monitor = cache.getMonitor(monitorId);
 			if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
@@ -71,22 +71,22 @@ export function registerMonitorReportRoutes(app: Web): void {
 	);
 
 	/**
-	 * GET /v1/status/:slug/monitors/:id/reports/hourly
+	 * GET /v1/status/:statusPageId/monitors/:monitorId/reports/hourly
 	 * Export hourly aggregated monitor data as CSV or JSON
 	 */
 	app.get(
-		"/v1/status/:slug/monitors/:id/reports/hourly",
+		"/v1/status/:statusPageId/monitors/:monitorId/reports/hourly",
 		reportsEnabled(),
 		statusPageBearerAuth(),
 		webCache({ ttl: 300, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const monitorId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const monitorId = ctx.params["monitorId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
 
 			const monitor = cache.getMonitor(monitorId);
 			if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
@@ -121,22 +121,22 @@ export function registerMonitorReportRoutes(app: Web): void {
 	);
 
 	/**
-	 * GET /v1/status/:slug/monitors/:id/reports/daily
+	 * GET /v1/status/:statusPageId/monitors/:monitorId/reports/daily
 	 * Export daily aggregated monitor data as CSV or JSON
 	 */
 	app.get(
-		"/v1/status/:slug/monitors/:id/reports/daily",
+		"/v1/status/:statusPageId/monitors/:monitorId/reports/daily",
 		reportsEnabled(),
 		statusPageBearerAuth(),
 		webCache({ ttl: 900, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const monitorId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const monitorId = ctx.params["monitorId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
 
 			const monitor = cache.getMonitor(monitorId);
 			if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);

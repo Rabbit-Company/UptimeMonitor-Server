@@ -35,7 +35,7 @@ If the token is missing, invalid, or the Admin API is disabled, the server retur
 All write operations (create, update, delete) follow the same pattern:
 
 1. Validate the request body
-2. Check for uniqueness conflicts (duplicate IDs, tokens, slugs)
+2. Check for uniqueness conflicts (duplicate IDs or tokens)
 3. Read the current `config.toml`
 4. Apply changes
 5. Validate the full configuration
@@ -53,7 +53,7 @@ All endpoints may return these errors:
 | `400`  | Validation failed (details in `error` and `details` fields)    |
 | `401`  | Unauthorized (missing or invalid token, or Admin API disabled) |
 | `404`  | Resource not found                                             |
-| `409`  | Conflict (duplicate ID, token, or slug)                        |
+| `409`  | Conflict (duplicate ID or token)                               |
 | `500`  | Internal error (typically a config write/reload failure)       |
 
 **Error response format:**
@@ -477,7 +477,6 @@ curl -H "Authorization: Bearer <token>" \
 		{
 			"id": "public",
 			"name": "Public Status Page",
-			"slug": "status",
 			"items": ["all-services", "third-party"],
 			"password": "Password123",
 			"reports": false
@@ -504,7 +503,6 @@ curl -X POST -H "Authorization: Bearer <token>" \
   -d '{
     "id": "partners",
     "name": "Partner Status",
-    "slug": "partner-status",
     "items": ["production", "api-prod"]
   }' \
   http://localhost:3000/v1/admin/status-pages
@@ -514,9 +512,8 @@ curl -X POST -H "Authorization: Bearer <token>" \
 
 | Field   | Type     | Description                                            |
 | ------- | -------- | ------------------------------------------------------ |
-| `id`    | string   | Unique ID (alphanumeric, hyphens, underscores)         |
+| `id`    | string   | Unique ID (lowercase letters, numbers, hyphens only)   |
 | `name`  | string   | Display name                                           |
-| `slug`  | string   | URL slug (lowercase letters, numbers, hyphens only)    |
 | `items` | string[] | Non-empty array of monitor and/or group IDs to display |
 
 **Optional fields:**
@@ -539,7 +536,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 
 **Errors:**
 
-- `409 Conflict` - A status page with this ID already exists, or the slug is already in use
+- `409 Conflict` - A status page with this ID already exists
 
 ### PUT /v1/admin/status-pages/:id
 
@@ -558,7 +555,6 @@ curl -X PUT -H "Authorization: Bearer <token>" \
 **Rules:**
 
 - The `id` field cannot be changed
-- If changing `slug`, it must not conflict with another status page's slug
 - Set `password` to `null` to remove password protection
 
 **Success Response (200):**

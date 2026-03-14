@@ -444,11 +444,10 @@ export const schemas = {
 	},
 	AdminStatusPage: {
 		type: "object",
-		required: ["id", "name", "slug", "items"],
+		required: ["id", "name", "items"],
 		properties: {
-			id: { type: "string", example: "public" },
+			id: { type: "string", description: "Unique ID (lowercase letters, numbers, hyphens)", example: "public" },
 			name: { type: "string", example: "Public Status Page" },
-			slug: { type: "string", example: "status" },
 			items: { type: "array", items: { type: "string" }, description: "Monitor and/or group IDs", example: ["all-services", "third-party"] },
 			leafItems: {
 				type: "array",
@@ -462,11 +461,10 @@ export const schemas = {
 	},
 	AdminStatusPageCreate: {
 		type: "object",
-		required: ["id", "name", "slug", "items"],
+		required: ["id", "name", "items"],
 		properties: {
-			id: { type: "string", description: "Unique ID (alphanumeric, hyphens, underscores)", example: "partners" },
+			id: { type: "string", description: "Unique ID (lowercase letters, numbers, hyphens)", example: "partners" },
 			name: { type: "string", example: "Partner Status" },
-			slug: { type: "string", description: "URL slug (lowercase letters, numbers, hyphens only)", example: "partner-status" },
 			items: { type: "array", items: { type: "string" }, description: "Non-empty array of monitor/group IDs", example: ["production", "api-prod"] },
 			leafItems: { type: "array", items: { type: "string" }, nullable: true, description: "Set to null to remove" },
 			password: { type: "string", description: "Password to protect the page (minimum 8 characters)" },
@@ -477,7 +475,6 @@ export const schemas = {
 		type: "object",
 		properties: {
 			name: { type: "string" },
-			slug: { type: "string", description: "Must not conflict with another status page" },
 			items: { type: "array", items: { type: "string" }, description: "Must be non-empty" },
 			password: { type: "string", nullable: true, description: "Set to null to remove password protection (minimum 8 characters if set)" },
 			reports: { type: "boolean", description: "Enable or disable report export endpoints" },

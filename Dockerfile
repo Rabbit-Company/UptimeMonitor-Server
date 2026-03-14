@@ -1,4 +1,4 @@
-# ---------- Build stage ----------
+# Build stage
 FROM oven/bun:1 AS builder
 
 WORKDIR /app
@@ -10,7 +10,7 @@ COPY src/ ./src/
 
 RUN bun build src/index.ts --outfile uptime-monitor --target bun --compile --production
 
-# ---------- Runtime stage ----------
+# Runtime stage
 FROM gcr.io/distroless/base-nossl-debian13
 
 WORKDIR /app

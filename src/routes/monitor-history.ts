@@ -7,22 +7,22 @@ import { statusPageBearerAuth, statusPageShouldCache } from "./helpers";
 
 export function registerMonitorHistoryRoutes(app: Web): void {
 	/**
-	 * GET /v1/status/:slug/monitors/:id/history
+	 * GET /v1/status/:statusPageId/monitors/:monitorId/history
 	 * Returns all raw pulses (~24h due to TTL)
 	 * Requires the monitor to be on the specified status page.
 	 */
 	app.get(
-		"/v1/status/:slug/monitors/:id/history",
+		"/v1/status/:statusPageId/monitors/:monitorId/history",
 		statusPageBearerAuth(),
 		webCache({ ttl: 30, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const monitorId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const monitorId = ctx.params["monitorId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
 
 			const monitor = cache.getMonitor(monitorId);
 			if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
@@ -44,21 +44,21 @@ export function registerMonitorHistoryRoutes(app: Web): void {
 	);
 
 	/**
-	 * GET /v1/status/:slug/monitors/:id/history/hourly
+	 * GET /v1/status/:statusPageId/monitors/:monitorId/history/hourly
 	 * Returns hourly aggregated data (~90 days due to TTL)
 	 */
 	app.get(
-		"/v1/status/:slug/monitors/:id/history/hourly",
+		"/v1/status/:statusPageId/monitors/:monitorId/history/hourly",
 		statusPageBearerAuth(),
 		webCache({ ttl: 300, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const monitorId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const monitorId = ctx.params["monitorId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
 
 			const monitor = cache.getMonitor(monitorId);
 			if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);
@@ -80,21 +80,21 @@ export function registerMonitorHistoryRoutes(app: Web): void {
 	);
 
 	/**
-	 * GET /v1/status/:slug/monitors/:id/history/daily
+	 * GET /v1/status/:statusPageId/monitors/:monitorId/history/daily
 	 * Returns daily aggregated data (all time)
 	 */
 	app.get(
-		"/v1/status/:slug/monitors/:id/history/daily",
+		"/v1/status/:statusPageId/monitors/:monitorId/history/daily",
 		statusPageBearerAuth(),
 		webCache({ ttl: 900, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const monitorId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const monitorId = ctx.params["monitorId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, monitorId)) return ctx.json({ error: "Monitor not found" }, 404);
 
 			const monitor = cache.getMonitor(monitorId);
 			if (!monitor) return ctx.json({ error: "Monitor not found" }, 404);

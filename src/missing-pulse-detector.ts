@@ -466,13 +466,13 @@ export class MissingPulseDetector {
 			});
 		}
 
-		const slugs = cache.getStatusPageSlugsByItem(monitor.id);
-		slugs.forEach((slug) => {
+		const statusPageIds = cache.getStatusPageIdsByItem(monitor.id);
+		statusPageIds.forEach((statusPageId) => {
 			server.publish(
-				`slug-${slug}`,
+				`statusPage-${statusPageId}`,
 				JSON.stringify({
 					action: "monitor-down",
-					data: { slug, monitorId: monitor.id, downtime },
+					data: { statusPageId, monitorId: monitor.id, downtime },
 					timestamp: new Date().toISOString(),
 				}),
 			);
@@ -502,13 +502,13 @@ export class MissingPulseDetector {
 			});
 		}
 
-		const slugs = cache.getStatusPageSlugsByItem(monitor.id);
-		slugs.forEach((slug) => {
+		const statusPageIds = cache.getStatusPageIdsByItem(monitor.id);
+		statusPageIds.forEach((statusPageId) => {
 			server.publish(
-				`slug-${slug}`,
+				`statusPage-${statusPageId}`,
 				JSON.stringify({
 					action: "monitor-still-down",
-					data: { slug, monitorId: monitor.id, consecutiveDownCount, downtime: actualDowntime },
+					data: { statusPageId, monitorId: monitor.id, consecutiveDownCount, downtime: actualDowntime },
 					timestamp: new Date().toISOString(),
 				}),
 			);
@@ -664,13 +664,13 @@ export class MissingPulseDetector {
 			}
 		}
 
-		const slugs = cache.getStatusPageSlugsByItem(monitorId);
-		slugs.forEach((slug) => {
+		const statusPageIds = cache.getStatusPageIdsByItem(monitorId);
+		statusPageIds.forEach((statusPageId) => {
 			server.publish(
-				`slug-${slug}`,
+				`statusPage-${statusPageId}`,
 				JSON.stringify({
 					action: "monitor-recovered",
-					data: { slug, monitorId, previousConsecutiveDownCount: state.consecutiveDownCount, downtime: totalDowntime },
+					data: { statusPageId, monitorId, previousConsecutiveDownCount: state.consecutiveDownCount, downtime: totalDowntime },
 					timestamp: new Date().toISOString(),
 				}),
 			);

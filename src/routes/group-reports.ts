@@ -11,8 +11,8 @@ import { groupDataToCsv, parseFormat, statusPageBearerAuth, statusPageShouldCach
  */
 function reportsEnabled() {
 	return async (ctx: any, next: () => Promise<Response | void>) => {
-		const slug = ctx.params["slug"]!;
-		const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+		const statusPageId = ctx.params["statusPageId"]!;
+		const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 		if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 		if (!statusPage.reports) return ctx.json({ error: "Reports are not enabled for this status page" }, 404);
 		return next();
@@ -21,22 +21,22 @@ function reportsEnabled() {
 
 export function registerGroupReportRoutes(app: Web): void {
 	/**
-	 * GET /v1/status/:slug/groups/:id/reports
+	 * GET /v1/status/:statusPageId/groups/:groupId/reports
 	 * Export raw group data as CSV or JSON
 	 */
 	app.get(
-		"/v1/status/:slug/groups/:id/reports",
+		"/v1/status/:statusPageId/groups/:groupId/reports",
 		reportsEnabled(),
 		statusPageBearerAuth(),
 		webCache({ ttl: 30, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const groupId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const groupId = ctx.params["groupId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, groupId)) return ctx.json({ error: "Group not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, groupId)) return ctx.json({ error: "Group not found" }, 404);
 
 			const group: Group | undefined = cache.getGroup(groupId);
 			if (!group) return ctx.json({ error: "Group not found" }, 404);
@@ -66,22 +66,22 @@ export function registerGroupReportRoutes(app: Web): void {
 	);
 
 	/**
-	 * GET /v1/status/:slug/groups/:id/reports/hourly
+	 * GET /v1/status/:statusPageId/groups/:groupId/reports/hourly
 	 * Export hourly aggregated group data as CSV or JSON
 	 */
 	app.get(
-		"/v1/status/:slug/groups/:id/reports/hourly",
+		"/v1/status/:statusPageId/groups/:groupId/reports/hourly",
 		reportsEnabled(),
 		statusPageBearerAuth(),
 		webCache({ ttl: 300, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const groupId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const groupId = ctx.params["groupId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, groupId)) return ctx.json({ error: "Group not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, groupId)) return ctx.json({ error: "Group not found" }, 404);
 
 			const group: Group | undefined = cache.getGroup(groupId);
 			if (!group) return ctx.json({ error: "Group not found" }, 404);
@@ -111,22 +111,22 @@ export function registerGroupReportRoutes(app: Web): void {
 	);
 
 	/**
-	 * GET /v1/status/:slug/groups/:id/reports/daily
+	 * GET /v1/status/:statusPageId/groups/:groupId/reports/daily
 	 * Export daily aggregated group data as CSV or JSON
 	 */
 	app.get(
-		"/v1/status/:slug/groups/:id/reports/daily",
+		"/v1/status/:statusPageId/groups/:groupId/reports/daily",
 		reportsEnabled(),
 		statusPageBearerAuth(),
 		webCache({ ttl: 900, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const groupId = ctx.params["id"]!;
+			const statusPageId = ctx.params["statusPageId"]!;
+			const groupId = ctx.params["groupId"]!;
 
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
-			if (!cache.isItemOnStatusPage(slug, groupId)) return ctx.json({ error: "Group not found" }, 404);
+			if (!cache.isItemOnStatusPage(statusPageId, groupId)) return ctx.json({ error: "Group not found" }, 404);
 
 			const group: Group | undefined = cache.getGroup(groupId);
 			if (!group) return ctx.json({ error: "Group not found" }, 404);

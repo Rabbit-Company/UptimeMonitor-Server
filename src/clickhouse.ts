@@ -150,7 +150,7 @@ export async function storePulse(
 		propagateGroupStatus(monitorId);
 	}
 
-	const slugs = cache.getStatusPageSlugsByItem(monitorId);
+	const statusPageIds = cache.getStatusPageIdsByItem(monitorId);
 
 	const nonNullCustomMetrics = {
 		...(customMetrics.custom1 !== null && { custom1: customMetrics.custom1 }),
@@ -158,12 +158,12 @@ export async function storePulse(
 		...(customMetrics.custom3 !== null && { custom3: customMetrics.custom3 }),
 	};
 
-	slugs.forEach((slug) => {
+	statusPageIds.forEach((statusPageId) => {
 		server.publish(
-			`slug-${slug}`,
+			`statusPage-${statusPageId}`,
 			JSON.stringify({
 				action: "pulse",
-				data: { slug, monitorId, status: "up", latency, timestamp, ...nonNullCustomMetrics },
+				data: { statusPageId, monitorId, status: "up", latency, timestamp, ...nonNullCustomMetrics },
 				timestamp: new Date().toISOString(),
 			}),
 		);
@@ -673,13 +673,13 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 			uptimes.uptime365d !== prevGroupStatus.uptime365d;
 
 		if (hasUptimeChanged) {
-			const slugs = cache.getStatusPageSlugsByItem(groupId);
-			slugs.forEach((slug) => {
+			const statusPageIds = cache.getStatusPageIdsByItem(groupId);
+			statusPageIds.forEach((statusPageId) => {
 				server.publish(
-					`slug-${slug}`,
+					`statusPage-${statusPageId}`,
 					JSON.stringify({
 						action: "uptime-update",
-						data: { slug, monitorId: groupId, ...uptimes },
+						data: { statusPageId, monitorId: groupId, ...uptimes },
 						timestamp: new Date().toISOString(),
 					}),
 				);

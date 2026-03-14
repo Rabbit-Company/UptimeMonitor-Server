@@ -479,19 +479,19 @@ export async function transitionMaintenanceStatus(
 }
 
 /**
- * Broadcast a maintenance event to all subscribers of the relevant status page slugs.
+ * Broadcast a maintenance event to all subscribers of the relevant status page.
  */
 export function broadcastMaintenanceEvent(
-	statusPageSlug: string,
+	statusPageId: string,
 	action: "maintenance-created" | "maintenance-updated" | "maintenance-update-added" | "maintenance-update-deleted" | "maintenance-deleted",
 	data: any,
 ): void {
 	try {
 		server.publish(
-			`slug-${statusPageSlug}`,
+			`statusPage-${statusPageId}`,
 			JSON.stringify({
 				action,
-				data: { slug: statusPageSlug, ...data },
+				data: { statusPageId, ...data },
 				timestamp: new Date().toISOString(),
 			}),
 		);

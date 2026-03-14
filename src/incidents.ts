@@ -382,19 +382,19 @@ export async function getActiveIncidents(): Promise<Incident[]> {
 }
 
 /**
- * Broadcast an incident event to all subscribers of the relevant status page slugs.
+ * Broadcast an incident event to all subscribers of the relevant status page.
  */
 export function broadcastIncidentEvent(
-	statusPageSlug: string,
+	statusPageId: string,
 	action: "incident-created" | "incident-updated" | "incident-update-added" | "incident-update-deleted" | "incident-deleted",
 	data: any,
 ): void {
 	try {
 		server.publish(
-			`slug-${statusPageSlug}`,
+			`statusPage-${statusPageId}`,
 			JSON.stringify({
 				action,
-				data: { slug: statusPageSlug, ...data },
+				data: { statusPageId, ...data },
 				timestamp: new Date().toISOString(),
 			}),
 		);

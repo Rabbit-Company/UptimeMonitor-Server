@@ -299,63 +299,63 @@ app.websocket({
 		}
 
 		// Handle status page subscription
-		if (data?.action === "subscribe" && typeof data?.slug === "string") {
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(data.slug);
+		if (data?.action === "subscribe" && typeof data?.statusPageId === "string") {
+			const statusPage: StatusPage | undefined = cache.getStatusPage(data.statusPageId);
 			if (!statusPage) {
-				ws.send(JSON.stringify({ action: "error", message: "Status page not found", slug: data.slug, timestamp: new Date().toISOString() }));
+				ws.send(JSON.stringify({ action: "error", message: "Status page not found", statusPageId: data.statusPageId, timestamp: new Date().toISOString() }));
 				return;
 			}
 
-			if (cache.isStatusPageProtected(data.slug)) {
+			if (cache.isStatusPageProtected(data.statusPageId)) {
 				const password: string | null = typeof data?.password === "string" ? data.password : null;
 				if (!password) {
 					ws.send(
 						JSON.stringify({
 							action: "error",
 							message: "This status page is password protected. 'password' is required.",
-							slug: data.slug,
+							statusPageId: data.statusPageId,
 							timestamp: new Date().toISOString(),
 						}),
 					);
 					return;
 				}
 
-				if (!cache.verifyStatusPagePassword(data.slug, password)) {
-					ws.send(JSON.stringify({ action: "error", message: "Invalid password", slug: data.slug, timestamp: new Date().toISOString() }));
+				if (!cache.verifyStatusPagePassword(data.statusPageId, password)) {
+					ws.send(JSON.stringify({ action: "error", message: "Invalid password", statusPageId: data.statusPageId, timestamp: new Date().toISOString() }));
 					return;
 				}
 			}
 
-			const channel = `slug-${data.slug}`;
+			const channel = `statusPage-${data.statusPageId}`;
 			ws.subscribe(channel);
 
 			Logger.audit(`WebSocket subscribed to channel: ${channel}`, { ip: ws.data.clientIp || ws.remoteAddress });
 
-			ws.send(JSON.stringify({ action: "subscribed", slug: data.slug, timestamp: new Date().toISOString() }));
+			ws.send(JSON.stringify({ action: "subscribed", statusPageId: data.statusPageId, timestamp: new Date().toISOString() }));
 			return;
 		}
 
 		// Handle unsubscribe
-		if (data?.action === "unsubscribe" && typeof data?.slug === "string") {
-			const channel = `slug-${data.slug}`;
+		if (data?.action === "unsubscribe" && typeof data?.statusPageId === "string") {
+			const channel = `statusPage-${data.statusPageId}`;
 			ws.unsubscribe(channel);
 
 			Logger.audit(`WebSocket unsubscribed from ${channel}`, { ip: ws.data.clientIp || ws.remoteAddress });
 
-			ws.send(JSON.stringify({ action: "unsubscribed", slug: data.slug, timestamp: new Date().toISOString() }));
+			ws.send(JSON.stringify({ action: "unsubscribed", statusPageId: data.statusPageId, timestamp: new Date().toISOString() }));
 			return;
 		}
 
 		if (data?.action === "list_subscriptions") {
-			const slugs: string[] = [];
+			const statusPageIds: string[] = [];
 
 			ws.subscriptions.forEach((subscription) => {
-				if (subscription.startsWith("slug-")) {
-					slugs.push(subscription.replace("slug-", ""));
+				if (subscription.startsWith("statusPage-")) {
+					statusPageIds.push(subscription.replace("statusPage-", ""));
 				}
 			});
 
-			ws.send(JSON.stringify({ action: "subscriptions", type: "slug", items: slugs, timestamp: new Date().toISOString() }));
+			ws.send(JSON.stringify({ action: "subscriptions", type: "statusPage", items: statusPageIds, timestamp: new Date().toISOString() }));
 			return;
 		}
 

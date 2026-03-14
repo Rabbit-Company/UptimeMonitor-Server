@@ -33,7 +33,7 @@ export const adminPagePaths = {
 		post: {
 			tags: ["Admin: Status Pages"],
 			summary: "Create a status page",
-			description: "Create a new status page. The slug must be unique across all status pages.",
+			description: "Create a new status page. The id must be unique across all status pages.",
 			operationId: "adminCreateStatusPage",
 			security: [{ adminBearerAuth: [] }],
 			requestBody: {
@@ -63,7 +63,7 @@ export const adminPagePaths = {
 					content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 				},
 				"409": {
-					description: "Conflict - duplicate status page ID or slug already in use",
+					description: "Conflict - duplicate status page ID",
 					content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 				},
 				"500": {
@@ -99,7 +99,7 @@ export const adminPagePaths = {
 		put: {
 			tags: ["Admin: Status Pages"],
 			summary: "Update a status page",
-			description: "Partially update a status page. The id field cannot be changed. If changing the slug, it must not conflict with another status page.",
+			description: "Partially update a status page. The id field cannot be changed.",
 			operationId: "adminUpdateStatusPage",
 			security: [{ adminBearerAuth: [] }],
 			parameters: [{ name: "id", in: "path", required: true, description: "Status page ID", schema: { type: "string" } }],
@@ -134,7 +134,7 @@ export const adminPagePaths = {
 					content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 				},
 				"409": {
-					description: "Conflict - slug already in use",
+					description: "Conflict - id already in use",
 					content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 				},
 				"500": {

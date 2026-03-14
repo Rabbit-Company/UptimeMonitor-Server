@@ -8,19 +8,19 @@ import { getCurrentMonth } from "../times";
 
 export function registerIncidentRoutes(app: Web): void {
 	/**
-	 * GET /v1/status/:slug/incidents
+	 * GET /v1/status/:statusPageId/incidents
 	 * Returns all incidents for a status page in a given month, with all updates inlined.
 	 *
 	 * Query params:
 	 *   - month: "YYYY-MM" format (defaults to current month)
 	 */
 	app.get(
-		"/v1/status/:slug/incidents",
+		"/v1/status/:statusPageId/incidents",
 		statusPageBearerAuth(),
 		webCache({ ttl: 30, generateETags: false, shouldCache: statusPageShouldCache }),
 		async (ctx) => {
-			const slug = ctx.params["slug"]!;
-			const statusPage: StatusPage | undefined = cache.getStatusPageBySlug(slug);
+			const statusPageId = ctx.params["statusPageId"]!;
+			const statusPage: StatusPage | undefined = cache.getStatusPage(statusPageId);
 			if (!statusPage) return ctx.json({ error: "Status page not found" }, 404);
 
 			const month = ctx.query().get("month") || undefined;

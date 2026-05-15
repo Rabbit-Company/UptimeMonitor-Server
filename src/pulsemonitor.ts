@@ -156,6 +156,22 @@ export function buildPulseMonitorConfig(monitor: Monitor): any {
 			}
 		}
 
+		// DNS monitoring
+		if (monitor.pulse.dns) {
+			pulseConfig.dns = {
+				host: monitor.pulse.dns.host,
+				port: monitor.pulse.dns.port || 53,
+				query: monitor.pulse.dns.query,
+				recordType: monitor.pulse.dns.recordType || "A",
+				protocol: monitor.pulse.dns.protocol || "udp",
+				timeout: monitor.pulse.dns.timeout || 3,
+				requireAnswer: monitor.pulse.dns.requireAnswer ?? true,
+			};
+			if (monitor.pulse.dns.expectedValue !== undefined) {
+				pulseConfig.dns.expectedValue = monitor.pulse.dns.expectedValue;
+			}
+		}
+
 		// Minecraft Java monitoring
 		if (monitor.pulse["minecraft-java"]) {
 			pulseConfig["minecraft-java"] = {

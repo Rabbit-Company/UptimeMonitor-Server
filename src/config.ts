@@ -605,6 +605,73 @@ function validatePulseConfig(pulse: unknown, context: string): PulseConfig | und
 		}
 	}
 
+	// Validate DNS config
+	if (pulse.dns !== undefined) {
+		configCount++;
+		if (!isObject(pulse.dns)) {
+			errors.push(`${context}.dns must be an object`);
+		} else {
+			const dns = pulse.dns;
+
+			// host is required
+			if (!isString(dns.host) || dns.host.trim().length === 0) {
+				errors.push(`${context}.dns.host must be a non-empty string`);
+			}
+
+			// query is required
+			if (!isString(dns.query) || dns.query.trim().length === 0) {
+				errors.push(`${context}.dns.query must be a non-empty string`);
+			}
+
+			// port is optional
+			if (dns.port !== undefined && (!isNumber(dns.port) || dns.port <= 0 || dns.port > 65535)) {
+				errors.push(`${context}.dns.port must be a valid port number (1-65535)`);
+			}
+
+			// recordType is optional, must be one of the supported types
+			const validRecordTypes = ["A", "AAAA", "CAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT", "ANY"];
+			if (dns.recordType !== undefined && (!isString(dns.recordType) || !validRecordTypes.includes((dns.recordType as string).toUpperCase()))) {
+				errors.push(`${context}.dns.recordType must be one of: ${validRecordTypes.join(", ")}`);
+			}
+
+			// protocol is optional, must be "udp" or "tcp"
+			const validProtocols = ["udp", "tcp"];
+			if (dns.protocol !== undefined && (!isString(dns.protocol) || !validProtocols.includes((dns.protocol as string).toLowerCase()))) {
+				errors.push(`${context}.dns.protocol must be one of: ${validProtocols.join(", ")}`);
+			}
+
+			// timeout is optional
+			if (dns.timeout !== undefined && (!isNumber(dns.timeout) || dns.timeout <= 0)) {
+				errors.push(`${context}.dns.timeout must be a positive number`);
+			}
+
+			// requireAnswer is optional
+			if (dns.requireAnswer !== undefined && !isBoolean(dns.requireAnswer)) {
+				errors.push(`${context}.dns.requireAnswer must be a boolean`);
+			}
+
+			// expectedValue is optional
+			if (dns.expectedValue !== undefined && !isString(dns.expectedValue)) {
+				errors.push(`${context}.dns.expectedValue must be a string`);
+			}
+
+			if (errors.length === 0) {
+				const dnsConfig: any = {
+					host: dns.host as string,
+					query: dns.query as string,
+				};
+				if (dns.port !== undefined) dnsConfig.port = dns.port as number;
+				if (dns.recordType !== undefined) dnsConfig.recordType = (dns.recordType as string).toUpperCase();
+				if (dns.protocol !== undefined) dnsConfig.protocol = (dns.protocol as string).toLowerCase();
+				if (dns.timeout !== undefined) dnsConfig.timeout = dns.timeout as number;
+				if (dns.requireAnswer !== undefined) dnsConfig.requireAnswer = dns.requireAnswer as boolean;
+				if (dns.expectedValue !== undefined) dnsConfig.expectedValue = dns.expectedValue as string;
+
+				result.dns = dnsConfig;
+			}
+		}
+	}
+
 	// Validate Minecraft Java config
 	if (pulse["minecraft-java"] !== undefined) {
 		configCount++;
@@ -660,7 +727,7 @@ function validatePulseConfig(pulse: unknown, context: string): PulseConfig | und
 	// Check that at least one config type is defined
 	if (configCount === 0) {
 		errors.push(
-			`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, redis, snmp, minecraft-java, minecraft-bedrock)`,
+			`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, redis, snmp, dns, minecraft-java, minecraft-bedrock)`,
 		);
 	}
 

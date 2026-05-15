@@ -212,6 +212,35 @@ custom1 = "1.3.6.1.4.1.9.9.13.1.3.1.3.1006"
 
 OIDs must be in numeric dot-notation (e.g., `1.3.6.1.2.1.1.3.0`). MIB names are not supported. Entries named `custom1`, `custom2`, or `custom3` populate the corresponding custom metric fields.
 
+### DNS
+
+Monitor DNS servers by sending a real DNS query and verifying the response. Unlike ICMP (which only confirms reachability), this verifies the DNS service is actually answering queries correctly.
+
+```toml
+[monitors.pulse.dns]
+host = "8.8.8.8"             # DNS server hostname or IP
+port = 53                    # Optional: Port (default: 53)
+query = "google.com"         # Domain to look up
+recordType = "A"             # Optional: Record type (default: "A")
+protocol = "udp"             # Optional: "udp" or "tcp" (default: "udp")
+timeout = 3                  # Optional: Seconds (default: 3)
+requireAnswer = true         # Optional: Require ≥1 answer (default: true)
+expectedValue = ""           # Optional: Substring that must appear in an answer
+```
+
+| Option          | Type    | Default | Description                                                                |
+| --------------- | ------- | ------- | -------------------------------------------------------------------------- |
+| `host`          | string  | -       | DNS server hostname or IP address (required)                               |
+| `port`          | integer | 53      | DNS server port (1-65535)                                                  |
+| `query`         | string  | -       | Domain name to look up (required)                                          |
+| `recordType`    | string  | `"A"`   | A, AAAA, CAA, CNAME, MX, NS, PTR, SOA, SRV, TXT, ANY                       |
+| `protocol`      | string  | `"udp"` | Transport protocol: `udp` or `tcp`                                         |
+| `timeout`       | integer | 3       | Query timeout in seconds                                                   |
+| `requireAnswer` | boolean | `true`  | Require at least one answer record for success                             |
+| `expectedValue` | string  | -       | Optional substring that must appear in at least one answer (unset to skip) |
+
+Populates `{custom1}` and `{answerCount}` on the PulseMonitor side with the number of answer records returned.
+
 ### Minecraft Java
 
 ```toml

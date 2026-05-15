@@ -217,6 +217,29 @@ export interface PulseSnmpConfig {
 }
 
 /**
+ * DNS pulse monitoring configuration
+ * Performs a DNS query against a server and verifies the response
+ */
+export interface PulseDnsConfig {
+	/** DNS server hostname or IP address */
+	host: string;
+	/** DNS server port (default: 53) */
+	port?: number;
+	/** Domain name to look up */
+	query: string;
+	/** Record type: A, AAAA, MX, TXT, CNAME, NS, SOA, PTR, SRV, CAA, ANY (default: "A") */
+	recordType?: string;
+	/** Transport protocol: "udp" or "tcp" (default: "udp") */
+	protocol?: string;
+	/** Query timeout in seconds (default: 3) */
+	timeout?: number;
+	/** Require at least one answer record for success (default: true) */
+	requireAnswer?: boolean;
+	/** Optional substring that must appear in at least one answer record */
+	expectedValue?: string;
+}
+
+/**
  * Pulse monitoring configuration - defines what PulseMonitor should check
  * Only one type should be configured per monitor
  */
@@ -245,6 +268,8 @@ export interface PulseConfig {
 	redis?: PulseRedisConfig;
 	/** SNMP monitoring */
 	snmp?: PulseSnmpConfig;
+	/** DNS monitoring */
+	dns?: PulseDnsConfig;
 	/** Minecraft Java monitoring */
 	"minecraft-java"?: MinecraftJavaConfig;
 	/** Minecraft Bedrock monitoring */

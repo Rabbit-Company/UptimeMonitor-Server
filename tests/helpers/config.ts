@@ -5,7 +5,7 @@ import { reloadConfig } from "../../src/config";
 import { cache } from "../../src/cache";
 import type { Config } from "../../src/types";
 
-const FIXTURE_PATH = join(import.meta.dir, "..", "fixtures", "config.toml");
+const FIXTURE_PATH = join(import.meta.dir, "..", "fixtures", "base-config.toml");
 
 export const ADMIN_TOKEN = "test-admin-token";
 export const RELOAD_TOKEN = "test-reload-token";

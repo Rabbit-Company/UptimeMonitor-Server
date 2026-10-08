@@ -12,7 +12,7 @@ import { fakeClickHouse, fakeServer } from "./helpers/fakes";
 
 const dir = mkdtempSync(join(tmpdir(), "uptime-monitor-test-"));
 const configPath = join(dir, "config.toml");
-copyFileSync(join(import.meta.dir, "fixtures", "config.toml"), configPath);
+copyFileSync(join(import.meta.dir, "fixtures", "base-config.toml"), configPath);
 
 process.env["CONFIG"] = configPath;
 process.env["TZ"] = "UTC";

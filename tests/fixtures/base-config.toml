@@ -1,0 +1,110 @@
+# Baseline configuration used by the test suite.
+# Tests that modify the configuration restore this file afterwards.
+
+[clickhouse]
+url = "http://localhost:8123/uptime_monitor_test"
+
+[server]
+port = 3999
+proxy = "direct"
+reloadToken = "test-reload-token"
+
+[adminAPI]
+enabled = true
+token = "test-admin-token"
+
+[logger]
+level = 0
+
+[missingPulseDetector]
+interval = 5
+
+[selfMonitoring]
+enabled = false
+
+[[PulseMonitors]]
+id = "pm-eu"
+name = "EU"
+token = "tk_pm_eu"
+
+[[monitors]]
+id = "api"
+name = "API"
+token = "tk_api"
+interval = 30
+maxRetries = 0
+resendNotification = 0
+pulseMonitors = ["pm-eu"]
+
+[monitors.custom1]
+id = "connections"
+name = "Connections"
+unit = "conn"
+
+[monitors.pulse.http]
+method = "GET"
+url = "https://example.com"
+timeout = 10
+
+[[monitors]]
+id = "db"
+name = "Database"
+token = "tk_db"
+interval = 60
+maxRetries = 1
+resendNotification = 0
+
+[[monitors]]
+id = "worker"
+name = "Worker"
+token = "tk_worker"
+interval = 60
+maxRetries = 0
+resendNotification = 0
+dependencies = ["db"]
+
+[[monitors]]
+id = "web"
+name = "Website"
+token = "tk_web"
+interval = 30
+maxRetries = 0
+resendNotification = 0
+dependencies = ["backend"]
+
+[[groups]]
+id = "backend"
+name = "Backend"
+strategy = "percentage"
+degradedThreshold = 50
+interval = 60
+children = ["api", "db", "worker"]
+
+[[groups]]
+id = "everything"
+name = "Everything"
+strategy = "all-up"
+degradedThreshold = 0
+interval = 60
+children = ["backend", "web"]
+
+[[status_pages]]
+id = "main"
+name = "Main"
+slug = "main"
+items = ["everything"]
+
+[[status_pages]]
+id = "collapsed"
+name = "Collapsed"
+slug = "collapsed"
+items = ["everything"]
+leafItems = ["backend"]
+
+[[status_pages]]
+id = "private"
+name = "Private"
+slug = "private"
+items = ["api"]
+password = "correct-horse-battery"
+reports = true

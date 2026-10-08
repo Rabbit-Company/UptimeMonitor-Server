@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { copyFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { config, reloadConfig } from "../src/config";
+import { getPulseMonitorConfigs } from "../src/pulsemonitor";
+import { GAMEDIG_PROTOCOLS } from "../src/types";
 import { configErrors, configPath, loadConfig, restoreConfig } from "./helpers/config";
 
 afterEach(() => {
@@ -236,6 +238,81 @@ describe("config", () => {
 		test("rejects self references", () => {
 			expect(configErrors((raw) => (raw.monitors[1].dependencies = ["db"]))).toContain("Monitor 'db' cannot depend on itself");
 			expect(configErrors((raw) => (raw.monitors[1].children = ["db"]))).toContain("Monitor 'db' cannot be its own child");
+		});
+	});
+
+	describe("game server (gamedig) checks", () => {
+		const withGamedig = (gamedig: Record<string, unknown>) => (raw: Record<string, any>) => {
+			raw.monitors[0].pulse = { gamedig };
+		};
+		const pulseOf = (gamedig: Record<string, unknown>) => loadConfig(withGamedig(gamedig)).monitors[0]!.pulse!;
+
+		test("accepts a game ID with only a host", () => {
+			expect(pulseOf({ game: "valheim", host: "game.example.com" })).toEqual({
+				gamedig: { game: "valheim", protocol: undefined, host: "game.example.com", port: undefined, timeout: undefined },
+			});
+		});
+
+		test("keeps port and timeout", () => {
+			expect(pulseOf({ game: "minecraftjava", host: "mc.example.com", port: 25566, timeout: 10 }).gamedig).toMatchObject({ port: 25566, timeout: 10 });
+		});
+
+		test.each([...GAMEDIG_PROTOCOLS])("accepts the generic protocol %p", (protocol) => {
+			expect(pulseOf({ protocol, host: "game.example.com", port: 27016 }).gamedig).toMatchObject({ protocol, port: 27016 });
+		});
+
+		test("requires exactly one of game and protocol", () => {
+			const expected = "monitors[0].pulse.gamedig must have exactly one of game or protocol";
+			expect(configErrors(withGamedig({ host: "game.example.com" }))).toContain(expected);
+			expect(configErrors(withGamedig({ game: "rust", protocol: "valve", host: "game.example.com", port: 28015 }))).toContain(expected);
+		});
+
+		test.each(["Valheim", "space engineers", "valve-game", "", 7])("rejects the game ID %p", (game) => {
+			expect(configErrors(withGamedig({ game, host: "game.example.com" }))).toContain(
+				"monitors[0].pulse.gamedig.game must be a GameDig game ID (lowercase letters and numbers)",
+			);
+		});
+
+		test("rejects an unknown protocol", () => {
+			const errors = configErrors(withGamedig({ protocol: "carrier-pigeon", host: "game.example.com", port: 1 }));
+			expect(errors.some((e) => e.startsWith("monitors[0].pulse.gamedig.protocol must be one of: valve, gamespy1"))).toBe(true);
+		});
+
+		test("a generic protocol needs a port", () => {
+			expect(configErrors(withGamedig({ protocol: "valve", host: "game.example.com" }))).toContain(
+				"monitors[0].pulse.gamedig.port is required when protocol is set",
+			);
+		});
+
+		test.each([
+			[{ game: "rust" }, "monitors[0].pulse.gamedig.host must be a non-empty string"],
+			[{ game: "rust", host: " " }, "monitors[0].pulse.gamedig.host must be a non-empty string"],
+			[{ game: "rust", host: "h", port: 0 }, "monitors[0].pulse.gamedig.port must be a valid port number (1-65535)"],
+			[{ game: "rust", host: "h", port: 70000 }, "monitors[0].pulse.gamedig.port must be a valid port number (1-65535)"],
+			[{ game: "rust", host: "h", timeout: 0 }, "monitors[0].pulse.gamedig.timeout must be a positive number"],
+			[{ game: "rust", host: "h", timeout: "5" }, "monitors[0].pulse.gamedig.timeout must be a positive number"],
+		])("rejects %p", (gamedig, message) => {
+			expect(configErrors(withGamedig(gamedig))).toContain(message);
+		});
+
+		test("rejects a non-object value", () => {
+			expect(configErrors((raw) => (raw.monitors[0].pulse = { gamedig: "valheim" }))).toContain("monitors[0].pulse.gamedig must be an object");
+		});
+
+		test("an empty pulse section lists gamedig among the available types", () => {
+			const errors = configErrors((raw) => (raw.monitors[0].pulse = {}));
+			expect(errors.some((e) => e.includes("at least one monitoring type") && e.endsWith("gamedig)"))).toBe(true);
+		});
+
+		test("the settings are sent to the assigned PulseMonitor", () => {
+			loadConfig(withGamedig({ protocol: "valve", host: "se.example.com", port: 27016, timeout: 4 }));
+			const sent = getPulseMonitorConfigs("pm-eu").find((m) => m.gamedig);
+			expect(sent.gamedig).toEqual({ protocol: "valve", host: "se.example.com", port: 27016, timeout: 4 });
+			expect(sent.token).toBe("tk_api");
+
+			loadConfig(withGamedig({ game: "valheim", host: "game.example.com" }));
+			const byGame = getPulseMonitorConfigs("pm-eu").find((m) => m.gamedig);
+			expect(byGame.gamedig).toEqual({ game: "valheim", host: "game.example.com", port: undefined, timeout: undefined });
 		});
 	});
 

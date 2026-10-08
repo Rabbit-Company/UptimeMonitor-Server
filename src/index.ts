@@ -223,6 +223,7 @@ app.websocket({
 			}
 
 			// Parse custom metrics
+			const hasValue = (value: unknown) => value !== undefined && value !== null && value !== "";
 			const customMetrics: CustomMetrics = {
 				custom1: null,
 				custom2: null,
@@ -230,15 +231,15 @@ app.websocket({
 			};
 
 			if (monitor.custom1) {
-				const custom1Value = data.custom1 ? parseFloat(String(data.custom1)) : null;
+				const custom1Value = hasValue(data.custom1) ? parseFloat(String(data.custom1)) : null;
 				if (custom1Value !== null && !isNaN(custom1Value)) customMetrics.custom1 = custom1Value;
 			}
 			if (monitor.custom2) {
-				const custom2Value = data.custom2 ? parseFloat(String(data.custom2)) : null;
+				const custom2Value = hasValue(data.custom2) ? parseFloat(String(data.custom2)) : null;
 				if (custom2Value !== null && !isNaN(custom2Value)) customMetrics.custom2 = custom2Value;
 			}
 			if (monitor.custom3) {
-				const custom3Value = data.custom3 ? parseFloat(String(data.custom3)) : null;
+				const custom3Value = hasValue(data.custom3) ? parseFloat(String(data.custom3)) : null;
 				if (custom3Value !== null && !isNaN(custom3Value)) customMetrics.custom3 = custom3Value;
 			}
 
@@ -269,6 +270,10 @@ app.websocket({
 			} else if (latency !== null) {
 				endTime = new Date();
 				startTime = new Date(endTime.getTime() - latency);
+			} else if (startTime) {
+				endTime = startTime;
+			} else if (endTime) {
+				startTime = endTime;
 			} else {
 				endTime = new Date();
 				startTime = endTime;

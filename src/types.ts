@@ -183,6 +183,26 @@ export interface MinecraftBedrockConfig {
 	timeout?: number;
 }
 
+/** Generic query protocols PulseMonitor accepts for game servers without a GameDig game ID */
+export const GAMEDIG_PROTOCOLS = ["valve", "gamespy1", "gamespy2", "gamespy3", "quake1", "quake2", "quake3", "unreal2"] as const;
+
+/**
+ * GameDig (game server) pulse monitoring configuration.
+ * Exactly one of `game` or `protocol` is set.
+ */
+export interface PulseGamedigConfig {
+	/** GameDig game ID (e.g. "valheim", "minecraftjava") */
+	game?: string;
+	/** Generic query protocol for games without an ID */
+	protocol?: (typeof GAMEDIG_PROTOCOLS)[number];
+	/** Server address */
+	host: string;
+	/** Query port (defaults to the game's default port, required with `protocol`) */
+	port?: number;
+	/** Query timeout in seconds */
+	timeout?: number;
+}
+
 /**
  * SNMP pulse monitoring configuration
  * Supports SNMPv1, SNMPv2c, and SNMPv3
@@ -274,6 +294,8 @@ export interface PulseConfig {
 	"minecraft-java"?: MinecraftJavaConfig;
 	/** Minecraft Bedrock monitoring */
 	"minecraft-bedrock"?: MinecraftBedrockConfig;
+	/** Game server monitoring (GameDig) */
+	gamedig?: PulseGamedigConfig;
 }
 
 /**

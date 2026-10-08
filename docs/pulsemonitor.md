@@ -271,6 +271,50 @@ name = "Player Count"
 unit = "players"
 ```
 
+### Game Servers (GameDig)
+
+Query a game server with its own query protocol, using the Rust port of [GameDig](https://github.com/gamedig/rust-gamedig). A successful query confirms the game server itself is answering, not just that the host is reachable.
+
+```toml
+[monitors.pulse.gamedig]
+game = "valheim"
+host = "game.example.com"
+port = 2457
+timeout = 5
+
+# Optional: define custom metrics to track player counts.
+[monitors.custom1]
+id = "players"
+name = "Player Count"
+unit = "players"
+
+[monitors.custom2]
+id = "max_players"
+name = "Max Players"
+unit = "players"
+```
+
+| Option     | Type    | Default        | Description                                                                                            |
+| ---------- | ------- | -------------- | ------------------------------------------------------------------------------------------------------ |
+| `game`     | string  | -              | GameDig game ID, such as `valheim`, `rust` or `minecraftjava`                                          |
+| `protocol` | string  | -              | Generic protocol for games without an ID: `valve`, `gamespy1`-`gamespy3`, `quake1`-`quake3`, `unreal2` |
+| `host`     | string  | -              | Server hostname or IP address                                                                          |
+| `port`     | integer | game's default | Query port. Required when `protocol` is set                                                            |
+| `timeout`  | integer | 5              | Query timeout in seconds                                                                               |
+
+Exactly one of `game` or `protocol` must be set. The full list of game IDs is in the [PulseMonitor service documentation](https://github.com/Rabbit-Company/PulseMonitor/blob/main/docs/services.md#gamedig). The server does not check that a game ID exists. An unknown ID is reported in the PulseMonitor log and the monitor never receives a pulse.
+
+Games without an ID that use the Steam server query, such as Space Engineers, work through the generic `valve` protocol:
+
+```toml
+[monitors.pulse.gamedig]
+protocol = "valve"
+host = "se.example.com"
+port = 27016
+```
+
+Populates `custom1` with the online player count, `custom2` with the player limit and `custom3` with the bot count when the game reports it. Requires a PulseMonitor release that includes GameDig support.
+
 ## Pulse Interval Calculation
 
 The server automatically calculates the pulse interval for PulseMonitor:

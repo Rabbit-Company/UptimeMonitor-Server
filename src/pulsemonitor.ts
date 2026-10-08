@@ -189,6 +189,17 @@ export function buildPulseMonitorConfig(monitor: Monitor): any {
 				timeout: monitor.pulse["minecraft-bedrock"].timeout,
 			};
 		}
+
+		// Game server monitoring (GameDig)
+		if (monitor.pulse.gamedig) {
+			pulseConfig.gamedig = {
+				host: monitor.pulse.gamedig.host,
+				port: monitor.pulse.gamedig.port,
+				timeout: monitor.pulse.gamedig.timeout,
+			};
+			if (monitor.pulse.gamedig.game !== undefined) pulseConfig.gamedig.game = monitor.pulse.gamedig.game;
+			if (monitor.pulse.gamedig.protocol !== undefined) pulseConfig.gamedig.protocol = monitor.pulse.gamedig.protocol;
+		}
 	}
 
 	return pulseConfig;

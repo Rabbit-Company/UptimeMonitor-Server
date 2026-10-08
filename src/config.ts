@@ -13,9 +13,11 @@ import type {
 	CustomMetricConfig,
 	PulseMonitor,
 	PulseConfig,
+	PulseGamedigConfig,
 	AdminAPIConfig,
 	DatabaseConfig,
 } from "./types";
+import { GAMEDIG_PROTOCOLS } from "./types";
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
 import { configureLoki, Logger } from "./logger";
 import { type IpExtractionPreset } from "@rabbit-company/web-middleware/ip-extract";
@@ -724,10 +726,53 @@ function validatePulseConfig(pulse: unknown, context: string): PulseConfig | und
 		}
 	}
 
+	// Validate GameDig (game server) config
+	if (pulse.gamedig !== undefined) {
+		configCount++;
+		if (!isObject(pulse.gamedig)) {
+			errors.push(`${context}.gamedig must be an object`);
+		} else {
+			const gamedig = pulse.gamedig;
+			const hasGame = gamedig.game !== undefined;
+			const hasProtocol = gamedig.protocol !== undefined;
+
+			if (hasGame === hasProtocol) {
+				errors.push(`${context}.gamedig must have exactly one of game or protocol`);
+			}
+			if (hasGame && (!isString(gamedig.game) || !/^[a-z0-9]+$/.test(gamedig.game))) {
+				errors.push(`${context}.gamedig.game must be a GameDig game ID (lowercase letters and numbers)`);
+			}
+			if (hasProtocol && (!isString(gamedig.protocol) || !(GAMEDIG_PROTOCOLS as readonly string[]).includes(gamedig.protocol))) {
+				errors.push(`${context}.gamedig.protocol must be one of: ${GAMEDIG_PROTOCOLS.join(", ")}`);
+			}
+			if (!isString(gamedig.host) || gamedig.host.trim().length === 0) {
+				errors.push(`${context}.gamedig.host must be a non-empty string`);
+			}
+			if (gamedig.port !== undefined && (!isNumber(gamedig.port) || gamedig.port <= 0 || gamedig.port > 65535)) {
+				errors.push(`${context}.gamedig.port must be a valid port number (1-65535)`);
+			}
+			if (hasProtocol && gamedig.port === undefined) {
+				errors.push(`${context}.gamedig.port is required when protocol is set`);
+			}
+			if (gamedig.timeout !== undefined && (!isNumber(gamedig.timeout) || gamedig.timeout <= 0)) {
+				errors.push(`${context}.gamedig.timeout must be a positive number`);
+			}
+			if (errors.length === 0) {
+				result.gamedig = {
+					game: gamedig.game as string | undefined,
+					protocol: gamedig.protocol as PulseGamedigConfig["protocol"],
+					host: gamedig.host as string,
+					port: gamedig.port as number | undefined,
+					timeout: gamedig.timeout as number | undefined,
+				};
+			}
+		}
+	}
+
 	// Check that at least one config type is defined
 	if (configCount === 0) {
 		errors.push(
-			`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, redis, snmp, dns, minecraft-java, minecraft-bedrock)`,
+			`${context} must have at least one monitoring type configured (http, ws, tcp, udp, icmp, smtp, imap, mysql, mssql, postgresql, redis, snmp, dns, minecraft-java, minecraft-bedrock, gamedig)`,
 		);
 	}
 

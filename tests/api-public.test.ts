@@ -110,6 +110,12 @@ describe("GET /v1/push/:token", () => {
 			expect(cache.getStatus("api")?.custom1).toEqual({ config: { id: "connections", name: "Connections", unit: "conn" }, value: 42 });
 		});
 
+		test("stores a value of zero", async () => {
+			await get("/v1/push/tk_api?custom1=0");
+			expect((await storedPulses())[0]!.custom1).toBe(0);
+			expect(cache.getStatus("api")?.custom1?.value).toBe(0);
+		});
+
 		test("accepts a metric by its configured id", async () => {
 			await get("/v1/push/tk_api?connections=7.5");
 			expect((await storedPulses())[0]!.custom1).toBe(7.5);

@@ -97,6 +97,10 @@ export function registerPulseRoutes(app: Web): void {
 			} else if (latency !== null) {
 				endTime = new Date();
 				startTime = new Date(endTime.getTime() - latency);
+			} else if (startTime) {
+				endTime = startTime;
+			} else if (endTime) {
+				startTime = endTime;
 			} else {
 				endTime = new Date();
 				startTime = endTime;

@@ -13,10 +13,16 @@ url = "http://uptime_user:uptime_password@clickhouse:8123/uptime_monitor"
 
 [server]
 port = 3000
-# Available options: "direct" (no proxy), "cloudflare", "aws", "gcp", "azure", "vercel", "nginx", "development"
+# Available options: "direct" (no proxy), "cloudflare", "aws", "gcp", "azure", "vercel", "nginx", "burrowgate", "development"
 proxy = "direct"
 # Optional: Set your own reload token. If not provided, one will be auto-generated at startup.
 #reloadToken = ""
+
+# Optional: BurrowGate origin verification. When set, every request (except /health) must carry a valid
+# BurrowGate signature, the client IP is taken from the signed headers and "proxy" above is ignored.
+#[server.burrowgate]
+#originSecret = "your-site-origin-signing-secret"
+#maxAgeSeconds = 60
 
 # Admin API Configuration
 # Enables REST API endpoints for managing monitors, groups, status pages,

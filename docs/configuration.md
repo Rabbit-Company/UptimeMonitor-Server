@@ -86,11 +86,28 @@ proxy = "direct"
 reloadToken = "your-reload-token"
 ```
 
-| Field         | Default        | Description                                                                                           |
-| ------------- | -------------- | ----------------------------------------------------------------------------------------------------- |
-| `port`        | `3000`         | HTTP server port                                                                                      |
-| `proxy`       | `"direct"`     | IP extraction preset: `direct`, `cloudflare`, `aws`, `gcp`, `azure`, `vercel`, `nginx`, `development` |
-| `reloadToken` | Auto-generated | Token for `/v1/reload/:token` endpoint                                                                |
+| Field         | Default        | Description                                                                                                         |
+| ------------- | -------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `port`        | `3000`         | HTTP server port                                                                                                    |
+| `proxy`       | `"direct"`     | IP extraction preset: `direct`, `cloudflare`, `aws`, `gcp`, `azure`, `vercel`, `nginx`, `burrowgate`, `development` |
+| `reloadToken` | Auto-generated | Token for `/v1/reload/:token` endpoint                                                                              |
+
+#### BurrowGate Origin Verification
+
+If the server runs behind [BurrowGate](https://github.com/Rabbit-Company/BurrowGate), it can verify that every request actually passed through it:
+
+```toml
+[server.burrowgate]
+originSecret = "your-site-origin-signing-secret"
+maxAgeSeconds = 60
+```
+
+| Field           | Default | Description                                                                    |
+| --------------- | ------- | ------------------------------------------------------------------------------ |
+| `originSecret`  | -       | The site's origin signing secret from BurrowGate's site editor (required)      |
+| `maxAgeSeconds` | `60`    | Maximum age of the signed request timestamp in seconds, `0` disables the check |
+
+When configured, requests without a valid BurrowGate signature are rejected with `403`, the client IP is taken from the signed headers and `proxy` is ignored. `/health` is exempt so local container health checks keep working. Changing these values requires a server restart.
 
 ### Admin API
 

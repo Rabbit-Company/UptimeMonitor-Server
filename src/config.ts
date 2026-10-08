@@ -52,7 +52,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const IP_EXTRACTION_PRESETS = ["direct", "cloudflare", "aws", "gcp", "azure", "vercel", "nginx", "development"] as const;
+const IP_EXTRACTION_PRESETS = ["direct", "cloudflare", "aws", "gcp", "azure", "vercel", "nginx", "burrowgate", "development"] as const;
 
 function isIpExtractionPreset(value: unknown): value is IpExtractionPreset {
 	return typeof value === "string" && IP_EXTRACTION_PRESETS.includes(value as IpExtractionPreset);
@@ -1143,6 +1143,31 @@ function validateServerConfig(config: unknown): ServerConfig {
 			errors.push(`server.proxy must be one of: ${IP_EXTRACTION_PRESETS.join(", ")}`);
 		} else {
 			result.proxy = cfg.proxy;
+		}
+	}
+
+	if (cfg.burrowgate !== undefined) {
+		if (!isObject(cfg.burrowgate)) {
+			errors.push("server.burrowgate must be an object");
+		} else {
+			const burrowgate = cfg.burrowgate;
+			let maxAgeSeconds = 60;
+
+			if (!isString(burrowgate.originSecret) || burrowgate.originSecret.trim().length === 0) {
+				errors.push("server.burrowgate.originSecret must be a non-empty string");
+			}
+
+			if (burrowgate.maxAgeSeconds !== undefined) {
+				if (!isNumber(burrowgate.maxAgeSeconds) || burrowgate.maxAgeSeconds < 0) {
+					errors.push("server.burrowgate.maxAgeSeconds must be a non-negative number");
+				} else {
+					maxAgeSeconds = burrowgate.maxAgeSeconds;
+				}
+			}
+
+			if (isString(burrowgate.originSecret) && burrowgate.originSecret.trim().length > 0) {
+				result.burrowgate = { originSecret: burrowgate.originSecret, maxAgeSeconds };
+			}
 		}
 	}
 
@@ -2274,7 +2299,7 @@ function loadConfig(exitOnError: boolean = true): Config {
 		detectCircularReferences(config);
 		validateNotificationChannelProviders(config);
 
-		Logger.setLevel(logger.level || 4);
+		Logger.setLevel(logger.level ?? 4);
 		configureLoki(logger.loki);
 
 		Logger.info(`Configuration loaded successfully from ${configPath}`, {

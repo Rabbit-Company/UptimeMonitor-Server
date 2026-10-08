@@ -30,7 +30,7 @@ services:
       start_period: 40s
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest-alpine
+    image: clickhouse/clickhouse-server:26.9-alpine
     container_name: uptime-monitor-clickhouse
     restart: unless-stopped
     expose:
@@ -41,6 +41,7 @@ services:
       # This makes ClickHouse consume less resources, which is useful for small setups.
       # https://clickhouse.com/docs/en/operations/tips#using-less-than-16gb-of-ram
       - ./clickhouse/low-resources.xml:/etc/clickhouse-server/config.d/low-resources.xml:ro
+      - ./clickhouse/low-resources-users.xml:/etc/clickhouse-server/users.d/low-resources.xml:ro
     environment:
       - CLICKHOUSE_DB=uptime_monitor
       - CLICKHOUSE_USER=uptime_user

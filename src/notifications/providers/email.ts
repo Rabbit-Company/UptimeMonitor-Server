@@ -1,11 +1,11 @@
-import nodemailer, { createTransport } from "nodemailer";
+import { createTransport, type Transporter } from "nodemailer";
 import { Logger } from "../../logger";
 import { formatDateTimeLocal, formatDuration } from "../../times";
 import type { EmailConfig, NotificationEvent, NotificationProvider } from "../../types";
 import { cache } from "../../cache";
 
 export class EmailProvider implements NotificationProvider {
-	private transporter: nodemailer.Transporter | null = null;
+	private transporter: Transporter | null = null;
 	private config: EmailConfig;
 
 	constructor(config: EmailConfig) {
@@ -145,8 +145,8 @@ export class EmailProvider implements NotificationProvider {
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Children Status:</td>
                         <td style="padding: 8px 0;">${event.groupInfo.childrenUp}/${event.groupInfo.totalChildren} up (${event.groupInfo.upPercentage.toFixed(
-															1
-													  )}%)</td>
+													1,
+												)}%)</td>
                       </tr>
                       `
 													: ""
@@ -277,8 +277,8 @@ This is an automated notification from your monitoring system.
                   <h2 style="color: #28a745; margin-top: 0;">Service Restored</h2>
                   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
                     Great news! ${event.sourceType === "group" ? "Group" : "Monitor"} <strong>${event.monitorName}</strong> has recovered and is now ${
-					event.sourceType === "group" ? "healthy" : "responding normally"
-				}.
+											event.sourceType === "group" ? "healthy" : "responding normally"
+										}.
                   </p>
                   <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
                     <table style="width: 100%; border-collapse: collapse;">
@@ -320,8 +320,8 @@ This is an automated notification from your monitoring system.
                       <tr>
                         <td style="padding: 8px 0; font-weight: bold;">Children Status:</td>
                         <td style="padding: 8px 0;">${event.groupInfo.childrenUp}/${event.groupInfo.totalChildren} up (${event.groupInfo.upPercentage.toFixed(
-															1
-													  )}%)</td>
+													1,
+												)}%)</td>
                       </tr>
                       `
 													: ""

@@ -274,6 +274,8 @@ export class MissingPulseDetector {
 						this.pendingAbortControllers.set(monitor.id, abortController);
 
 						mState.lastNotificationCount = mState.consecutiveDownCount;
+						// Nothing has been sent yet - a recovery during the delay must stay silent too
+						if (notificationType === "down") mState.notificationSuppressed = true;
 
 						pendingNotifications.push({
 							monitor,

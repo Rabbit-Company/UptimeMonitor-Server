@@ -265,7 +265,7 @@ export async function addIncidentUpdate(
 
 	const now = new Date().toISOString();
 	const updateId = Bun.randomUUIDv7();
-	const resolvedAt = params.status === "resolved" ? now : existing.resolved_at;
+	const resolvedAt = params.status === "resolved" ? now : null;
 
 	await db`
 		INSERT INTO incident_updates (id, incident_id, status, message, created_at)

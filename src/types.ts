@@ -390,6 +390,16 @@ export interface StatusPage {
 }
 
 /**
+ * Configuration for BurrowGate origin verification.
+ */
+export interface BurrowGateConfig {
+	/** The protected site's origin signing secret (shown in BurrowGate's site editor) */
+	originSecret: string;
+	/** Maximum allowed age of the signed request timestamp in seconds (0 disables the check) */
+	maxAgeSeconds: number;
+}
+
+/**
  * Configuration for the HTTP server.
  */
 export interface ServerConfig {
@@ -397,6 +407,8 @@ export interface ServerConfig {
 	port: number;
 	/** Type for available IP extraction presets */
 	proxy: IpExtractionPreset;
+	/** BurrowGate origin verification (replaces `proxy` IP extraction when configured) */
+	burrowgate?: BurrowGateConfig;
 	/** Token for reloading configuration via API (auto-generated if not provided) */
 	reloadToken: string;
 }

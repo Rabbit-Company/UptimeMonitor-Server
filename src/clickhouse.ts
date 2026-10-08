@@ -1,7 +1,7 @@
 import { ClickHouseLogLevel, createClient } from "@clickhouse/client";
 import { config } from "./config";
 import { Logger } from "./logger";
-import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics, GroupHistoryRecord, Group } from "./types";
+import type { PulseRaw, PulseHourly, PulseDaily, StatusData, CustomMetrics, GroupHistoryRecord, Group, GroupState } from "./types";
 import { missingPulseDetector } from "./missing-pulse-detector";
 import { cache } from "./cache";
 import { formatDateTimeISOCompact, isInGracePeriod } from "./times";
@@ -693,12 +693,20 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 	const isStillDown = status === "down" && previousStatus === "down";
 
 	// Update group state tracking
+	let recoveredState: GroupState | undefined;
+	let recoveryInfo: { previousConsecutiveDownCount: number; downtime: number } | undefined;
+
 	if (isGoingDown) {
 		// Group just went down - record the start time
 		groupStateTracker.recordDown(groupId, true);
 	} else if (isStillDown) {
 		// Group is still down - increment the counter
 		groupStateTracker.recordDown(groupId, false);
+	} else if (isRecovering) {
+		// Cancel any pending deferred down notification and clear the down state
+		groupStateTracker.cancelPendingNotification(groupId);
+		recoveredState = groupStateTracker.getState(groupId);
+		recoveryInfo = groupStateTracker.recordRecovery(groupId, group.interval);
 	}
 
 	// Send notifications (skip during grace period, check dependency suppression)
@@ -800,13 +808,7 @@ export async function updateGroupStatus(groupId: string): Promise<void> {
 				groupStateTracker.recordNotificationSent(groupId);
 			}
 		} else if (isRecovering) {
-			// Cancel any pending deferred down notification
-			groupStateTracker.cancelPendingNotification(groupId);
-
-			const gState = groupStateTracker.getState(groupId);
-			const recoveryInfo = groupStateTracker.recordRecovery(groupId, group.interval);
-
-			if (gState?.notificationSuppressed) {
+			if (recoveredState?.notificationSuppressed) {
 				Logger.info("Group recovery notification suppressed (down was suppressed)", {
 					groupId,
 					groupName: group.name,

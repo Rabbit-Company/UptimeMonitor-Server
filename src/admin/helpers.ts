@@ -59,7 +59,7 @@ export function validateConfig(raw: Record<string, unknown>): string[] | null {
 export async function writeAndReload(raw: Record<string, unknown>, getServer: () => Server): Promise<void> {
 	const backup = await readRawConfig();
 
-	writeRawConfig(raw);
+	await writeRawConfig(raw);
 
 	try {
 		const newConfig = reloadConfig();
@@ -73,7 +73,7 @@ export async function writeAndReload(raw: Record<string, unknown>, getServer: ()
 		Logger.error("Config reload failed after write, restoring backup", {
 			error: err instanceof Error ? err.message : "Unknown error",
 		});
-		writeRawConfig(backup);
+		await writeRawConfig(backup);
 		try {
 			reloadConfig();
 			cache.reload();

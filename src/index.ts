@@ -12,6 +12,7 @@ import { cache as webCache } from "@rabbit-company/web-middleware/cache";
 import { Algorithm, rateLimit } from "@rabbit-company/web-middleware/rate-limit";
 import { selfMonitor } from "./selfmonitor";
 import { ipExtract } from "@rabbit-company/web-middleware/ip-extract";
+import { burrowgateOrigin } from "@rabbit-company/web-middleware/burrowgate";
 import { handlePulseMonitorSubscription, notifyAllPulseMonitorClients } from "./pulsemonitor";
 import { groupStateTracker } from "./group-state-tracker";
 import { openapi } from "./openapi";
@@ -29,7 +30,26 @@ await initDatabase(config.database?.url);
 
 const app = new Web();
 
-app.use(ipExtract(config.server.proxy));
+if (config.server.burrowgate) {
+	// Verifies requests passed through BurrowGate and sets the signed client IP
+	app.use(
+		burrowgateOrigin({
+			secret: config.server.burrowgate.originSecret,
+			maxAgeSeconds: config.server.burrowgate.maxAgeSeconds,
+			skip(ctx) {
+				// Local container health check does not go through BurrowGate
+				return new URL(ctx.req.url).pathname === "/health";
+			},
+			onFailure(ctx, reason) {
+				Logger.warn("BurrowGate origin verification failed", { reason, path: new URL(ctx.req.url).pathname });
+				return ctx.json({ error: "Forbidden" }, 403);
+			},
+		}),
+	);
+} else {
+	app.use(ipExtract(config.server.proxy));
+}
+
 app.use(
 	rateLimit({
 		algorithm: Algorithm.TOKEN_BUCKET,

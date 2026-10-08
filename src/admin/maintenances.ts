@@ -70,8 +70,8 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 				statusPageId: body.status_page_id,
 				title: body.title,
 				status: body.status,
-				scheduledStart: body.scheduled_start,
-				scheduledEnd: body.scheduled_end,
+				scheduledStart: toUtcIso(body.scheduled_start),
+				scheduledEnd: toUtcIso(body.scheduled_end),
 				message: body.message,
 				affectedMonitors: body.affected_monitors,
 				suppressNotifications: body.suppress_notifications,
@@ -125,8 +125,8 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 		try {
 			const maintenance = await updateMaintenance(id, {
 				title: body.title,
-				scheduledStart: body.scheduled_start,
-				scheduledEnd: body.scheduled_end,
+				scheduledStart: body.scheduled_start !== undefined ? toUtcIso(body.scheduled_start) : undefined,
+				scheduledEnd: body.scheduled_end !== undefined ? toUtcIso(body.scheduled_end) : undefined,
 				affectedMonitors: body.affected_monitors,
 				suppressNotifications: body.suppress_notifications,
 			});
@@ -262,6 +262,13 @@ export function registerMaintenanceRoutes(app: Web, getServer: () => Server): vo
 			return ctx.json({ error: e.message }, 500);
 		}
 	});
+}
+
+/**
+ * Normalize a date to UTC ISO 8601. Stored times are compared as text against UTC timestamps.
+ */
+function toUtcIso(value: string): string {
+	return new Date(value).toISOString();
 }
 
 function validateCreate(input: any): string[] {

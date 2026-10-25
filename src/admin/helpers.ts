@@ -1,4 +1,4 @@
-import { config, reloadConfig } from "../config";
+import { config, reloadConfig, validateConfigData } from "../config";
 import { cache } from "../cache";
 import { Logger } from "../logger";
 import { missingPulseDetector } from "../missing-pulse-detector";
@@ -39,15 +39,15 @@ export function adminBearerAuth() {
 }
 
 /**
- * Validates the raw config by round-tripping through stringify → parse → loadConfig.
+ * Validates the raw config by round-tripping through stringify -> parse and the full config validator.
  * Returns error strings or null if valid.
  */
 export function validateConfig(raw: Record<string, unknown>): string[] | null {
 	try {
 		const toml = TOML.stringify(raw);
 		// Re-parse to make sure the TOML is syntactically valid
-		Bun.TOML.parse(toml);
-		return null;
+		const parsed = Bun.TOML.parse(toml) as Record<string, unknown>;
+		return validateConfigData(parsed);
 	} catch (err: any) {
 		return [err.message || "Failed to serialize/parse TOML"];
 	}
@@ -63,7 +63,11 @@ export async function writeAndReload(raw: Record<string, unknown>, getServer: ()
 
 	try {
 		const newConfig = reloadConfig();
-		cache.reload();
+		const invalidatedGroups = cache.reload();
+		for (const groupId of invalidatedGroups) {
+			groupStateTracker.cancelPendingNotification(groupId);
+			groupStateTracker.clearState(groupId);
+		}
 		missingPulseDetector.updateNotificationConfig(newConfig.notifications || { channels: {} });
 		groupStateTracker.updateNotificationConfig();
 		statusUpdater.enqueueAll();

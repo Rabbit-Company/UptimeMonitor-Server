@@ -92,7 +92,11 @@ app.get("/v1/reload/:token", async (ctx) => {
 
 	try {
 		const newConfig = reloadConfig();
-		cache.reload();
+		const invalidatedGroups = cache.reload();
+		for (const groupId of invalidatedGroups) {
+			groupStateTracker.cancelPendingNotification(groupId);
+			groupStateTracker.clearState(groupId);
+		}
 		missingPulseDetector.updateNotificationConfig(newConfig.notifications || { channels: {} });
 		groupStateTracker.updateNotificationConfig();
 		statusUpdater.enqueueAll();

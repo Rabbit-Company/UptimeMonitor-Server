@@ -43,6 +43,8 @@ slug = "status"
 items = ["my-service"]
 ```
 
+For an Admin API managed deployment, you can start with no monitors or status pages. Omit both sections, or set `monitors = []` and `status_pages = []` at the top level. Configure `[adminAPI]` before starting so you can create them through the API.
+
 ## Configuration Sections
 
 ### Database (SQL)

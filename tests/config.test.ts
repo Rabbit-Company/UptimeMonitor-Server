@@ -176,9 +176,28 @@ describe("config", () => {
 	});
 
 	describe("monitors", () => {
-		test("requires at least one monitor", () => {
-			expect(configErrors((raw) => (raw.monitors = []))).toContain("At least one monitor must be configured");
-			expect(configErrors((raw) => delete raw.monitors)).toContain("monitors must be an array");
+		test("allows no monitors when no other items reference them", () => {
+			const cfg = loadConfig((raw) => {
+				raw.monitors = [];
+				raw.groups = [];
+				raw.status_pages = [];
+			});
+			expect(cfg.monitors).toEqual([]);
+			expect(cfg.statusPages).toEqual([]);
+		});
+
+		test("allows omitted monitor and status page sections", () => {
+			const cfg = loadConfig((raw) => {
+				delete raw.monitors;
+				delete raw.groups;
+				delete raw.status_pages;
+			});
+			expect(cfg.monitors).toEqual([]);
+			expect(cfg.statusPages).toEqual([]);
+		});
+
+		test("rejects a non-array monitors section", () => {
+			expect(configErrors((raw) => (raw.monitors = "invalid"))).toContain("monitors must be an array");
 		});
 
 		test.each([
@@ -405,9 +424,12 @@ describe("config", () => {
 	});
 
 	describe("status pages", () => {
-		test("requires at least one status page", () => {
-			expect(configErrors((raw) => (raw.status_pages = []))).toContain("At least one status page must be configured");
-			expect(configErrors((raw) => delete raw.status_pages)).toContain("status_pages must be an array");
+		test("allows no status pages", () => {
+			expect(loadConfig((raw) => (raw.status_pages = [])).statusPages).toEqual([]);
+		});
+
+		test("rejects a non-array status pages section", () => {
+			expect(configErrors((raw) => (raw.status_pages = "invalid"))).toContain("status_pages must be an array");
 		});
 
 		test.each([

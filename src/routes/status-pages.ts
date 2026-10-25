@@ -47,11 +47,12 @@ export function registerStatusPageRoutes(app: Web): void {
 			else if (status.status === "down") totalDown++;
 		}
 
-		const overallStatus = totalDown > 0 ? "down" : totalDegraded > 0 ? "degraded" : "up";
+		const knownTotal = totalUp + totalDegraded + totalDown;
+		const overallStatus = totalDown > 0 ? "down" : totalDegraded > 0 ? "degraded" : knownTotal > 0 ? "up" : "unknown";
 
 		return ctx.json({
 			status: overallStatus,
-			monitors: { up: totalUp, degraded: totalDegraded, down: totalDown, total: totalUp + totalDegraded + totalDown },
+			monitors: { up: totalUp, degraded: totalDegraded, down: totalDown, total: knownTotal },
 		});
 	});
 }

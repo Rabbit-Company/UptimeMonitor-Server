@@ -2140,13 +2140,12 @@ function validateNotificationChannelProviders(config: Config): void {
 }
 
 // Load and validate configuration
-function loadConfig(exitOnError: boolean = true): Config {
+function loadConfig(exitOnError: boolean = true, rawConfig?: Record<string, unknown>, silent = false): Config {
 	const configPath = process.env["CONFIG"] || "./config.toml";
 
 	try {
 		// Read the TOML file
-		const tomlContent = readFileSync(configPath, "utf-8");
-		const parsed = Bun.TOML.parse(tomlContent) as Record<string, unknown>;
+		const parsed = rawConfig ?? (Bun.TOML.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>);
 
 		const allErrors: string[] = [];
 
@@ -2261,14 +2260,13 @@ function loadConfig(exitOnError: boolean = true): Config {
 
 		// Validate monitors
 		const monitors: Monitor[] = [];
-		if (!isArray(parsed.monitors)) {
+		const rawMonitors = isArray(parsed.monitors) ? parsed.monitors : [];
+		if (parsed.monitors !== undefined && !isArray(parsed.monitors)) {
 			allErrors.push("monitors must be an array");
-		} else if (parsed.monitors.length === 0) {
-			allErrors.push("At least one monitor must be configured");
 		} else {
-			for (let i = 0; i < parsed.monitors.length; i++) {
+			for (let i = 0; i < rawMonitors.length; i++) {
 				try {
-					monitors.push(validateMonitor(parsed.monitors[i], i));
+					monitors.push(validateMonitor(rawMonitors[i], i));
 				} catch (error) {
 					if (error instanceof ConfigValidationError) {
 						allErrors.push(...error.errors);
@@ -2301,14 +2299,13 @@ function loadConfig(exitOnError: boolean = true): Config {
 
 		// Validate status pages
 		const statusPages: StatusPage[] = [];
-		if (!isArray(parsed.status_pages)) {
+		const rawStatusPages = isArray(parsed.status_pages) ? parsed.status_pages : [];
+		if (parsed.status_pages !== undefined && !isArray(parsed.status_pages)) {
 			allErrors.push("status_pages must be an array");
-		} else if (parsed.status_pages.length === 0) {
-			allErrors.push("At least one status page must be configured");
 		} else {
-			for (let i = 0; i < parsed.status_pages.length; i++) {
+			for (let i = 0; i < rawStatusPages.length; i++) {
 				try {
-					statusPages.push(validateStatusPage(parsed.status_pages[i], i));
+					statusPages.push(validateStatusPage(rawStatusPages[i], i));
 				} catch (error) {
 					if (error instanceof ConfigValidationError) {
 						allErrors.push(...error.errors);
@@ -2344,30 +2341,34 @@ function loadConfig(exitOnError: boolean = true): Config {
 		detectCircularReferences(config);
 		validateNotificationChannelProviders(config);
 
-		Logger.setLevel(logger.level ?? 4);
-		configureLoki(logger.loki);
+		if (!silent) {
+			Logger.setLevel(logger.level ?? 4);
+			configureLoki(logger.loki);
 
-		Logger.info(`Configuration loaded successfully from ${configPath}`, {
-			monitors: config.monitors.length,
-			groups: config.groups.length,
-			statusPages: config.statusPages.length,
-			pulseMonitors: config.pulseMonitors.length,
-			notificationChannels: Object.keys(config.notifications?.channels || {}).length,
-			missingPulseDetectorInterval: config.missingPulseDetector.interval + "s",
-		});
+			Logger.info(`Configuration loaded successfully from ${configPath}`, {
+				monitors: config.monitors.length,
+				groups: config.groups.length,
+				statusPages: config.statusPages.length,
+				pulseMonitors: config.pulseMonitors.length,
+				notificationChannels: Object.keys(config.notifications?.channels || {}).length,
+				missingPulseDetectorInterval: config.missingPulseDetector.interval + "s",
+			});
+		}
 
 		return config;
 	} catch (err: any) {
-		Logger.error("Configuration validation failed:");
+		if (!silent) {
+			Logger.error("Configuration validation failed:");
 
-		if (err instanceof ConfigValidationError) {
-			for (const error of err.errors) {
-				Logger.error(`  - ${error}`);
+			if (err instanceof ConfigValidationError) {
+				for (const error of err.errors) {
+					Logger.error(`  - ${error}`);
+				}
+			} else if (err instanceof Error) {
+				Logger.error("Unknown error", { "error.message": err?.message });
+			} else {
+				Logger.error("Unknown error", { "error.message": err?.message });
 			}
-		} else if (err instanceof Error) {
-			Logger.error("Unknown error", { "error.message": err?.message });
-		} else {
-			Logger.error("Unknown error", { "error.message": err?.message });
 		}
 
 		if (exitOnError) {
@@ -2375,6 +2376,16 @@ function loadConfig(exitOnError: boolean = true): Config {
 		}
 
 		throw err;
+	}
+}
+
+/** Validate a parsed config without changing the active configuration. */
+export function validateConfigData(raw: Record<string, unknown>): string[] | null {
+	try {
+		loadConfig(false, raw, true);
+		return null;
+	} catch (err) {
+		return err instanceof ConfigValidationError ? err.errors : [err instanceof Error ? err.message : String(err)];
 	}
 }
 

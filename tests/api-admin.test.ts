@@ -1,13 +1,14 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { cache } from "../src/cache";
 import { config } from "../src/config";
+import { groupStateTracker } from "../src/group-state-tracker";
 import { getIncidentById } from "../src/incidents";
 import { getMaintenanceById } from "../src/maintenances";
 import { createApp, request } from "./helpers/app";
 import { ADMIN_TOKEN, loadConfig, readConfigFile, restoreConfig } from "./helpers/config";
 import { useDatabase } from "./helpers/database";
 import { fakeClickHouse, fakeServer } from "./helpers/fakes";
-import { resetState, settle } from "./helpers/status";
+import { resetState, setStatus, settle } from "./helpers/status";
 
 useDatabase();
 
@@ -87,6 +88,35 @@ describe("admin authentication", () => {
 });
 
 describe("admin monitors", () => {
+	test("creates the first monitor and status page from an empty configuration", async () => {
+		loadConfig((raw) => {
+			delete raw.monitors;
+			delete raw.groups;
+			delete raw.status_pages;
+		});
+		expect((await admin("GET", "/v1/admin/monitors")).body.monitors).toEqual([]);
+		expect((await admin("GET", "/v1/admin/status-pages")).body.statusPages).toEqual([]);
+
+		expect((await admin("POST", "/v1/admin/monitors", newMonitor())).status).toBe(201);
+		expect(
+			(
+				await admin("POST", "/v1/admin/groups", {
+					id: "first-group",
+					name: "First group",
+					strategy: "percentage",
+					degradedThreshold: 50,
+					interval: 60,
+					children: ["cron"],
+				})
+			).status,
+		).toBe(201);
+		expect((await admin("POST", "/v1/admin/status-pages", { id: "first", name: "First", slug: "first", items: ["cron"] })).status).toBe(201);
+		expect(cache.getStatusPage("first")?.items).toEqual(["cron"]);
+		await settle();
+		expect(cache.getStatus("cron")).toBeUndefined();
+		expect(cache.getStatus("first-group")).toBeUndefined();
+	});
+
 	test("lists monitors", async () => {
 		const res = await admin("GET", "/v1/admin/monitors");
 		expect(res.status).toBe(200);
@@ -168,11 +198,26 @@ describe("admin monitors", () => {
 
 	test("rolls back when the resulting configuration is invalid", async () => {
 		const res = await admin("POST", "/v1/admin/monitors", newMonitor({ dependencies: ["ghost"] }));
-		expect(res.status).toBeGreaterThanOrEqual(400);
+		expect(res.status).toBe(400);
+		expect(res.body.details).toContain("Monitor 'cron' has dependency on non-existent monitor/group: ghost");
 
 		expect(cache.getMonitor("cron")).toBeUndefined();
 		expect(config.monitors).toHaveLength(4);
 		expect(readConfigFile().monitors.map((m: any) => m.id)).toEqual(["api", "db", "worker", "web"]);
+	});
+
+	test("returns 400 for an unknown PulseMonitor without changing config", async () => {
+		const res = await admin(
+			"POST",
+			"/v1/admin/monitors",
+			newMonitor({
+				pulseMonitors: ["NOPE-1"],
+				pulse: { http: { method: "GET", url: "https://example.com", timeout: 10 } },
+			}),
+		);
+		expect(res.status).toBe(400);
+		expect(res.body.details).toContain("Monitor 'cron' references non-existent PulseMonitor: NOPE-1");
+		expect(readConfigFile().monitors).toHaveLength(4);
 	});
 
 	test("updates only the provided fields", async () => {
@@ -210,6 +255,7 @@ describe("admin monitors", () => {
 		loadConfig((raw) => (raw.status_pages[2].items = ["api", "web"]));
 		const res = await admin("DELETE", "/v1/admin/monitors/web");
 		expect(res.status).toBe(200);
+		expect(res.body.removedFromGroups).toEqual(["everything"]);
 
 		expect(cache.getMonitor("web")).toBeUndefined();
 		expect(cache.getDirectChildIds("everything")).toEqual(["backend"]);
@@ -218,6 +264,32 @@ describe("admin monitors", () => {
 		expect(file.groups[1].children).toEqual(["backend"]);
 		expect(file.status_pages[2].items).toEqual(["api"]);
 		expect((await request(app, "GET", "/v1/push/tk_web")).status).toBe(401);
+	});
+
+	test("reports an empty group impact when deleting an unreferenced monitor", async () => {
+		expect((await admin("POST", "/v1/admin/monitors", newMonitor())).status).toBe(201);
+		const res = await admin("DELETE", "/v1/admin/monitors/cron");
+		expect(res.status).toBe(200);
+		expect(res.body.removedFromGroups).toEqual([]);
+	});
+
+	test("clears stale statuses when deleting the last monitor in a group", async () => {
+		loadConfig((raw) => {
+			raw.monitors = [raw.monitors[0]];
+			raw.groups = [{ ...raw.groups[0], children: ["api"] }];
+			raw.status_pages = [{ ...raw.status_pages[0], items: ["backend"] }];
+		});
+		setStatus("api", "up");
+		setStatus("backend", "down");
+		groupStateTracker.recordDown("backend", true);
+
+		const res = await admin("DELETE", "/v1/admin/monitors/api");
+		expect(res.status).toBe(200);
+		expect(res.body.removedFromGroups).toEqual(["backend"]);
+		expect(cache.getStatus("api")).toBeUndefined();
+		expect(cache.getStatus("backend")).toBeUndefined();
+		expect(groupStateTracker.getState("backend")).toBeUndefined();
+		expect(readConfigFile().monitors).toEqual([]);
 	});
 
 	test("deleting an unknown monitor returns 404", async () => {
@@ -272,6 +344,13 @@ describe("admin groups", () => {
 		expect((await admin("POST", "/v1/admin/groups", newGroup({ degradedThreshold: 101 }))).status).toBe(400);
 		expect((await admin("POST", "/v1/admin/groups", newGroup({ id: "backend" }))).status).toBe(409);
 		expect((await admin("POST", "/v1/admin/groups", newGroup({ id: "api" }))).status).toBe(409);
+		expect(readConfigFile().groups).toHaveLength(2);
+	});
+
+	test("returns 400 for an unknown child without changing config", async () => {
+		const res = await admin("POST", "/v1/admin/groups", newGroup({ children: ["does-not-exist"] }));
+		expect(res.status).toBe(400);
+		expect(res.body.details).toContain("Group 'frontend' references non-existent child: does-not-exist");
 		expect(readConfigFile().groups).toHaveLength(2);
 	});
 

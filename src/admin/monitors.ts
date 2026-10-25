@@ -98,6 +98,7 @@ export function registerMonitorRoutes(app: Web, getServer: () => Server): void {
 			const idx = monitors.findIndex((m: any) => m.id === id);
 			if (idx === -1) return ctx.json({ error: "Monitor not found in config file" }, 404);
 			monitors.splice(idx, 1);
+			const removedFromGroups: string[] = [];
 
 			// Clean up references
 			if (Array.isArray(raw.monitors)) {
@@ -110,6 +111,7 @@ export function registerMonitorRoutes(app: Web, getServer: () => Server): void {
 			if (Array.isArray(raw.groups)) {
 				for (const g of raw.groups as any[]) {
 					if (Array.isArray(g.children)) {
+						if (g.children.includes(id)) removedFromGroups.push(g.id);
 						g.children = g.children.filter((c: string) => c !== id);
 					}
 				}
@@ -125,8 +127,8 @@ export function registerMonitorRoutes(app: Web, getServer: () => Server): void {
 			if (v) return ctx.json({ error: "Configuration validation failed", details: v }, 400);
 
 			await writeAndReload(raw, getServer);
-			Logger.audit("Admin API: Monitor deleted", { monitorId: id });
-			return ctx.json({ success: true, message: `Monitor '${id}' deleted` });
+			Logger.audit("Admin API: Monitor deleted", { monitorId: id, removedFromGroups });
+			return ctx.json({ success: true, message: `Monitor '${id}' deleted`, removedFromGroups });
 		} catch (e: any) {
 			Logger.error("Admin API: Failed to delete monitor", { error: e.message });
 			return ctx.json({ error: e.message }, 500);

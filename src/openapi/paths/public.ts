@@ -262,7 +262,7 @@ export const publicPaths = {
 								type: "object",
 								required: ["status", "monitors"],
 								properties: {
-									status: { type: "string", enum: ["up", "degraded", "down"], example: "up" },
+									status: { type: "string", enum: ["up", "degraded", "down", "unknown"], example: "up" },
 									monitors: {
 										type: "object",
 										required: ["up", "degraded", "down", "total"],

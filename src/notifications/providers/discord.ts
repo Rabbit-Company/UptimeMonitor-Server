@@ -128,7 +128,7 @@ export class DiscordProvider implements NotificationProvider {
 							name: "Children Status",
 							value: `${event.groupInfo.childrenUp}/${event.groupInfo.totalChildren} up (${event.groupInfo.upPercentage.toFixed(1)}%)`,
 							inline: true,
-						}
+						},
 					);
 				}
 
@@ -247,7 +247,7 @@ export class DiscordProvider implements NotificationProvider {
 							name: "Children Status",
 							value: `${event.groupInfo.childrenUp}/${event.groupInfo.totalChildren} up (${event.groupInfo.upPercentage.toFixed(1)}%)`,
 							inline: true,
-						}
+						},
 					);
 				}
 

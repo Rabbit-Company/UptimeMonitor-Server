@@ -25,20 +25,22 @@ Check if the server is running.
 Send a heartbeat pulse for a monitor. See [Pulses](pulses.md) for a detailed guide on how pulses work, timing parameters, and best practices.
 
 **Path Parameters:**
-| Parameter | Description |
-|-----------|-------------|
-| `token` | Monitor's secret token |
+
+| Parameter | Description            |
+| --------- | ---------------------- |
+| `token`   | Monitor's secret token |
 
 **Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `latency` | number | Response time in milliseconds (max: 600000) |
-| `startTime` | string/number | Check start time (ISO 8601 or Unix timestamp) |
-| `endTime` | string/number | Check end time (ISO 8601 or Unix timestamp) |
-| `custom1` | number | Custom metric 1 value |
-| `custom2` | number | Custom metric 2 value |
-| `custom3` | number | Custom metric 3 value |
-| `{customId}` | number | Custom metric by configured ID |
+
+| Parameter    | Type          | Description                                   |
+| ------------ | ------------- | --------------------------------------------- |
+| `latency`    | number        | Response time in milliseconds (max: 600000)   |
+| `startTime`  | string/number | Check start time (ISO 8601 or Unix timestamp) |
+| `endTime`    | string/number | Check end time (ISO 8601 or Unix timestamp)   |
+| `custom1`    | number        | Custom metric 1 value                         |
+| `custom2`    | number        | Custom metric 2 value                         |
+| `custom3`    | number        | Custom metric 3 value                         |
+| `{customId}` | number        | Custom metric by configured ID                |
 
 **Timing Logic:**
 
@@ -154,6 +156,8 @@ For protected pages, the `Authorization` header must contain a **BLAKE2b-512 has
 ### GET /v1/status/:slug/summary
 
 Get a quick overview without full details.
+
+When no item has received a status yet, `status` is `"unknown"` and `monitors.total` is `0`.
 
 **Authentication:**
 

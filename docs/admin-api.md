@@ -303,9 +303,12 @@ curl -X DELETE -H "Authorization: Bearer <token>" \
 ```json
 {
 	"success": true,
-	"message": "Monitor 'api-staging' deleted"
+	"message": "Monitor 'api-staging' deleted",
+	"removedFromGroups": ["eu-services"]
 }
 ```
+
+`removedFromGroups` lists groups whose `children` arrays changed. It is empty when no group referenced the monitor.
 
 **Side effects:**
 

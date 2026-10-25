@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { cache } from "../src/cache";
-import { updateGroupStatus } from "../src/clickhouse";
+import { updateGroupStatus, updateMonitorStatus } from "../src/clickhouse";
 import { groupStateTracker } from "../src/group-state-tracker";
 import { STARTUP_TIME } from "../src/times";
-import { fakeServer } from "./helpers/fakes";
+import { fakeClickHouse, fakeServer } from "./helpers/fakes";
 import { loadConfig, restoreConfig } from "./helpers/config";
-import { resetState, setStatus } from "./helpers/status";
+import { resetState, setStatus, settle } from "./helpers/status";
 
 /** Set the statuses of backend's three children in one go. */
 function children(api: "up" | "down" | null, db: "up" | "down" | null, worker: "up" | "down" | null): void {
@@ -38,6 +38,44 @@ afterEach(() => {
 });
 
 describe("updateGroupStatus", () => {
+	test("an in-flight status refresh cannot restore a deleted monitor", async () => {
+		const pulseTime = new Date().toISOString();
+		fakeClickHouse.onQuery((query) => {
+			if (query.includes("AS first_pulse")) return [{ first_pulse: pulseTime }];
+			if (query.includes("AS last_check")) return [{ last_check: pulseTime, latency: 0, custom1: null, custom2: null, custom3: null }];
+		});
+		const update = updateMonitorStatus("api");
+		loadConfig((raw) => {
+			raw.monitors = [];
+			raw.groups = [];
+			raw.status_pages = [];
+		});
+		await update;
+		expect(cache.getStatus("api")).toBeUndefined();
+	});
+
+	test("preserves a recent in-memory pulse while ClickHouse has no row yet", async () => {
+		const recent = new Date();
+		setStatus("api", "up", { lastCheck: recent });
+		await updateMonitorStatus("api");
+		expect(cache.getStatus("api")?.status).toBe("up");
+		expect(cache.getStatus("api")?.lastCheck).toEqual(recent);
+	});
+
+	test("preserves a recent in-memory pulse when ClickHouse only has an older row", async () => {
+		const recent = new Date();
+		const old = new Date(recent.getTime() - 120_000).toISOString();
+		setStatus("api", "up", { lastCheck: recent });
+		fakeClickHouse.onQuery((query) => {
+			if (query.includes("AS first_pulse")) return [{ first_pulse: old }];
+			if (query.includes("AS last_check")) return [{ last_check: old, latency: 0, custom1: null, custom2: null, custom3: null }];
+		});
+		await updateMonitorStatus("api");
+		expect(cache.getStatus("api")?.status).toBe("up");
+		expect(cache.getStatus("api")?.lastCheck).toEqual(recent);
+		expect(cache.getStatus("api")?.firstPulse).toEqual(new Date(old));
+	});
+
 	describe("percentage strategy", () => {
 		test("up when every child is up", async () => {
 			children("up", "up", "up");
@@ -299,6 +337,28 @@ describe("updateGroupStatus", () => {
 			expect(events().map((e: any) => e.type)).toEqual(["down", "recovered"]);
 			expect(send.mock.calls[1]![1]).toMatchObject({ previousConsecutiveDownCount: 1 });
 			expect(groupStateTracker.getState("backend")).toBeUndefined();
+		});
+
+		test("a new group stays pending until its first child pulse", async () => {
+			enableNotifications((raw) => {
+				raw.groups[0].children = ["api", "db"];
+			});
+			await updateMonitorStatus("api");
+			await updateMonitorStatus("db");
+			await settle();
+			expect(cache.getStatus("api")).toBeUndefined();
+			expect(cache.getStatus("db")).toBeUndefined();
+			expect(cache.getStatus("backend")).toBeUndefined();
+			expect(events()).toEqual([]);
+
+			setStatus("api", "up");
+			await updateGroupStatus("backend");
+			expect(cache.getStatus("backend")?.status).toBe("up");
+
+			setStatus("db", "up");
+			await updateGroupStatus("backend");
+			expect(cache.getStatus("backend")?.status).toBe("up");
+			expect(events()).toEqual([]);
 		});
 
 		test("stays quiet during the startup grace period", async () => {

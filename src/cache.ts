@@ -525,9 +525,30 @@ class CacheManager {
 	 * Reload configuration and rebuild caches
 	 * This would be called when config is hot-reloaded
 	 */
-	reload(): void {
+	reload(): string[] {
 		Logger.info("Reloading cache from configuration");
+		const oldMonitorIds = new Set(this.monitors.keys());
+		const oldGroupIds = new Set(this.groups.keys());
 		this.initialize();
+
+		for (const id of oldMonitorIds) {
+			if (!this.monitors.has(id)) this.statusCache.delete(id);
+		}
+
+		const invalidatedGroups = new Set<string>();
+		for (const id of oldGroupIds) {
+			if (!this.groups.has(id)) {
+				this.statusCache.delete(id);
+				invalidatedGroups.add(id);
+			}
+		}
+		for (const group of this.groups.values()) {
+			if (this.getAllMonitorIdsForItem(group.id).length === 0) {
+				this.statusCache.delete(group.id);
+				invalidatedGroups.add(group.id);
+			}
+		}
+		return [...invalidatedGroups];
 	}
 
 	/**

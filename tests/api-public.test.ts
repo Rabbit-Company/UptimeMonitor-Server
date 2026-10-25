@@ -323,6 +323,11 @@ describe("GET /v1/status/:slug", () => {
 });
 
 describe("GET /v1/status/:slug/summary", () => {
+	test("reports unknown while every item is awaiting its first pulse", async () => {
+		const res = await get(unique("/v1/status/main/summary"));
+		expect(res.body).toEqual({ status: "unknown", monitors: { up: 0, degraded: 0, down: 0, total: 0 } });
+	});
+
 	test("counts the top level items by status", async () => {
 		setStatus("everything", "degraded");
 		const res = await get(unique("/v1/status/main/summary"));

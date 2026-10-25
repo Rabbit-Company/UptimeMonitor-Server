@@ -146,7 +146,7 @@ export const adminMonitorPaths = {
 		delete: {
 			tags: ["Admin: Monitors"],
 			summary: "Delete a monitor",
-			description: "Delete a monitor. References in status page items are automatically cleaned up.",
+			description: "Delete a monitor. References in status pages and parent groups are cleaned up. removedFromGroups lists affected groups.",
 			operationId: "adminDeleteMonitor",
 			security: [{ adminBearerAuth: [] }],
 			parameters: [{ name: "id", in: "path", required: true, description: "Monitor ID", schema: { type: "string" } }],
@@ -155,8 +155,16 @@ export const adminMonitorPaths = {
 					description: "Monitor deleted",
 					content: {
 						"application/json": {
-							schema: { $ref: "#/components/schemas/AdminSuccess" },
-							example: { success: true, message: "Monitor 'api-staging' deleted" },
+							schema: {
+								type: "object",
+								required: ["success", "message", "removedFromGroups"],
+								properties: {
+									success: { type: "boolean" },
+									message: { type: "string" },
+									removedFromGroups: { type: "array", items: { type: "string" } },
+								},
+							},
+							example: { success: true, message: "Monitor 'api-staging' deleted", removedFromGroups: ["eu-services"] },
 						},
 					},
 				},

@@ -529,8 +529,27 @@ export async function updateMonitorStatus(monitorId: string): Promise<void> {
 			custom2: number | null;
 			custom3: number | null;
 		}>();
+		// A config reload may have removed or replaced this monitor while the
+		// database requests were in flight.
+		if (cache.getMonitor(monitorId) !== monitor) return;
+		const latestCheckTime = latestData.length ? new Date(latestData[0]!.last_check).getTime() : -Infinity;
+		const currentStatus = cache.getStatus(monitorId);
+		// A pulse may have reached the in-memory cache after this refresh started,
+		// while ClickHouse still has an older row (or none until the buffer flushes).
+		if (currentStatus?.lastCheck && currentStatus.lastCheck.getTime() > latestCheckTime && currentStatus.lastCheck.getTime() >= now - maxAllowedInterval) {
+			if (firstPulse && !currentStatus.firstPulse) cache.setStatus(monitorId, { ...currentStatus, firstPulse });
+			return;
+		}
 
 		if (!latestData.length) {
+			// A new monitor has no observed state yet. Keep it out of group
+			// evaluations until its first pulse arrives.
+			if (!firstPulse) {
+				cache.statusCache.delete(monitorId);
+				propagateGroupStatus(monitorId);
+				return;
+			}
+
 			const statusData: StatusData = {
 				id: monitorId,
 				type: "monitor",

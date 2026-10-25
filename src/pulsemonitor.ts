@@ -1,4 +1,4 @@
-import type { Server, WebSocketData } from "@rabbit-company/web";
+import type { BunServerWebSocket, Server, WebSocketData } from "@rabbit-company/web";
 import { cache } from "./cache";
 import { Logger } from "./logger";
 import type { Monitor, PulseMonitor } from "./types";
@@ -276,7 +276,7 @@ export function notifyAllPulseMonitorClients(server: Server): void {
  * Returns the subscription response or null if invalid
  */
 export function handlePulseMonitorSubscription(
-	ws: Bun.ServerWebSocket<WebSocketData<Record<string, unknown>>>,
+	ws: BunServerWebSocket<WebSocketData<Record<string, unknown>>>,
 	token: string,
 ): { success: true; pulseMonitor: PulseMonitor; channel: string; configs: any[] } | { success: false; error: string } {
 	const pulseMonitor = cache.getPulseMonitorByToken(token);
